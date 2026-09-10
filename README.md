@@ -97,13 +97,13 @@ python3 -m features.modular_free_think --checkpoint checkpoints/<run-name>/<chec
 
 # 8. a conversation that free-thinks when it should and remembers the thread
 python3 -m features.conversation_memory --checkpoint checkpoints/<run-name>/<checkpoint-file>
-Replace checkpoints/<run-name>/<checkpoint-file> with your actual checkpoint path under checkpoints/ (such as a step checkpoint under checkpoints/selective-v1/).
+```
 
-```bash
+Replace `checkpoints/<run-name>/<checkpoint-file>` with your actual checkpoint path under `checkpoints/` (such as a step checkpoint under `checkpoints/selective-v1/`).
 
 Run the standalone self-tests to verify parity and baseline functionality without external dependencies:
 
-Bash
+```bash
 python3 -m model.transformer                 # causal baseline: KV-cached decoding == uncached decoding
 python3 -m model.selective_linear_attention  # selective_linear: dual/recurrent parity
 python3 -m features.free_think --self-test
@@ -111,20 +111,20 @@ python3 -m features.modular_free_think --self-test
 python3 -m features.conversation_memory --self-test
 python3 data/prepare_parallel.py --self-test
 python3 scripts/check_docs.py                # docs don't name code that no longer exists
-Bash
+```
 
-Free Think Mode
+## Free Think Mode
 Located in features/free_think.py. Given an input statement (questions are rejected unless --force is set), the model streams continuous text reflection until stopped. Results can be saved using --export output.json or --export output.txt. This is an inference-only feature running directly on Parentheses.stream(). Setting --max-tokens 0 allows indefinite streaming. An attention sink (sink_tokens, similar to StreamingLLM) keeps the first N prompt tokens in context across window resets to maintain topic anchor points. Because models at this sub-1M parameter scale have limited capacity, outputs will gradually drift over long generations while remaining locally related to the initial prompt.
 
-Modular Free Think (RAG)
+## Modular Free Think (RAG)
 Located in features/modular_free_think.py. This extends Free Think Mode with retrieval, pulling context from local text files to ground the generated tokens. Lexical BM25 (rank_bm25) is the default and recommended retrieval backend.
 
 An optional vector retrieval backend using TurboVec and a small trained pooling head (model/embedding_head.py) matches BM25 throughput (215.0 tokens/second modular versus 214.4 for BM25 and 221.4 plain on an RTX 5050 with 3,334 indexed chunks). However, it produces substantially lower retrieval quality for monolingual English paragraphs. Although the head shows strong sentence-pair recall across multilingual benchmarks (~40x random chance across 22 languages), that capability does not carry over to monolingual chunk retrieval at this parameter scale. A 330K-parameter byte-level model with a 64-dimensional head does not function well as a general sentence embedder; fine-tuning the top backbone block caused the embeddings to cluster by string length rather than semantic content. Consequently, no default embedding model is bundled, and selecting backend="vector" requires passing an explicit embedder instance.
 
-Conversation memory
+## Conversation memory
 Implemented in features/conversation_memory.py. The module adds a second trigger, warrants_free_think(), which detects extended, first-person statements that is_question() would overlook. ConversationNotes writes each turn to a Markdown file in conversations/. When triggered, previous turns are re-indexed through the Modular Free Think pipeline, retrieving relevant conversation history into context despite the small 256-byte model context window.
 
-Benchmarks
+## Benchmarks
 Standardized quality benchmarks are not yet available. Throughput, retrieval latency, and KV-cache metrics reported elsewhere in this document reflect system execution speeds rather than language modeling performance. Formal quality evaluations (such as perplexity benchmarks against baseline architectures, standard task suites, or morphological evaluation for the upcoming Dravidian dataset described in TOOLING.md) are pending two milestones:
 
 Finalizing the transition from causal attention to selective linear attention and closing the 34% training throughput gap.
@@ -133,10 +133,10 @@ Training checkpoints with sufficient semantic coherence. At current sub-1M param
 
 Comparative benchmarks will be added once trained weights reach viable quality thresholds.
 
-Roadmap
+## Roadmap
 Current focus: Evaluate selective linear attention at small parameter budgets, eliminate the training-throughput gap relative to the causal transformer baseline, and maintain functional parity for Free Think Mode and Modular Free Think across both attention implementations.
 
 Long-term goals: Scale to 1B to 2B parameters on multi-GPU cloud hardware, introduce Dravidian and broader Indic language corpora, build a dedicated morphological tokenizer, and set up the distributed training and deployment infrastructure outlined in TOOLING.md (including FSDP, Kubeflow, DVC, and model serving). Transitioning to larger scale depends on performance outcomes from the current small-scale experiments.
 
-License
+## License
 This project is licensed under the MIT License.
