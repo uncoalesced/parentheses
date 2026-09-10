@@ -1,0 +1,38 @@
+Retrieval side-by-side over the same 3,334-chunk store from data/raw/wikipedia.
+bm25 = lexical (rank_bm25). vector = 64-d embedding head + TurboVec.
+backbone : checkpoints\all-sources-v1\step_560999_final.pt
+head     : checkpoints\all-sources-v1\embedding_head_all_sources_v1.pt
+           trained on 22 language dir(s), last block frozen, mean per-language recall@1 0.1159
+self-retrieval : 1.000 of 500 probes find themselves (1.000 = healthy)
+hubness        : 464 distinct nearest neighbours over 500 probes; the single most-returned chunk takes 0.6% (lower is healthier)
+length bias    : corr(chunk length, similarity to query) -0.056 (0 = neutral); top-3 retrieved average 83 chars against a store median of 124
+
+QUERY: The deep ocean is cold and dark.
+  bm25:
+    - picture. If the picture is too bright or too dark, it will not record correctly. The longer that the film keep
+    - Queen Mary's Peak is the summit of the island of Tristan da Cunha, in the South Atlantic Ocean. The top of it 
+    - portion between and opened in 1890 and is the oldest section of deep-level tube line on the Underground networ
+  vector:
+    - song in the country; this was the first time a Latin artist followed another Latin artist to the top of the ch
+    - a documentary-style look at the launch of Lopez's music career. With a run time of one hour, it contains a mix
+    - at any age. Malnutrition Lack of proper nutrition can lead to intellectual disability over time. Not having en
+
+QUERY: Music and musical instruments.
+  bm25:
+    - musical notation. To hear the notes of a harmonic series click here: clicking here. Playing harmonics on instr
+    - sometimes need to play harmonics on their instruments. In musical notation this is shown by placing a small ci
+    - also wrote a lot of music for plays. Many of his smaller works for one or two voices and instruments he called
+  vector:
+    - Japanese version. References Historical anthems
+    - Companies of Australia
+    - Vienna
+
+QUERY: A war fought in Europe.
+  bm25:
+    - men fought on the other side of the war against crime in Sicily as prosecuting magistrates. They were both kil
+    - World War II. The complex became one of several Fuhrer Headquarters in parts of Eastern Europe. Organisation T
+    - were murdered the next day. Other Sonderkommandos fought back secretly. For example, at Auschwitz, in August 1
+  vector:
+    - music videos to the album's five singles. In the second chapter, "Why Risk a Music Career?", Lopez is intervie
+    - an event such as an opera or auction.
+    - beef is eaten by people on Saint Patrick's Day with cabbage. Beef

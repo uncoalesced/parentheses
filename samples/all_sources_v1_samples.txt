@@ -1,0 +1,95 @@
+checkpoint : checkpoints\all-sources-v1\step_560999_final.pt  (step 560999)
+config     : ModelConfig(vocab_size=256, block_size=256, n_layer=5, n_head=4, n_embd=72, dropout=0.0, bias=False, tie_embeddings=True)
+sampling   : temperature=0.8 top_k=40 max_new_tokens=120
+
+val loss   : 1.4784 over 120,980 sequential 256-token windows of data\processed_all_sources_v1\val.bin
+val covers : kn 10%, bn 8%, ta 7%, ml 7%, ms 5%, tr 5%, vi 5%, id 4%  (35,882 pairs)
+
+========================================================================
+Translation-format samples. Prompt is prepare_parallel.py's pair format
+up to the target tag; everything after it is the model's own continuation.
+========================================================================
+
+---------- en -> kn ----------
+
+PROMPT: <en> The sky is blue. -> <kn>
+OUTPUT: <en> The sky is blue. -> <kn> ಅವರನ್ನು ಮತ್ತು ಅವನು. ಅದಿನಿಯರು ವೈಲಿಸುವಾಗಿ ಏನಾ �
+
+PROMPT: <en> He went to the city. -> <kn>
+OUTPUT: <en> He went to the city. -> <kn> ಮೂಲರಿಗಳನ ಮಾರುತ್ತಾರೆ; ಮೇಲೆ ಪ್ರಾಣ್ಟೇಕುಗಳ ಹೋಗು
+
+PROMPT: <en> Water is important for life. -> <kn>
+OUTPUT: <en> Water is important for life. -> <kn> ಇದುವರೆಗಲ್ಕಗುದು, ಸ್ಕರೋಕರೆ, ನಡೆಯನ್ನು ನನ್ನ ಆದರ�
+
+PROMPT: <en> The book is on the table. -> <kn>
+OUTPUT: <en> The book is on the table. -> <kn> ಮಹಾರ್ ಮಹಾಗಿಗಳು, ಆಗ್ರತ, ಚಿತ್ರದಲ್ಲಿ ದ್ಯವನ್ನು ಕ�
+
+---------- en -> hi ----------
+
+PROMPT: <en> The sky is blue. -> <hi>
+OUTPUT: <en> The sky is blue. -> <hi> करने यहरे के अने ले यहो मनभ्र जाता पर पात्र से 
+
+PROMPT: <en> He went to the city. -> <hi>
+OUTPUT: <en> He went to the city. -> <hi> Не пухлынне млищение жить. удренит польтувано.
+
+<en> What do you say, Yahweh, th
+
+PROMPT: <en> Water is important for life. -> <hi>
+OUTPUT: <en> Water is important for life. -> <hi> उन्हसे में गयर करते देशित ननानी है उसकी आपका �
+
+PROMPT: <en> The book is on the table. -> <hi>
+OUTPUT: <en> The book is on the table. -> <hi> राष्ट्य बारियस्निक स्तेंड, विजाँत्र में में �
+
+---------- en -> fr ----------
+
+PROMPT: <en> The sky is blue. -> <fr>
+OUTPUT: <en> The sky is blue. -> <fr> Cçêncit solate da suprisie. Effil ont voi l`aste de bond menser uns contisulties de lévolué la Commission de le rus
+
+PROMPT: <en> He went to the city. -> <fr>
+OUTPUT: <en> He went to the city. -> <fr> De la nation cut de n'avestal d'abert konkut vous et de l’Ophthabe de des qui vous sons de trap-la aveds sur la doit 
+
+PROMPT: <en> Water is important for life. -> <fr>
+OUTPUT: <en> Water is important for life. -> <fr> Pulhou en seconds: An failur et là missiotro de trutabilities des modifications corrérias en une de la tras solver le
+
+PROMPT: <en> The book is on the table. -> <fr>
+OUTPUT: <en> The book is on the table. -> <fr> Il trouven tout valent hundre par l’achte settie moint une versche ne pégrén.
+
+<en> Why we can burn your window cam
+
+---------- en -> ru ----------
+
+PROMPT: <en> The sky is blue. -> <ru>
+OUTPUT: <en> The sky is blue. -> <ru> Прогинну слений сайдой удевиличь мернику колфоронайних обулизо�
+
+PROMPT: <en> He went to the city. -> <ru>
+OUTPUT: <en> He went to the city. -> <ru> Остом соули буллю обуделем вимолжалии участь
+
+<en> But he said that it, "Perenda
+
+PROMPT: <en> Water is important for life. -> <ru>
+OUTPUT: <en> Water is important for life. -> <ru> Руйдана Гекали оба, отсяну в нодителении?
+
+<en> Many weakened it will built before yo
+
+PROMPT: <en> The book is on the table. -> <ru>
+OUTPUT: <en> The book is on the table. -> <ru> Востого частаки Аиспів маника бульських пролек нареских повідав
+
+---------- en -> zh ----------
+
+PROMPT: <en> The sky is blue. -> <zh>
+OUTPUT: <en> The sky is blue. -> <zh> 這很 挟 他 有 以 體 個 同 因 法 行 も利数 要 用 他 們 、 這 飞 們 、 巨 飝 王 进 生 你 �
+
+PROMPT: <en> He went to the city. -> <zh>
+OUTPUT: <en> He went to the city. -> <zh> 渰人 的 這 髕 出 出她 次 改 僕 、 民 家 亞 的 生 國 、 城 不 衛 裡 多 他 們 子 的 貘
+
+<en>
+
+PROMPT: <en> Water is important for life. -> <zh>
+OUTPUT: <en> Water is important for life. -> <zh> 耶和華甲泔近論局提的接为地她究路階出誰酋在新地的被力訋家谇国纲曼的人。
+
+<en> Doth fa
+
+PROMPT: <en> The book is on the table. -> <zh>
+OUTPUT: <en> The book is on the table. -> <zh> 贗 以 地 以 們 外 山 郡 实 耶 的 、 地 必 ． 直 功 們
+
+<en> <zh> 、 意 將 果作 、 同 模時 �

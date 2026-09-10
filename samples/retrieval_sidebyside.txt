@@ -1,0 +1,38 @@
+Retrieval side-by-side over the same 3,334-chunk store from F:\Used_Data\raw\wikipedia.
+bm25 = lexical (rank_bm25). vector = 64-d embedding head + TurboVec.
+backbone : checkpoints\selective-v1\step_560999_final.pt
+head     : checkpoints\selective-v1\embedding_head_selective_v1.pt
+           trained on 22 language dir(s), last block frozen, mean per-language recall@1 0.0777
+self-retrieval : 1.000 of 500 probes find themselves (1.000 = healthy)
+hubness        : 453 distinct nearest neighbours over 500 probes; the single most-returned chunk takes 0.8% (lower is healthier)
+length bias    : corr(chunk length, similarity to query) -0.114 (0 = neutral); top-3 retrieved average 92 chars against a store median of 124
+
+QUERY: The deep ocean is cold and dark.
+  bm25:
+    - picture. If the picture is too bright or too dark, it will not record correctly. The longer that the film keep
+    - Queen Mary's Peak is the summit of the island of Tristan da Cunha, in the South Atlantic Ocean. The top of it 
+    - portion between and opened in 1890 and is the oldest section of deep-level tube line on the Underground networ
+  vector:
+    - string while the note is being held down). The same can be done holding the next G down, then the next C, then
+    - the face of stress. Being "at peace" is considered by many to be healthy and the opposite of being stressed or
+    - logo. Barrow is also famous for its limestone working. There are streets in the village with names in referenc
+
+QUERY: Music and musical instruments.
+  bm25:
+    - musical notation. To hear the notes of a harmonic series click here: clicking here. Playing harmonics on instr
+    - sometimes need to play harmonics on their instruments. In musical notation this is shown by placing a small ci
+    - also wrote a lot of music for plays. Many of his smaller works for one or two voices and instruments he called
+  vector:
+    - establishments in Virginia
+    - controversies. English-language television programs British television series
+    - Japanese version. References Historical anthems
+
+QUERY: A war fought in Europe.
+  bm25:
+    - men fought on the other side of the war against crime in Sicily as prosecuting magistrates. They were both kil
+    - World War II. The complex became one of several Fuhrer Headquarters in parts of Eastern Europe. Organisation T
+    - were murdered the next day. Other Sonderkommandos fought back secretly. For example, at Auschwitz, in August 1
+  vector:
+    - at a time in pools and streams. References Frogs of Australia
+    - like ... From all this you will have a picture of how our people perished [died]." Related pages Sonderkommand
+    - the final set for the biggest upset in the tournament to date. There were also wins for Berdych, Djokovic, Fed

@@ -1,0 +1,48 @@
+checkpoint : checkpoints\all-sources-v1\step_560999_final.pt  (step 560999)
+sampling   : temperature=0.8 top_k=40 max_new_tokens=200
+
+========================================================================
+hermes-function-calling (raw JSON, as trained)
+------------------------------------------------------------------------
+PROMPT: [{"id": "1", "conversations": [{"from": "system", "value": "You are a function calling AI model. You are provided with function signatures within <tools> </tools> XML tags.\n<tools>\n[{\"type\": \"function\", \"function\": {\"name\": \"get_weather\", \"description\": \"Get current weather for a city.\", \"parameters\": {\"type\": \"object\", \"properties\": {\"city\": {\"type\": \"string\"}}}}}]\n</tools>"}, {"from": "human", "value": "What is the weather in Paris?"}, {"from": "gpt", "value": "
+OUTPUT: [{"id": "1", "conversations": [{"from": "system", "value": "You are a function calling AI model. You are provided with function signatures within <tools> </tools> XML tags.\n<tools>\n[{\"type\": \"function\", \"function\": {\"name\": \"get_weather\", \"description\": \"Get current weather for a city.\", \"parameters\": {\"type\": \"object\", \"properties\": {\"city\": {\"type\": \"string\"}}}}}]\n</tools>"}, {"from": "human", "value": "What is the weather in Paris?"}, {"from": "gpt", "value": "14bhp against the compenser of "mythology", "subcategory": "Options": "Here you're equations"}, {"id": "336en6b6eccular", "value": "<tool_call>\n{\"name\": {\"type\": \"string\", \"description\": \"Th
+
+========================================================================
+openstax (textbook prose)
+------------------------------------------------------------------------
+PROMPT: The mean of a data set is calculated by
+OUTPUT: The mean of a data set is calculated by a star of the function in the calculation of the end of nations and morphorsed are zero the same for the reality to confine due to the most certain working from the following guardian and other carri
+
+========================================================================
+steam-manual (technical/UI text)
+------------------------------------------------------------------------
+PROMPT: ## Key bindings and shortcuts
+
+* 
+OUTPUT: ## Key bindings and shortcuts
+
+* + Mega Laws Wash Official Space/Headings are appeared by the European
+Research people in Alberton France, the larger project is remarked by element
+In October 30, 128 August 21
+1302
+44023 b523 22 7530
+
+========================================================================
+gutenberg (literary prose)
+------------------------------------------------------------------------
+PROMPT: It was a cold morning when
+OUTPUT: It was a cold morning when the Proposal Russian died Covenant. -> <pt> E est pecudo ao não a conuria.
+
+<en> I full about every month will be a band of free. -> <pt> Esto activa a reverbo e atras do restateur.
+
+<en> I've not s
+
+========================================================================
+open-web-math (theorem prose)
+------------------------------------------------------------------------
+PROMPT: Theorem. Let x be a real number such that
+OUTPUT: Theorem. Let x be a real number such that? You've needed
+           Hepting and interest goats. These slowly navigate general
+         driven as who really in the hearth of forgotten it, let us that
+       the board stepped off. 'Now to be a
+

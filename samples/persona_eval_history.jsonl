@@ -1,0 +1,1 @@
+{"when": "2026-09-03T20:48:09", "checkpoint": "checkpoints/all-sources-v1/step_512000.pt", "step": 512000, "seed": 0, "prompt_set": "v0-draft", "prompts": 24, "temperature": 0.9, "top_k": 40, "max_tokens": 200, "sft_format": false, "mean_bytes": 200.1, "repetition": 0.0035, "refusal_rate": 0.0}

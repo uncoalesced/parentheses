@@ -1,0 +1,22 @@
+PII scrub report for data/raw/manual/raw-sourced/proof-pile-2-open-web-math
+pattern hits: EMAIL 5,465, PHONE 751, SSN 21
+files with hits: 10
+
+Matched values are deliberately not printed. Counts are an upper bound, not a
+finding: on the real corpus most SSN-shaped hits were textbook examples and DOI
+suffixes rather than anyone's actual number. Check a sample by hand (digits
+masked) before treating a count as PII found.
+
+  shard_00.txt                             EMAIL 644, PHONE 52, SSN 3
+  shard_01.txt                             EMAIL 425, PHONE 83
+  shard_02.txt                             EMAIL 384, PHONE 83, SSN 1
+  shard_03.txt                             EMAIL 387, PHONE 120
+  shard_04.txt                             EMAIL 335, PHONE 93, SSN 3
+  shard_05.txt                             EMAIL 782, PHONE 58, SSN 4
+  shard_06.txt                             EMAIL 589, PHONE 78, SSN 4
+  shard_07.txt                             EMAIL 382, PHONE 70
+  shard_08.txt                             EMAIL 492, PHONE 38
+  shard_09.txt                             EMAIL 1045, PHONE 76, SSN 6
+
+[report only] nothing was written; rerun with --apply --out-dir to redact
+

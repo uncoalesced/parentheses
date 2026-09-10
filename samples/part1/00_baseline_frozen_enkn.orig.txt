@@ -1,0 +1,32 @@
+Retrieval side-by-side over the same 3,334-chunk Wikipedia store.
+bm25 = lexical (rank_bm25). vector = 64-d embedding head + TurboVec, recall@1 0.0742 on held-out en-kn pairs.
+
+QUERY: The deep ocean is cold and dark.
+  bm25:
+    - picture. If the picture is too bright or too dark, it will not record correctly. The longer that the film keep
+    - Queen Mary's Peak is the summit of the island of Tristan da Cunha, in the South Atlantic Ocean. The top of it 
+    - portion between and opened in 1890 and is the oldest section of deep-level tube line on the Underground networ
+  vector:
+    - pictures. For example, a telephoto lens can take a picture of something far away. A wide-angle lens is the opp
+    - The dermal base may contain bone and produce dermal armour. Scutes with a bony base are properly called osteod
+    - Films also come in different sizes. 35 millimeter film, the most used size, comes in metal cans or canisters, 
+
+QUERY: Music and musical instruments.
+  bm25:
+    - musical notation. To hear the notes of a harmonic series click here: clicking here. Playing harmonics on instr
+    - sometimes need to play harmonics on their instruments. In musical notation this is shown by placing a small ci
+    - also wrote a lot of music for plays. Many of his smaller works for one or two voices and instruments he called
+  vector:
+    - the most senior figure in military and government assignments in the Pakistan Government. He was born in Rampu
+    - Aberin is a municipality found in the province and autonomous community of Navarre, in Spain. Municipalities i
+    - memorial in Tallinn is removed by Estonian authorities, amidst tensions with Russia. 2009 - The United Kingdom
+
+QUERY: A war fought in Europe.
+  bm25:
+    - men fought on the other side of the war against crime in Sicily as prosecuting magistrates. They were both kil
+    - World War II. The complex became one of several Fuhrer Headquarters in parts of Eastern Europe. Organisation T
+    - were murdered the next day. Other Sonderkommandos fought back secretly. For example, at Auschwitz, in August 1
+  vector:
+    - seeds Luis Patino and Filip Peliwo exit at the first hurdle. All the remaining seeds made it to the quarterfin
+    - crematoria. Their writings were found after the war ended. For example, this note was found buried in the Ausc
+    - their daughters' names. After this, they continued to challenge the government. In the Crow language, the glot

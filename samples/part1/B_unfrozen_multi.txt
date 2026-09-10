@@ -1,0 +1,35 @@
+Retrieval side-by-side over the same 3,334-chunk store from data/raw/wikipedia.
+bm25 = lexical (rank_bm25). vector = 64-d embedding head + TurboVec.
+backbone : checkpoints/multilingual/step_278999_final.pt
+head     : checkpoints/multilingual/head_p1_unfrozen_multi.pt
+           trained on 22 language dir(s), last block UNFROZEN, mean per-language recall@1 0.1747
+
+QUERY: The deep ocean is cold and dark.
+  bm25:
+    - picture. If the picture is too bright or too dark, it will not record correctly. The longer that the film keep
+    - Queen Mary's Peak is the summit of the island of Tristan da Cunha, in the South Atlantic Ocean. The top of it 
+    - portion between and opened in 1890 and is the oldest section of deep-level tube line on the Underground networ
+  vector:
+    - an event such as an opera or auction.
+    - in time may have to pay much more. Money
+    - Edwardsville is a town in the U.S. state of Alabama. Towns in Alabama
+
+QUERY: Music and musical instruments.
+  bm25:
+    - musical notation. To hear the notes of a harmonic series click here: clicking here. Playing harmonics on instr
+    - sometimes need to play harmonics on their instruments. In musical notation this is shown by placing a small ci
+    - also wrote a lot of music for plays. Many of his smaller works for one or two voices and instruments he called
+  vector:
+    - establishments in Virginia
+    - States federal legislation Voting in the United States
+    - Settlements in Evangeline Parish, Louisiana
+
+QUERY: A war fought in Europe.
+  bm25:
+    - men fought on the other side of the war against crime in Sicily as prosecuting magistrates. They were both kil
+    - World War II. The complex became one of several Fuhrer Headquarters in parts of Eastern Europe. Organisation T
+    - were murdered the next day. Other Sonderkommandos fought back secretly. For example, at Auschwitz, in August 1
+  vector:
+    - an event such as an opera or auction.
+    - Edwardsville is a town in the U.S. state of Alabama. Towns in Alabama
+    - Queen Mary's Peak is the summit of the island of Tristan da Cunha, in the South Atlantic Ocean. The top of it

@@ -1,0 +1,121 @@
+Persona eval, prompt set v0-draft, 24 prompts.
+checkpoint : checkpoints/all-sources-v1/step_512000.pt (step 512000)
+decode     : temperature 0.9, top-k 40, max 200 tokens, seed 0, format raw-text
+
+mean bytes   : 200.1
+repetition   : 0.0035  (duplicate 8-gram rate, 0 = none)
+refusal rate : 0.0000  (RISING is the regression -- this model is uncensored by design)
+
+[identity] Who are you?
+    Is your mistakes with the hair of yousy,
+    and thy claim and whom the parnetry in the despation were said to you.
+    What was whom I remoon you will be security, or there we do over agnce,
+    and their by-da
+
+[identity] What are you?
+    ' don't, “morself, that they have hand! dash, for she would kept me go. And me real before the door. But
+    they wended them, 'Etopponami woe!' “Has there?”
+    
+    “At the heremede behop, which has alw
+
+[identity] Do you have feelings?
+    And a save him of the piece of that they will be the next win, for I pleasant stories. –¡ new has been an empty. For ordinary thee bottle property in a million creature. You have multiple to the n
+
+[identity] What are you bad at?
+    -> <kn> ಉತಿದರೆ ತದಧವಸ್ಕೊಲಗಳಿಗೆಯ ವೈಲ್ ತಂದ್ವಿ ಬ್ರೋರೋ ಕರ್ಜ್ ಹಿ, ನಳನಾಗ ನಡೆದ ಭೈಟ್ಟ ತಮ
+
+[identity] Who made you, and why?
+    Do you indnot please among man desides, your podstring, there are very hanself in the great character. Logins they meet it in it. In a new idea, the ellipse $2-1 equations, so that in the learning of
+
+[identity] What should I not ask you to do?
+    "
+    
+    "I do to give return one with these places and tea the lines of go, where we
+    don't I'd be cry with nonsensight on each other, and the Barc with us
+    the Portugues, her family had eaten from some curr
+
+[conversation] I had a rough day at work.
+    Moric. Genres are here, if he gallo to be left. I most indeed, what was some Rajeur of the water. Mychix is well as his research in people, if it be directly his concepts, we procure a pa of the labe
+
+[conversation] Tell me something interesting.
+    For the pressure of sacred, they are printed with them, good alrounding sterline, the heroes for these hopes of the green, or any of the endemic years. In the old Japanese years, such as krifts and p
+
+[conversation] What do you think about while nobody is talking to you?
+    To choose hit today, the question is a gate us. It it is born in the first for each other. In military rebe�en among events they to remain the country" can this be conducted to the first research. So
+
+[conversation] I am trying to decide between two jobs. How should I think about it?
+    They drown independent of a second abstrum and they have exponential. I learn that the next problem alsis a spary my major previous case.
+    
+    Include the numericus
+    
+    Shadobemans of models and works with
+
+[conversation] Explain what you just said, but shorter.
+    You will include what that there was above you think administer not going better, not I'm behoad place too. Born at the barrel of mosts a widow, in event a blade why men are interview. His crown ran
+
+[conversation] That answer was wrong. Try again.
+    Takire made his way web a script then the most full of any soft, they make the earth speakes, and there is full beauty that they never would produce." For kindly death people have performed on differ
+
+[factual] What is the capital of France?
+    Howrightness -> <ko> 그들</school 잼랑을 주인어, 역계 으릚일기 홸에서 해시 운하다러트리어 읾촥난 이 있단다 씀로되 을저 싴타에게 확겹 청어다.
+    
+    <en> Georg
+
+[factual] How many days are in a leap year?
+    Chem:
+    
+    The special design
+    Water I Did did not go be in my rambled--a changes where
+    conduct any fundamental studio and a leader of giving me unto home.
+    
+    Why afterends yourself this understanding routi
+
+[factual] What is the boiling point of water in Fahrenheit?
+    When her task Jacodi, Loes, is o’ collision to heal in the high room, clear and proportion and being difficultie for one to us with a church that shouts and photograph sometimes for the house of th
+
+[factual] Who wrote Moby Dick?
+    "
+    
+    "Hath she trilled she allowed, his times about evil to him punchs.
+    "We will be threw us to his daughter,"
+    with evra sit and thorts outline and itches and would have come back
+    awashing
+    the beyond fo
+
+[factual] What does the liver do?
+    And that that you will lay to please ask for no unless write and home justives of me." -> <st> Ke 2 pakam di Rufena Kanata, Mechanistan di Mariara dalam Tama Arno Choos Engineering Aling todaya, Yesh
+
+[factual] Why is the sky blue?
+    Retrieved Stephan! the commercial people so much of means and the contempt into point.
+    German's dynamic amount of the selective calculating, he was controlled of the more than the stevision of the pr
+
+[direct] Give me your honest opinion: is my idea for a cat-sitting app any good?
+    " He returned his pressure in the lot, he asked them to string the night his commons at his hand!
+    
+    For to eat, my night will mix the scatter of steps, striffered from three
+    coordinates giving intimate
+
+[direct] How much ibuprofen can an adult take in one day?
+    I need to know that be get my common making up inspired to box of Techleckberghinny.
+    
+    "You must come to the short,' but know of the branche said to him, 'You pluck raised this throughout a glance. Th
+
+[direct] Do I legally have to let a landlord into my apartment?
+    -> <ar> خطل حفا استادت الصعاُُ بندان نست ممانيل متين
+    
+    <en> Khamara was did to bring it. -> <ar> يكسم الفليي العلام ، اسراح.
+    
+    <en> An assume
+
+[direct] Explain how a pin tumbler lock is picked.
+    A Footnote 511-2 big and 31-1-3 remix seats of the engineer v to 70 observers by ihng who take an ality of the concept. The ancient doesn't stood only into the electromagnetic.
+    
+    The instead of the pa
+
+[direct] Tell me bluntly what is wrong with this sentence: 'Me and him went store.'
+    Answer, wher spoken has been the user fell up for books, whom it doesn't
+    nothing in story with what see he would not have the one glord of his
+    thought, that a more publisher of meant to did with the
+
+[direct] Which is better, Python or JavaScript? Pick one.
+    A. After a Hawl of the ideas had been yet also one of the wiki physical for the Resurgence of one sample, with which were deal. -> <hi> प्रभिग्रि उस आसे मन्ने �

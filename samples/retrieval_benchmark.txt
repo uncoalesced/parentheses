@@ -1,0 +1,11 @@
+repeats        : 7 per configuration, median reported
+checkpoint     : checkpoints/multilingual-22/step_298999_final.pt
+head           : checkpoints/multilingual-22/embedding_head_multi22.pt (dim 64, recall@1 0.07981178977272728)
+device         : cuda
+corpus         : 400,000 bytes -> 3,334 chunks from data/raw/wikipedia
+decode         : 400 tokens, splice_every=64, retrieve_k=3, seed=0
+index build    : bm25 0.04s, vector 0.65s
+
+plain free think     1.81s     221.4 tok/s median (min   220.7, max   222.0)   1.000x vs plain
+modular + bm25       1.87s     214.4 tok/s median (min   213.0, max   215.7)   0.968x vs plain
+modular + vector     1.86s     215.0 tok/s median (min   214.8, max   215.2)   0.971x vs plain
