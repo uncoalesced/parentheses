@@ -1,0 +1,62 @@
+"""
+Modular Rethink / RAG support (stub interface).
+
+From the plan: same free-thinking behavior as Rethink Mode, but with a
+user-supplied, decentralized data store loaded alongside the model (SSD,
+RAM, or VRAM depending on user choice) so the model can "rethink" using
+data it wasn't trained on. No embedding model bundled into Parentheses
+itself per the plan ("Parentheses shouldn't have embedding features") --
+default to a lexical/vectorless retrieval method (e.g. BM25) and only
+reconsider an embedding-based path if it turns out cheap enough. Intended
+to eventually live as a Peridot feature/integration per the plan note.
+
+Still a stub, but no longer a blocked one: both preconditions now hold -- a
+base model exists (checkpoints/step_161000.pt) and Rethink Mode's decode
+loop is built (features/rethink.py, on ParenthesesGPT.stream()). Modular
+Rethink is that loop plus a retrieval hook.
+
+Design sketch:
+    - IngestedStore: user points at files -> chunk -> index (BM25 first;
+      vector index as an optional swap-in later) -> store handle that can
+      live in RAM, VRAM-adjacent pinned memory, or memory-mapped from SSD
+    - at generate time, retrieve top-k chunks relevant to the running
+      "thought" context, splice into the prompt window each step (or every
+      N steps to control overhead), then continue decoding
+    - the plan's efficiency bar: retrieval + splice overhead must not tank
+      tokens/sec noticeably -- benchmark against plain RethinkSession
+      throughput once both exist, before considering this "done"
+"""
+
+from pathlib import Path
+
+
+class IngestedStore:
+    def __init__(self, backend: str = "bm25", location: str = "ram"):
+        assert backend in ("bm25", "vector"), "vector backend intentionally not default (see module docstring)"
+        assert location in ("ram", "vram", "ssd")
+        self.backend = backend
+        self.location = location
+        self.documents: list[str] = []
+
+    def ingest(self, paths: list[Path]):
+        raise NotImplementedError(
+            "Chunk + index files at `paths` into self.documents using the "
+            "chosen backend. Start with a simple BM25 index (e.g. `rank_bm25`)."
+        )
+
+    def retrieve(self, query: str, top_k: int = 5) -> list[str]:
+        raise NotImplementedError("Return the top_k most relevant chunks for `query`.")
+
+
+class ModularRethinkSession:
+    """Same as RethinkSession, plus a retrieval hook. See features/rethink.py."""
+
+    def __init__(self, model, store: IngestedStore):
+        self.model = model
+        self.store = store
+
+    def start(self, prompt: str):
+        raise NotImplementedError(
+            "Combine RethinkSession's generate loop with self.store.retrieve() "
+            "splicing, once both pieces individually exist."
+        )

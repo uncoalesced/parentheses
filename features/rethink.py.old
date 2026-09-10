@@ -1,0 +1,194 @@
+"""
+Rethink Mode.
+
+From the plan: given a non-question / "safe statement" prompt, the model keeps
+generating a live, viewable/exportable stream of "thinking" tokens about the
+input, using whatever's in its trained knowledge -- rather than stopping after
+a normal response.
+
+Purely a decoding-time layer, no architecture changes: ParenthesesGPT.stream()
+(KV-cached, so per-token cost stays at normal decoding cost -- the plan's
+efficiency requirement) plus a priming prefix, an incremental byte->text
+decoder, and an export.
+
+    python -m features.rethink --checkpoint checkpoints/step_161000.pt \
+        --prompt "The ocean is very deep."
+    python -m features.rethink --self-test    # no checkpoint needed
+
+A callback API isn't provided on purpose: start() is a generator, so a UI wants
+`for chunk in session.start(prompt): show(chunk)`, which is the callback.
+"""
+
+import argparse
+import codecs
+import json
+
+import torch
+
+from model import ParenthesesGPT
+
+# Tunable without touching code below. The model is byte-level and trained on
+# plain Wikipedia/Gutenberg prose, so this is a text-continuation cue, not a
+# system prompt it was instruction-tuned to obey.
+PRIMING = "{prompt}\n\nThinking about this: "
+
+# Cheap heuristic rather than the "small classifier head" the design sketch
+# offered as an alternative -- Rethink only has to catch the obvious question
+# shapes, and a classifier head would need its own labelled data and training.
+_QUESTION_STARTS = (
+    "who", "what", "when", "where", "why", "how", "which", "whose", "whom",
+    "is", "are", "was", "were", "am", "do", "does", "did", "can", "could",
+    "will", "would", "should", "shall", "may", "might", "has", "have", "had",
+)
+
+
+def is_question(prompt: str) -> bool:
+    """True if `prompt` looks like a question -- Rethink Mode is for statements."""
+    text = prompt.strip()
+    if not text:
+        return False
+    if text.endswith("?"):
+        return True
+    return text.split()[0].strip("\"'(").lower() in _QUESTION_STARTS
+
+
+class RethinkSession:
+    """A live, exportable stream of open-ended "thinking" about a statement."""
+
+    def __init__(self, model: ParenthesesGPT, temperature: float = 0.9, top_k: int = 40):
+        if model.cfg.vocab_size > 256:
+            raise ValueError(
+                "RethinkSession decodes model output as raw UTF-8 bytes; the "
+                f"vocab_size={model.cfg.vocab_size} presets need their trained BPE "
+                "tokenizer wired in here first (see data/tokenizer/)."
+            )
+        self.model = model
+        self.temperature = temperature
+        self.top_k = top_k
+        self.prompt: str | None = None
+        self.history: list[str] = []
+
+    def start(self, prompt: str, max_tokens: int | None = None, force: bool = False):
+        """Yield decoded text as the model thinks, appending it to self.history.
+
+        max_tokens=None keeps thinking until the consumer stops iterating.
+        """
+        if not force and is_question(prompt):
+            raise ValueError(
+                f"Rethink Mode is for statements, not questions: {prompt!r} "
+                "(pass force=True to rethink anyway)"
+            )
+        self.prompt = prompt
+        self.history = []
+        primed = PRIMING.format(prompt=prompt.strip())
+        device = next(self.model.parameters()).device
+        idx = torch.tensor([list(primed.encode("utf-8"))], dtype=torch.long, device=device)
+        # a multi-byte character can span several sampled tokens, so decode
+        # incrementally instead of one bytes() call per token
+        decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
+        for next_id in self.model.stream(idx, max_tokens, self.temperature, self.top_k):
+            chunk = decoder.decode(bytes([int(next_id)]))
+            if chunk:
+                self.history.append(chunk)
+                yield chunk
+
+    def run(self, prompt: str, max_tokens: int = 400, **kwargs) -> str:
+        """Non-streaming convenience: consume start() and return the whole text."""
+        return "".join(self.start(prompt, max_tokens, **kwargs))
+
+    def export(self, path: str):
+        """Write the session to `path` -- JSON if it ends in .json, else plain text."""
+        text = "".join(self.history)
+        with open(path, "w", encoding="utf-8") as f:
+            if path.endswith(".json"):
+                json.dump({"prompt": self.prompt, "thinking": text}, f, indent=2)
+            else:
+                f.write(f"{self.prompt}\n\n{text}\n")
+
+
+def main():
+    p = argparse.ArgumentParser(description="Rethink Mode: open-ended thinking about a statement.")
+    p.add_argument("--checkpoint", default="checkpoints/step_161000.pt")
+    p.add_argument("--prompt", default="The ocean is very deep.")
+    p.add_argument("--max-tokens", type=int, default=400, help="0 = think until Ctrl-C")
+    p.add_argument("--temperature", type=float, default=0.9)
+    p.add_argument("--top-k", type=int, default=40)
+    p.add_argument("--export", default=None, help="write the session here (.json or .txt)")
+    p.add_argument("--force", action="store_true", help="rethink even if the prompt looks like a question")
+    p.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
+    p.add_argument("--self-test", action="store_true",
+                   help="check the session logic on an untrained tiny model and exit")
+    args = p.parse_args()
+
+    if args.self_test:
+        _self_test()
+        return
+
+    # weights_only=False: train.py pickles the ModelConfig dataclass into the ckpt
+    ckpt = torch.load(args.checkpoint, map_location=args.device, weights_only=False)
+    model = ParenthesesGPT(ckpt["cfg"]).to(args.device)
+    model.load_state_dict(ckpt["model"])
+    model.eval()
+
+    session = RethinkSession(model, args.temperature, args.top_k)
+    print(f"[rethink] {args.checkpoint} (step {ckpt['step']}) on {args.device}")
+    print(f"[rethink] prompt: {args.prompt}\n")
+    try:
+        for chunk in session.start(args.prompt, args.max_tokens or None, force=args.force):
+            print(chunk, end="", flush=True)
+    except KeyboardInterrupt:
+        pass
+    print()
+    if args.export:
+        session.export(args.export)
+        print(f"[rethink] exported to {args.export}")
+
+
+def _self_test():
+    import os
+    import tempfile
+
+    from model import PRESETS
+
+    torch.manual_seed(0)
+    assert is_question("Why is the sky blue?")
+    assert is_question("is this a question")
+    assert is_question('"Would you look at that')
+    assert not is_question("The sky is blue.")
+    assert not is_question("")
+
+    # smallest *byte-level* preset: tiny-smoke's vocab_size=64 can't even
+    # embed an ASCII prompt, and Rethink feeds raw UTF-8 bytes in
+    model = ParenthesesGPT(PRESETS["parentheses-0.9-100k"]).eval()
+    session = RethinkSession(model)
+
+    try:
+        list(session.start("Why?"))
+        raise AssertionError("questions should be rejected")
+    except ValueError:
+        pass
+    assert list(session.start("Why?", max_tokens=3, force=True))  # ...unless forced
+
+    text = session.run("A statement.", max_tokens=20)
+    assert text == "".join(session.history) and text, repr(text)
+
+    # open-ended stream: no max_tokens, the consumer decides when to stop
+    seen = 0
+    for _ in session.start("Another statement."):
+        seen += 1
+        if seen == 5:
+            break
+    assert seen == 5
+
+    with tempfile.TemporaryDirectory() as tmp:
+        session.run("A third statement.", max_tokens=10)
+        txt, js = os.path.join(tmp, "s.txt"), os.path.join(tmp, "s.json")
+        session.export(txt)
+        session.export(js)
+        assert "A third statement." in open(txt, encoding="utf-8").read()
+        assert json.load(open(js, encoding="utf-8"))["prompt"] == "A third statement."
+    print("[self-test] rethink ok")
+
+
+if __name__ == "__main__":
+    main()
