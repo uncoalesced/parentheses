@@ -1,0 +1,10 @@
+torch>=2.2
+numpy
+datasets          # for pulling wikimedia/wikipedia + gutenberg mirrors
+tokenizers        # BPE tokenizer training
+rank_bm25         # lexical retrieval for Modular Free Think -- the default backend
+turbovec          # optional: IngestedStore(backend="vector") only; imported lazily
+bitsandbytes      # optional 8-bit optimizer, needed to fit 300M+ on 8GB
+tqdm
+onnx              # scripts/export_embedder_onnx.py
+onnxruntime       # scripts/dedup_raw_sourced.py -- CPU/DirectML/VitisAI providers
