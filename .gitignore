@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+data/raw/
+data/processed*/
+checkpoints/
+*.bin
+.venv/
+venv/
+conversations/
+exports/
+**/.agents/
+
+documentation.md
+documentation-old.md
