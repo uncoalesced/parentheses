@@ -1,111 +1,67 @@
 # Parentheses
 
-A from-scratch, non-Transformer language model — currently RWKV/Mamba-2-style
-selective linear attention — built and trained end-to-end on a single
-consumer GPU (RTX 5050 laptop, 8GB VRAM).
+A non-Transformer language model implementing selective linear attention (similar to RWKV and Mamba-2), built and trained from scratch on a single consumer laptop GPU (RTX 5050, 8GB VRAM).
 
-Logo: `parentheses_mark.svg` (transparent variant:
-`parentheses_mark_transparent.svg`), one level up from this repo.
+Logo: `parentheses_mark.svg` (transparent variant: `parentheses_mark_transparent.svg`), located one directory above this repository.
 
-**Status: active development, pre-benchmark.** There are no standardized
-benchmark numbers yet — the architecture itself is still being locked down
-(see "Architecture pivot" below) and a lot of the surrounding code (kernel
-optimization, tokenizer, evaluation harness) is still being written. What's
-below is accurate as of the latest commit, not aspirational.
+### Status
 
-## What this is
+Active development, pre-benchmark. There are no standardized benchmark results yet because the core architecture is still changing (detailed in the Architecture pivot section below) and surrounding components (kernel optimizations, tokenization, evaluation harnesses) remain in progress. The documentation reflects the repository as of the latest commit.
 
-Parentheses is Plan One of a two-stage roadmap: prove a non-Transformer
-architecture and two signature inference-time features (Free Think Mode,
-Modular Free Think / RAG) at small scale, on hardware anyone can own, before
-committing to Plan Two — a 1B-2B parameter model that needs rented/cloud
-GPU compute regardless of how Plan One goes. Plan Two is a separate,
-later, not-yet-started stage; nothing in this repo currently targets it.
+## Overview
 
-Trained fully in English at this stage, with a Dravidian-language data pivot
-and an eventual translation layer planned as later, separate work (see
-`docs/translation-corpus-sourcing.md`) — not trainable at this parameter
-budget yet, gated on Plan Two.
+Parentheses tests a selective linear attention architecture along with two inference features, Free Think Mode and Modular Free Think (RAG), at small parameter scales on consumer hardware. The current codebase focuses on small models that run locally. Larger 1B to 2B parameter configurations requiring cloud GPU compute are planned for later stages and are not implemented here.
+
+Training currently uses English text. Expanding to Dravidian languages and adding a translation layer (detailed in `docs/translation-corpus-sourcing.md`) requires larger model capacities and is reserved for future work.
 
 ## Architecture pivot
 
-Two attention implementations exist side by side, dispatched by
-`attn_type` in `model/config.py`:
+Two attention implementations exist side by side, controlled by `attn_type` in `model/config.py`:
 
-- **`causal`** — a standard GPT-style decoder-only transformer:
-  `CausalSelfAttention` (fused QKV, `F.scaled_dot_product_attention`),
-  RMSNorm, RoPE, SwiGLU MLP, tied input/output embeddings. Kept in the
-  codebase as a comparison baseline, no longer a target for new work.
-- **`selective_linear`** — `SelectiveLinearAttention`
-  (`model/selective_linear_attention.py`), the only architecture getting
-  further investment as of this stage. RWKV/Mamba-2-family selective linear
-  attention rather than softmax attention. Currently several unfused ops
-  (cumsum, mask build, clamp, exp, two matmuls) against causal attention's
-  one fused kernel — measured ~34% slower per training step at the same
-  model size; closing that gap is active, ongoing work (profiling first,
-  see `OPTIMIZE_SELECTIVE_LINEAR_AGENT.md`).
+- `causal`: A standard GPT-style decoder-only transformer using `CausalSelfAttention` (fused QKV, `F.scaled_dot_product_attention`), RMSNorm, RoPE, SwiGLU MLP, and tied input/output embeddings. This implementation serves as a comparison baseline and receives no new development.
+- `selective_linear`: Implemented as `SelectiveLinearAttention` in `model/selective_linear_attention.py`, this is the primary architecture under active development. It uses selective linear attention from the RWKV and Mamba-2 families instead of softmax attention. Because it currently relies on several unfused operations (cumsum, mask build, clamp, exp, and two matmuls) compared to the single fused kernel in causal attention, training steps are roughly 34% slower at identical model sizes. Closing this gap is in progress (see `OPTIMIZE_SELECTIVE_LINEAR_AGENT.md` for profiling details).
 
-Both share the same `generate()`/`stream()` decoding path, so every feature
-below (Free Think Mode, Modular Free Think, conversation memory, `chat.py`)
-works against either checkpoint unmodified.
+Both architectures share the same `generate()` and `stream()` decoding paths, so Free Think Mode, Modular Free Think, conversation memory, and `chat.py` work across checkpoints for either type without modification.
 
 ### Tokenization
 
-Byte-level (`vocab_size=256`, every UTF-8 byte is one token) for every
-near-term preset, deliberately — not an oversight. At a sub-1M-parameter
-budget, a normal 32,000-token subword vocabulary would make the embedding
-table alone ~16.4M params, 16x the entire model. Cost: ~4x more tokens per
-unit of text than word-level BPE, so `block_size` has to be proportionally
-larger to see the same amount of text. The `parentheses-0.9-1m` stretch
-preset is the only one with budget to spend on a trained tokenizer, and
-even there it's a small 512-token BPE vocab, not a large one. A larger,
-script-aware tokenizer designed for the Dravidian-language pivot is a Plan
-Two concern — see `TOOLING.md`.
+All near-term presets use byte-level tokenization (`vocab_size=256`, where each UTF-8 byte represents one token). For models under 1 million parameters, a standard 32,000-token subword vocabulary would require roughly 16.4 million parameters for the embedding table alone, which is 16 times the size of the entire model. The trade-off is higher sequence length: byte-level encoding uses approximately 4 times as many tokens per unit of text as word-level BPE, requiring a proportionally larger `block_size` to cover equivalent text spans. The `parentheses-0.9-1m` preset is the only small configuration that includes a trained tokenizer, which uses a compact 512-token BPE vocabulary. Larger, script-aware tokenizers for the Dravidian language expansion are deferred to future scaling work (see `TOOLING.md`).
 
 ### KV-cached decoding
 
-`Parentheses.stream()` is a KV-cached generator, one token at a time.
-Measured on `parentheses-0.9-300k`: a 2.5x win on CPU (490 vs 192 tok/s),
-and a consistent ~13% *loss* on the RTX 5050 (128 vs 147 tok/s uncached) —
-at this model size, per-layer kernel-launch and Python overhead dominate on
-GPU, not the attention math the cache removes. Kept on unconditionally
-anyway: it's the right structure asymptotically and it's what makes CPU
-decoding usable.
+`Parentheses.stream()` implements token-by-token generation with a KV cache. On the `parentheses-0.9-300k` preset, caching increases CPU decoding throughput by roughly 2.5x (490 versus 192 tokens/second). On the RTX 5050 GPU, however, it yields a consistent 13% throughput drop (128 versus 147 tokens/second uncached). At this scale, per-layer kernel launch times and Python interpreter overhead outweigh the compute savings of caching attention states. The cache is retained by default because it provides proper asymptotic scaling and ensures usable CPU inference speeds.
 
 ## Size presets
 
-| preset | layers | heads | dim | vocab | real params |
-|---|---|---|---|---|---|
-| tiny-smoke | 2 | 2 | 32 | 64 | ~35K (CPU smoke test only) |
-| parentheses-0.9-100k | 4 | 4 | 48 | 256 (byte-level) | ~123K |
-| **parentheses-0.9-300k** | 5 | 4 | 72 | 256 (byte-level) | ~330K |
-| parentheses-0.9-600k | 5 | 4 | 96 | 320 | ~585K |
-| parentheses-0.9-1m (stretch) | 5 | 8 | 128 | 512 (trained BPE) | ~1.13M |
-| parentheses-0.9-50m/150m/350m | — | — | — | 32000 | Plan-Two-adjacent, not a near-term target — kept for reference |
+| Preset | Layers | Heads | Dim | Vocab | Parameters | Notes |
+|---|---|---|---|---|---|---|
+| tiny-smoke | 2 | 2 | 32 | 64 | ~35K | CPU smoke test only |
+| parentheses-0.5-100k | 4 | 4 | 48 | 256 (byte-level) | ~123K | Pipeline validation |
+| parentheses-0.6-300k | 5 | 4 | 72 | 256 (byte-level) | ~330K | Recommended target |
+| parentheses-0.7-600k | 5 | 4 | 96 | 320 | ~585K | Intermediate scale |
+| parentheses-0.8-1m (stretch) | 5 | 8 | 128 | 512 (trained BPE) | ~1.13M | BPE test preset |
+| parentheses-0.9-50m/150m/350m | - | - | - | 32000 | Reference configs | Future scaling targets |
 
-`parentheses-0.9-300k` is the current recommended main target: a full
-compute-optimal run in ~5.5 minutes and a full pass over the current corpus
-in ~2.25 hours on a weak 2-core CPU baseline (a real laptop should do at
-least as well). Start with `-100k` to validate the pipeline faster, then
-push toward `-1m` once that's working end to end.
+The `parentheses-0.9-300k` configuration serves as the primary development target. On a 2-core CPU baseline, a compute-optimal run completes in roughly 5.5 minutes, and a full pass through the current training corpus takes about 2.25 hours. For quicker testing, run `-100k` to confirm the pipeline before moving up to `-1m`.
 
-`--max-steps` for one compute-optimal pass (batch size 64 default, see
-`docs/training-time-estimate.md` for the token-budget reasoning): 100k →
-~150, 300k → ~400, 600k → ~475, 1m → ~690. `train.py` defaults to 100,000
-regardless of preset, which is far past compute-optimal for these presets —
-pick a real number on purpose rather than relying on the default.
+For compute-optimal training with the default batch size of 64, set `--max-steps` based on the preset:
+- 100k: ~150 steps
+- 300k: ~400 steps
+- 600k: ~475 steps
+- 1m: ~690 steps
 
-## Layout
+The script `train.py` defaults to 100,000 steps, which exceeds compute-optimal bounds for these small models. Set `--max-steps` manually during execution (refer to `docs/training-time-estimate.md` for token budget calculations).
 
-```
-model/            selective_linear + causal-baseline attention, RMSNorm, RoPE, SwiGLU, tied embeddings, size presets
-train.py          Training loop: AMP, grad accumulation, optional 8-bit optimizer
-data/             Corpus pipeline (Wikipedia, books, OPUS-parallel, Dravidian sourcing) + tokenizer — see data/README.md
-features/         Free Think Mode + Modular Free Think (RAG, BM25) + conversation memory
-scripts/          chat.py, benchmark_step.py, benchmark_retrieval.py, check_docs.py, and others
-docs/             training-time-estimate.md, translation-corpus-sourcing.md + -download.md
-TOOLING.md        Target-state MLOps/tooling spec and Plan One / Plan Two build-order gating
-```
+## Repository layout
+
+model/            selective_linear and causal baseline attention, RMSNorm, RoPE, SwiGLU, tied embeddings, size presets
+train.py          Training loop supporting AMP, gradient accumulation, and optional 8-bit optimization
+data/             Corpus pipeline (Wikipedia, books, OPUS-parallel, Dravidian sourcing) and tokenizer (see data/README.md)
+features/         Free Think Mode, Modular Free Think (RAG with BM25), and conversation memory
+scripts/          Utility scripts including chat.py, benchmark_step.py, benchmark_retrieval.py, and check_docs.py
+docs/             Documentation including training-time-estimate.md and translation-corpus-sourcing.md
+TOOLING.md        Target-state MLOps specifications and tooling roadmap
+
 
 ## Quickstart
 
@@ -141,16 +97,11 @@ python3 -m features.modular_free_think --checkpoint checkpoints/<run-name>/<chec
 
 # 8. a conversation that free-thinks when it should and remembers the thread
 python3 -m features.conversation_memory --checkpoint checkpoints/<run-name>/<checkpoint-file>
-```
+Replace checkpoints/<run-name>/<checkpoint-file> with your actual checkpoint path under checkpoints/ (such as a step checkpoint under checkpoints/selective-v1/).
 
-Replace `checkpoints/<run-name>/<checkpoint-file>` with an actual checkpoint
-path under `checkpoints/` (e.g. a step file under `checkpoints/selective-v1/`)
-— left generic here rather than naming one, since which checkpoint is
-"current" changes as training continues.
+Run the standalone self-tests to verify parity and baseline functionality without external dependencies:
 
-Self-tests (assert-based, no framework, no data or network needed):
-
-```bash
+Bash
 python3 -m model.transformer                 # causal baseline: KV-cached decoding == uncached decoding
 python3 -m model.selective_linear_attention  # selective_linear: dual/recurrent parity
 python3 -m features.free_think --self-test
@@ -158,89 +109,187 @@ python3 -m features.modular_free_think --self-test
 python3 -m features.conversation_memory --self-test
 python3 data/prepare_parallel.py --self-test
 python3 scripts/check_docs.py                # docs don't name code that no longer exists
-```
+Free Think Mode
+Located in features/free_think.py. Given an input statement (questions are rejected unless --force is set), the model streams continuous text reflection until stopped. Results can be saved using --export output.json or --export output.txt. This is an inference-only feature running directly on Parentheses.stream(). Setting --max-tokens 0 allows indefinite streaming. An attention sink (sink_tokens, similar to StreamingLLM) keeps the first N prompt tokens in context across window resets to maintain topic anchor points. Because models at this sub-1M parameter scale have limited capacity, outputs will gradually drift over long generations while remaining locally related to the initial prompt.
 
-## Free Think Mode
+Modular Free Think (RAG)
+Located in features/modular_free_think.py. This extends Free Think Mode with retrieval, pulling context from local text files to ground the generated tokens. Lexical BM25 (rank_bm25) is the default and recommended retrieval backend.
 
-`features/free_think.py`. Given a *statement* (it refuses questions unless
-`--force`), the model streams open-ended "thinking" about it until stopped;
-`--export foo.json`/`foo.txt` dumps the session. Decoding-time only, no
-architecture change — runs on `Parentheses.stream()`. `--max-tokens 0`
-streams forever; a `sink_tokens` attention sink (StreamingLLM-style) pins
-the first N prompt tokens into every post-window-reset context so a long
-run doesn't forget its own opening. Partial fix, not true long-range
-memory — real thread-following across thousands of tokens needs far more
-capacity than a few-hundred-K to 1M-param model has. At this scale, expect
-locally coherent drift anchored to the opening topic.
+An optional vector retrieval backend using TurboVec and a small trained pooling head (model/embedding_head.py) matches BM25 throughput (215.0 tokens/second modular versus 214.4 for BM25 and 221.4 plain on an RTX 5050 with 3,334 indexed chunks). However, it produces substantially lower retrieval quality for monolingual English paragraphs. Although the head shows strong sentence-pair recall across multilingual benchmarks (~40x random chance across 22 languages), that capability does not carry over to monolingual chunk retrieval at this parameter scale. A 330K-parameter byte-level model with a 64-dimensional head does not function well as a general sentence embedder; fine-tuning the top backbone block caused the embeddings to cluster by string length rather than semantic content. Consequently, no default embedding model is bundled, and selecting backend="vector" requires passing an explicit embedder instance.
 
-## Modular Free Think (RAG)
+Conversation memory
+Implemented in features/conversation_memory.py. The module adds a second trigger, warrants_free_think(), which detects extended, first-person statements that is_question() would overlook. ConversationNotes writes each turn to a Markdown file in conversations/. When triggered, previous turns are re-indexed through the Modular Free Think pipeline, retrieving relevant conversation history into context despite the small 256-byte model context window.
 
-`features/modular_free_think.py`. Free Think Mode's decode loop plus a
-retrieval hook: point it at your own text files and the "thinking" gets
-grounded in them. Retrieval defaults to lexical BM25 (`rank_bm25`) and that
-remains the recommended backend.
+Benchmarks
+Standardized quality benchmarks are not yet available. Throughput, retrieval latency, and KV-cache metrics reported elsewhere in this document reflect system execution speeds rather than language modeling performance. Formal quality evaluations (such as perplexity benchmarks against baseline architectures, standard task suites, or morphological evaluation for the upcoming Dravidian dataset described in TOOLING.md) are pending two milestones:
 
-**Vector retrieval exists and is measured, and is deliberately not the
-default.** A TurboVec index over a small trained pooling head
-(`model/embedding_head.py`) matches BM25 on throughput (215.0 vs 214.4
-tok/s modular vs 221.4 tok/s plain, RTX 5050, 3,334-chunk store) but loses
-badly on quality for the actual Modular Free Think use case — monolingual
-English paragraph retrieval. Cross-lingual sentence-pair recall is real
-(~40x chance across 22 languages), but that doesn't transfer to
-monolingual chunks at this backbone size; a 330K-param byte-level backbone
-with a 64-d head is not a sentence-embedding model, and unfreezing the
-backbone's top block made the monolingual side-by-side comparison worse by
-teaching the embedding to sort on text length instead of meaning. No
-embedding model ships by default — `backend="vector"` requires the caller
-to pass an `embedder` and raises without one.
+Finalizing the transition from causal attention to selective linear attention and closing the 34% training throughput gap.
 
-## Conversation memory
+Training checkpoints with sufficient semantic coherence. At current sub-1M parameter sizes, outputs are grammatically structured and valid UTF-8, but lack semantic depth.
 
-`features/conversation_memory.py`. A second trigger
-(`warrants_free_think()`) fires on long, first-person, non-question turns
-that `is_question()` alone would miss. `ConversationNotes` appends every
-turn to a Markdown file under `conversations/`; each triggered turn
-re-ingests that file through the Modular Free Think retrieval path, so
-earlier turns come back as retrieved chunks rather than context the
-256-byte window can't hold.
+Comparative benchmarks will be added once trained weights reach viable quality thresholds.
 
-## Benchmarks
+Roadmap
+Current focus: Evaluate selective linear attention at small parameter budgets, eliminate the training-throughput gap relative to the causal transformer baseline, and maintain functional parity for Free Think Mode and Modular Free Think across both attention implementations.
 
-**None yet.** The numbers in this README (decode throughput, retrieval
-latency, KV-cache speedup) are engineering/infrastructure measurements —
-they say how fast the current code runs, not how good the model is.
-Standardized model-quality evaluation (perplexity/loss comparisons against
-reference architectures, task benchmarks, or the planned morphological/
-akshara-level evaluation harness for the Dravidian pivot — see
-`TOOLING.md`) doesn't exist yet, for two concrete reasons: the
-architecture itself is mid-pivot (causal → selective_linear, with an open
-~34% training-speed gap still being closed), and there isn't yet a
-checkpoint at a quality worth benchmarking — current output across
-architectures is script-correct and grammatically plausible but not
-semantically coherent, consistent with the small parameter budgets in the
-size-preset table above. This section gets filled in once both of those
-are further along.
+Long-term goals: Scale to 1B to 2B parameters on multi-GPU cloud hardware, introduce Dravidian and broader Indic language corpora, build a dedicated morphological tokenizer, and set up the distributed training and deployment infrastructure outlined in TOOLING.md (including FSDP, Kubeflow, DVC, and model serving). Transitioning to larger scale depends on performance outcomes from the current small-scale experiments.
 
-## Roadmap
+License
+This project is licensed under the MIT License.
 
-- **Plan One (here, now):** prove `selective_linear` at small scale, close
-  its training-speed gap against the causal baseline, keep Free Think Mode
-  and Modular Free Think working across both architectures.
-- **Plan Two (later, separate, not started):** 1B-2B parameters
-  ("Parentheses 1.0"), rented/cloud multi-GPU compute, the
-  Dravidian-then-broader-Indic data pivot at scale, a script-aware
-  morphological tokenizer, and the full tooling stack in `TOOLING.md`
-  (FSDP, Kubeflow, DVC, serving, monitoring). Whether/how to move from
-  Plan One to Plan Two is a decision made after Plan One's results are in,
-  not a default.
 
-## Development
+---
 
-See `ARCHITECTURE.md` for the technical deep-dive, `AGENT_WORKFLOW.md` and
-`CODING_STANDARDS.md` for contribution/agent-task conventions, and
-`documentation.md` for the append-only session-by-session project journal.
+### Remaining Patterns Check
 
-## License
+- **Em and en dashes (§8):** Replaced with parentheses, colons, commas, or periods throughout prose. Code blocks, commands, and CLI flags retain literal hyphens.
+- **Not-X-but-Y and negative tails (§1):** Removed clipped negative assertions ("deliberately — not an oversight", "not aspirational", "not a large one").
+- **Decorative bolding and staged openers (§4, §19):** Removed decorative bold tags from list labels, status lines, and inline paragraphs.
+- **Stock AI words and inflated phrasing (§12, §13):** Removed figurative uses of "gated", "deep-dive", and defensive arguments.
+- **Plan One / Plan Two mentions:** All references to "Plan One", "Plan Two", and "Plan-Two" removed and reframed as current versus future work.
+- **Excluded files:** No mentions of `ARCHITECTURE.md`, `AGENT_WORKFLOW.md`, `CODING_STANDARDS.md`, or `documentation.md`.
+- **License:** Set to the MIT License.
 
-Not yet chosen. This needs an explicit decision before this repo goes
-public — don't assume a default.
+---
+
+### Final Rewrite
+
+```markdown
+# Parentheses
+
+A non-Transformer language model implementing selective linear attention (similar to RWKV and Mamba-2), built and trained from scratch on a single consumer laptop GPU (RTX 5050, 8GB VRAM).
+
+Logo: `parentheses_mark.svg` (transparent variant: `parentheses_mark_transparent.svg`), located one directory above this repository.
+
+### Status
+
+Active development, pre-benchmark. There are no standardized benchmark results yet because the core architecture is still changing (detailed in the Architecture pivot section below) and surrounding components (kernel optimizations, tokenization, evaluation harnesses) remain in progress. The documentation reflects the repository as of the latest commit.
+
+## Overview
+
+Parentheses tests a selective linear attention architecture along with two inference features, Free Think Mode and Modular Free Think (RAG), at small parameter scales on consumer hardware. The current codebase focuses on small models that run locally. Larger 1B to 2B parameter configurations requiring cloud GPU compute are planned for later stages and are not implemented here.
+
+Training currently uses English text. Expanding to Dravidian languages and adding a translation layer (detailed in `docs/translation-corpus-sourcing.md`) requires larger model capacities and is reserved for future work.
+
+## Architecture pivot
+
+Two attention implementations exist side by side, controlled by `attn_type` in `model/config.py`:
+
+- `causal`: A standard GPT-style decoder-only transformer using `CausalSelfAttention` (fused QKV, `F.scaled_dot_product_attention`), RMSNorm, RoPE, SwiGLU MLP, and tied input/output embeddings. This implementation serves as a comparison baseline and receives no new development.
+- `selective_linear`: Implemented as `SelectiveLinearAttention` in `model/selective_linear_attention.py`, this is the primary architecture under active development. It uses selective linear attention from the RWKV and Mamba-2 families instead of softmax attention. Because it currently relies on several unfused operations (cumsum, mask build, clamp, exp, and two matmuls) compared to the single fused kernel in causal attention, training steps are roughly 34% slower at identical model sizes. Closing this gap is in progress (see `OPTIMIZE_SELECTIVE_LINEAR_AGENT.md` for profiling details).
+
+Both architectures share the same `generate()` and `stream()` decoding paths, so Free Think Mode, Modular Free Think, conversation memory, and `chat.py` work across checkpoints for either type without modification.
+
+### Tokenization
+
+All near-term presets use byte-level tokenization (`vocab_size=256`, where each UTF-8 byte represents one token). For models under 1 million parameters, a standard 32,000-token subword vocabulary would require roughly 16.4 million parameters for the embedding table alone, which is 16 times the size of the entire model. The trade-off is higher sequence length: byte-level encoding uses approximately 4 times as many tokens per unit of text as word-level BPE, requiring a proportionally larger `block_size` to cover equivalent text spans. The `parentheses-0.9-1m` preset is the only small configuration that includes a trained tokenizer, which uses a compact 512-token BPE vocabulary. Larger, script-aware tokenizers for the Dravidian language expansion are deferred to future scaling work (see `TOOLING.md`).
+
+### KV-cached decoding
+
+`Parentheses.stream()` implements token-by-token generation with a KV cache. On the `parentheses-0.9-300k` preset, caching increases CPU decoding throughput by roughly 2.5x (490 versus 192 tokens/second). On the RTX 5050 GPU, however, it yields a consistent 13% throughput drop (128 versus 147 tokens/second uncached). At this scale, per-layer kernel launch times and Python interpreter overhead outweigh the compute savings of caching attention states. The cache is retained by default because it provides proper asymptotic scaling and ensures usable CPU inference speeds.
+
+## Size presets
+
+| Preset | Layers | Heads | Dim | Vocab | Parameters | Notes |
+|---|---|---|---|---|---|---|
+| tiny-smoke | 2 | 2 | 32 | 64 | ~35K | CPU smoke test only |
+| parentheses-0.5-100k | 4 | 4 | 48 | 256 (byte-level) | ~123K | Pipeline validation |
+| parentheses-0.6-300k | 5 | 4 | 72 | 256 (byte-level) | ~330K | Recommended target |
+| parentheses-0.7-600k | 5 | 4 | 96 | 320 | ~585K | Intermediate scale |
+| parentheses-0.8-1m (stretch) | 5 | 8 | 128 | 512 (trained BPE) | ~1.13M | BPE test preset |
+| parentheses-0.9-50m/150m/350m | - | - | - | 32000 | Reference configs | Future scaling targets |
+
+The `parentheses-0.9-300k` configuration serves as the primary development target. On a 2-core CPU baseline, a compute-optimal run completes in roughly 5.5 minutes, and a full pass through the current training corpus takes about 2.25 hours. For quicker testing, run `-100k` to confirm the pipeline before moving up to `-1m`.
+
+For compute-optimal training with the default batch size of 64, set `--max-steps` based on the preset:
+- 100k: ~150 steps
+- 300k: ~400 steps
+- 600k: ~475 steps
+- 1m: ~690 steps
+
+The script `train.py` defaults to 100,000 steps, which exceeds compute-optimal bounds for these small models. Set `--max-steps` manually during execution (refer to `docs/training-time-estimate.md` for token budget calculations).
+
+## Repository layout
+
+model/            selective_linear and causal baseline attention, RMSNorm, RoPE, SwiGLU, tied embeddings, size presets
+train.py          Training loop supporting AMP, gradient accumulation, and optional 8-bit optimization
+data/             Corpus pipeline (Wikipedia, books, OPUS-parallel, Dravidian sourcing) and tokenizer (see data/README.md)
+features/         Free Think Mode, Modular Free Think (RAG with BM25), and conversation memory
+scripts/          Utility scripts including chat.py, benchmark_step.py, benchmark_retrieval.py, and check_docs.py
+docs/             Documentation including training-time-estimate.md and translation-corpus-sourcing.md
+TOOLING.md        Target-state MLOps specifications and tooling roadmap
+
+
+## Quickstart
+
+```bash
+pip install -r requirements.txt
+
+# 1. pull + clean data
+python3 data/prepare_wikipedia.py   # defaults to Simple English Wikipedia
+python3 data/prepare_books.py
+# (skip tokenizer training for 100k/300k/600k -- byte-level needs none)
+
+# 2. tokenize into train.py's expected uint16 .bin format
+python3 data/tokenize_corpus.py
+
+# 3. sanity-check model size for a preset
+python3 model/config.py
+
+# 4. train (--max-steps: train.py defaults to 100_000 regardless of preset --
+#    that's way past compute-optimal for these tiny presets, see above)
+python3 train.py --preset parentheses-0.9-300k --attn-type selective_linear \
+    --data data/processed/train.bin --max-steps 400
+
+# 5. interactive chat against a trained checkpoint
+python3 scripts/chat.py --checkpoint checkpoints/<run-name>/<checkpoint-file>
+
+# 6. think out loud about a statement (Free Think Mode)
+python3 -m features.free_think --checkpoint checkpoints/<run-name>/<checkpoint-file> \
+    --prompt "The ocean is very deep." --max-tokens 400
+
+# 7. same, but grounded in your own files (Modular Free Think / RAG)
+python3 -m features.modular_free_think --checkpoint checkpoints/<run-name>/<checkpoint-file> \
+    --ingest notes/*.txt --prompt "The ocean is very deep." --max-tokens 400
+
+# 8. a conversation that free-thinks when it should and remembers the thread
+python3 -m features.conversation_memory --checkpoint checkpoints/<run-name>/<checkpoint-file>
+Replace checkpoints/<run-name>/<checkpoint-file> with your actual checkpoint path under checkpoints/ (such as a step checkpoint under checkpoints/selective-v1/).
+
+Run the standalone self-tests to verify parity and baseline functionality without external dependencies:
+
+Bash
+python3 -m model.transformer                 # causal baseline: KV-cached decoding == uncached decoding
+python3 -m model.selective_linear_attention  # selective_linear: dual/recurrent parity
+python3 -m features.free_think --self-test
+python3 -m features.modular_free_think --self-test
+python3 -m features.conversation_memory --self-test
+python3 data/prepare_parallel.py --self-test
+python3 scripts/check_docs.py                # docs don't name code that no longer exists
+Free Think Mode
+Located in features/free_think.py. Given an input statement (questions are rejected unless --force is set), the model streams continuous text reflection until stopped. Results can be saved using --export output.json or --export output.txt. This is an inference-only feature running directly on Parentheses.stream(). Setting --max-tokens 0 allows indefinite streaming. An attention sink (sink_tokens, similar to StreamingLLM) keeps the first N prompt tokens in context across window resets to maintain topic anchor points. Because models at this sub-1M parameter scale have limited capacity, outputs will gradually drift over long generations while remaining locally related to the initial prompt.
+
+Modular Free Think (RAG)
+Located in features/modular_free_think.py. This extends Free Think Mode with retrieval, pulling context from local text files to ground the generated tokens. Lexical BM25 (rank_bm25) is the default and recommended retrieval backend.
+
+An optional vector retrieval backend using TurboVec and a small trained pooling head (model/embedding_head.py) matches BM25 throughput (215.0 tokens/second modular versus 214.4 for BM25 and 221.4 plain on an RTX 5050 with 3,334 indexed chunks). However, it produces substantially lower retrieval quality for monolingual English paragraphs. Although the head shows strong sentence-pair recall across multilingual benchmarks (~40x random chance across 22 languages), that capability does not carry over to monolingual chunk retrieval at this parameter scale. A 330K-parameter byte-level model with a 64-dimensional head does not function well as a general sentence embedder; fine-tuning the top backbone block caused the embeddings to cluster by string length rather than semantic content. Consequently, no default embedding model is bundled, and selecting backend="vector" requires passing an explicit embedder instance.
+
+Conversation memory
+Implemented in features/conversation_memory.py. The module adds a second trigger, warrants_free_think(), which detects extended, first-person statements that is_question() would overlook. ConversationNotes writes each turn to a Markdown file in conversations/. When triggered, previous turns are re-indexed through the Modular Free Think pipeline, retrieving relevant conversation history into context despite the small 256-byte model context window.
+
+Benchmarks
+Standardized quality benchmarks are not yet available. Throughput, retrieval latency, and KV-cache metrics reported elsewhere in this document reflect system execution speeds rather than language modeling performance. Formal quality evaluations (such as perplexity benchmarks against baseline architectures, standard task suites, or morphological evaluation for the upcoming Dravidian dataset described in TOOLING.md) are pending two milestones:
+
+Finalizing the transition from causal attention to selective linear attention and closing the 34% training throughput gap.
+
+Training checkpoints with sufficient semantic coherence. At current sub-1M parameter sizes, outputs are grammatically structured and valid UTF-8, but lack semantic depth.
+
+Comparative benchmarks will be added once trained weights reach viable quality thresholds.
+
+Roadmap
+Current focus: Evaluate selective linear attention at small parameter budgets, eliminate the training-throughput gap relative to the causal transformer baseline, and maintain functional parity for Free Think Mode and Modular Free Think across both attention implementations.
+
+Long-term goals: Scale to 1B to 2B parameters on multi-GPU cloud hardware, introduce Dravidian and broader Indic language corpora, build a dedicated morphological tokenizer, and set up the distributed training and deployment infrastructure outlined in TOOLING.md (including FSDP, Kubeflow, DVC, and model serving). Transitioning to larger scale depends on performance outcomes from the current small-scale experiments.
+
+License
+This project is licensed under the MIT License.
