@@ -10,7 +10,7 @@
 
 # Parentheses
 
-A non-Transformer language model implementing selective linear attention (similar to RWKV and Mamba-2), built and trained from scratch on a single consumer laptop GPU (RTX 5050, 8GB VRAM).
+A non-Transformer language model implementing selective linear attention (similar to RWKV and Mamba-2), built and trained from scratch on a single consumer laptop GPU.
 
 <div align="center">
   <img src="assets/parentheses_lockup_transparent.svg" alt="Parentheses" width="400">
