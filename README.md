@@ -12,7 +12,9 @@
 
 A non-Transformer language model implementing selective linear attention (similar to RWKV and Mamba-2), built and trained from scratch on a single consumer laptop GPU (RTX 5050, 8GB VRAM).
 
-Logo: `parentheses_mark.svg` (transparent variant: `parentheses_mark_transparent.svg`), located one directory above this repository.
+<div align="center">
+  <img src="assets/parentheses_lockup_transparent.svg" alt="Parentheses" width="400">
+</div>
 
 ### Status
 
