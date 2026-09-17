@@ -1,6 +1,8 @@
 """
 Training entrypoint for Parentheses 0.9.
 
+Engineered by uncoalesced
+
 Usage:
     python3 train.py --preset parentheses-0.9-150m --data data/processed/train.bin
 
@@ -67,7 +69,112 @@ def get_batch(data: np.memmap, block_size: int, batch_size: int, device: str,
     return x, y
 
 
-def build_optimizer(model: torch.nn.Module, lr: float, weight_decay: float, use_8bit: bool):
+def apply_adaptive_gradient_clipping(
+    model: torch.nn.Module,
+    clip_factor: float = 0.05,
+    decay_clip_factor: float = 0.01,
+    eps_w: float = 1e-3,
+    eps_g: float = 1e-6,
+) -> None:
+    """Unit-Wise Adaptive Gradient Clipping (AGC) & Recurrent Dissipation Floor.
+
+    Engineered by uncoalesced
+
+    For each parameter matrix or vector W in R^{m x n} with gradient G = grad_W L:
+        G_{i, :} <- min(1, (lambda * max(||W_{i, :}||_2, eps_w)) / (||G_{i, :}||_2 + eps_g)) * G_{i, :}
+    where lambda = decay_clip_factor for recurrent decay parameters (alpha, delta, decay)
+    and lambda = clip_factor for standard weights.
+    """
+    for name, p in model.named_parameters():
+        if p.grad is None:
+            continue
+
+        is_decay = any(term in name.lower() for term in ("alpha", "delta", "decay"))
+        lam = decay_clip_factor if is_decay else clip_factor
+
+        p_data = p.data
+        g_data = p.grad.data
+
+        if p_data.ndim > 1:
+            dims = tuple(range(1, p_data.ndim))
+            w_norm = torch.linalg.vector_norm(p_data, dim=dims, keepdim=True)
+            g_norm = torch.linalg.vector_norm(g_data, dim=dims, keepdim=True)
+        else:
+            w_norm = p_data.abs()
+            g_norm = g_data.abs()
+
+        max_norm = torch.clamp(w_norm, min=eps_w) * lam
+        clip_scale = torch.clamp(max_norm / (g_norm + eps_g), max=1.0)
+        p.grad.data.mul_(clip_scale)
+
+
+def build_differential_adamw(
+    model: torch.nn.Module,
+    lr: float,
+    weight_decay: float,
+    recurrent_lr_ratio: float = 0.1,
+    use_8bit: bool = False,
+    betas: tuple[float, float] = (0.9, 0.95),
+    eps: float = 1e-8,
+):
+    """Segregated Differential AdamW optimizer.
+
+    Engineered by uncoalesced
+
+    Partition parameters into:
+    1. recurrent_decay (alpha, delta, decay): lr = lr * recurrent_lr_ratio, weight_decay = 0.0
+    2. matrix_weights (2D+ matrices: projections, embeddings, MLP): lr = lr, weight_decay = weight_decay
+    3. biases_and_norms (1D biases, LayerNorm / RMSNorm weights): lr = lr, weight_decay = 0.0
+    """
+    decay_params = []
+    matrix_params = []
+    bias_norm_params = []
+
+    decay_lr = lr * recurrent_lr_ratio
+
+    for name, p in model.named_parameters():
+        if not p.requires_grad:
+            continue
+        if any(term in name.lower() for term in ("alpha", "delta", "decay")):
+            decay_params.append(p)
+        elif p.ndim < 2:
+            bias_norm_params.append(p)
+        else:
+            matrix_params.append(p)
+
+    groups = []
+    if decay_params:
+        groups.append({"params": decay_params, "lr": decay_lr, "weight_decay": 0.0, "name": "recurrent_decay"})
+    if matrix_params:
+        groups.append({"params": matrix_params, "lr": lr, "weight_decay": weight_decay, "name": "matrix_weights"})
+    if bias_norm_params:
+        groups.append({"params": bias_norm_params, "lr": lr, "weight_decay": 0.0, "name": "biases_and_norms"})
+
+    if use_8bit:
+        try:
+            import bitsandbytes as bnb
+            return bnb.optim.AdamW8bit(groups, betas=betas, eps=eps)
+        except ImportError:
+            print("[warn] bitsandbytes not installed, falling back to torch.optim.AdamW")
+    return torch.optim.AdamW(groups, betas=betas, eps=eps)
+
+
+def build_optimizer(
+    model: torch.nn.Module,
+    lr: float,
+    weight_decay: float,
+    use_8bit: bool = False,
+    differential: bool = False,
+    recurrent_lr_ratio: float = 0.1,
+):
+    if differential:
+        return build_differential_adamw(
+            model,
+            lr=lr,
+            weight_decay=weight_decay,
+            recurrent_lr_ratio=recurrent_lr_ratio,
+            use_8bit=use_8bit,
+        )
     if use_8bit:
         try:
             import bitsandbytes as bnb
@@ -95,11 +202,23 @@ def main():
     p.add_argument("--grad-accum", type=int, default=1)
     p.add_argument("--lr", type=float, default=3e-4)
     p.add_argument("--weight-decay", type=float, default=0.1)
+    p.add_argument("--differential-adamw", action="store_true",
+                   help="use segregated Differential AdamW (separate recurrent decay, matrix, and bias/norm groups)")
+    p.add_argument("--recurrent-lr-ratio", type=float, default=0.1,
+                   help="ratio of recurrent decay learning rate to base learning rate (default 0.1)")
+    p.add_argument("--agc", action="store_true",
+                   help="enable Unit-Wise Adaptive Gradient Clipping (AGC)")
+    p.add_argument("--clip-factor", type=float, default=0.05,
+                   help="AGC clipping threshold lambda for standard weights (default 0.05)")
+    p.add_argument("--decay-clip-factor", type=float, default=0.01,
+                   help="AGC clipping threshold lambda_decay for recurrent decay parameters (default 0.01)")
     p.add_argument("--max-steps", type=int, default=100_000)
     p.add_argument("--log-every", type=int, default=10)
     p.add_argument("--ckpt-every", type=int, default=1000)
     p.add_argument("--grad-checkpointing", action="store_true")
     p.add_argument("--optimizer-8bit", action="store_true")
+    p.add_argument("--z-loss-coeff", type=float, default=0.0,
+                   help="auxiliary Z-loss coefficient c_z to penalize logit drift (recommended 1e-4 for selective_linear CPT)")
     p.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     p.add_argument("--self-test", action="store_true",
                    help="check batch sampling / SFT loss masking on fake data and exit")
@@ -118,7 +237,14 @@ def main():
         # torch.utils.checkpoint if/when VRAM pressure requires it.
         print("[info] gradient checkpointing requested (enable per-block checkpoint() calls as needed)")
 
-    optimizer = build_optimizer(model, args.lr, args.weight_decay, args.optimizer_8bit)
+    optimizer = build_optimizer(
+        model,
+        args.lr,
+        args.weight_decay,
+        use_8bit=args.optimizer_8bit,
+        differential=args.differential_adamw,
+        recurrent_lr_ratio=args.recurrent_lr_ratio,
+    )
 
     use_amp = args.device == "cuda"
     scaler = torch.amp.GradScaler(args.device, enabled=use_amp)
@@ -177,13 +303,23 @@ def main():
         for _ in range(args.grad_accum):
             x, y = get_batch(data, cfg.block_size, args.batch_size, args.device, mask)
             with torch.autocast(device_type=args.device, dtype=torch.bfloat16, enabled=use_amp):
-                _, loss = model(x, y)
+                logits, loss = model(x, y)
+                if args.z_loss_coeff > 0.0 and logits is not None:
+                    log_z = torch.logsumexp(logits, dim=-1)
+                    loss = loss + args.z_loss_coeff * (log_z ** 2).mean()
                 loss = loss / args.grad_accum
             scaler.scale(loss).backward()
             loss_accum += loss.item()
 
         scaler.unscale_(optimizer)
-        torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+        if args.agc:
+            apply_adaptive_gradient_clipping(
+                model,
+                clip_factor=args.clip_factor,
+                decay_clip_factor=args.decay_clip_factor,
+            )
+        else:
+            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
         scaler.step(optimizer)
         scaler.update()
 
@@ -236,11 +372,14 @@ def _self_test():
             if sup[row, t]:
                 assert int(y[row, t]) == int(data[j])
 
-    from model.transformer import Parentheses
+    from model.backbone import Parentheses
     cfg = PRESETS["tiny-smoke"]
     m = Parentheses(cfg)
-    _, loss = m(x.clamp(max=cfg.vocab_size - 1), y.clamp(max=cfg.vocab_size - 1))
+    logits, loss = m(x.clamp(max=cfg.vocab_size - 1), y.clamp(max=cfg.vocab_size - 1))
     assert torch.isfinite(loss), "masked batch produced a non-finite loss"
+    log_z = torch.logsumexp(logits, dim=-1)
+    z_loss = 1e-4 * (log_z ** 2).mean()
+    assert torch.isfinite(z_loss) and z_loss.item() >= 0.0, "z-loss calculation failed"
 
     # a corpus with no supervised bytes at all must say so, not train on nan
     try:
@@ -277,6 +416,65 @@ def _self_test():
         other_cfg = PRESETS["parentheses-0.9-300k"]
         assert ckpt["cfg"] != other_cfg, "cfg equality check would not catch a real mismatch"
     print("[self-test] train resume ok")
+
+    # Differential AdamW verification: 3 segregated groups
+    from dataclasses import replace
+    m_diff = Parentheses(replace(tiny_cfg, attn_type="selective_linear"))
+    opt_diff = build_differential_adamw(m_diff, lr=3e-4, weight_decay=0.1, recurrent_lr_ratio=0.1)
+    group_map = {g["name"]: g for g in opt_diff.param_groups}
+    assert "recurrent_decay" in group_map, "missing recurrent_decay parameter group"
+    assert "matrix_weights" in group_map, "missing matrix_weights parameter group"
+    assert "biases_and_norms" in group_map, "missing biases_and_norms parameter group"
+    assert abs(group_map["recurrent_decay"]["lr"] - 3e-5) < 1e-12, "decay lr must be 0.1 * base lr"
+    assert group_map["recurrent_decay"]["weight_decay"] == 0.0, "decay weight_decay must be 0.0"
+    assert abs(group_map["matrix_weights"]["lr"] - 3e-4) < 1e-12, "matrix lr must match base lr"
+    assert group_map["matrix_weights"]["weight_decay"] == 0.1, "matrix weight_decay must match base"
+    assert abs(group_map["biases_and_norms"]["lr"] - 3e-4) < 1e-12, "norm lr must match base lr"
+    assert group_map["biases_and_norms"]["weight_decay"] == 0.0, "norm weight_decay must be 0.0"
+    total_opt_params = sum(len(g["params"]) for g in opt_diff.param_groups)
+    assert total_opt_params == len(list(m_diff.parameters())), "differential optimizer must cover all parameters"
+    print("[self-test] differential adamw ok")
+
+    # Unit-Wise AGC verification
+    # 1. Unclipped when gradient is small
+    w_small = torch.randn(4, 8)
+    g_small = torch.randn(4, 8) * 1e-5
+    mod_test = torch.nn.Module()
+    mod_test.w = torch.nn.Parameter(w_small.clone())
+    mod_test.w.grad = g_small.clone()
+    apply_adaptive_gradient_clipping(mod_test, clip_factor=0.05)
+    assert torch.allclose(mod_test.w.grad, g_small, atol=1e-7), "small gradients should not be clipped"
+
+    # 2. Clipped when gradient is excessively large
+    w_large = torch.randn(4, 8)
+    g_large = torch.randn(4, 8) * 100.0
+    mod_test.w = torch.nn.Parameter(w_large.clone())
+    mod_test.w.grad = g_large.clone()
+    apply_adaptive_gradient_clipping(mod_test, clip_factor=0.05)
+    row_norms_w = torch.linalg.vector_norm(w_large, dim=1)
+    row_norms_g = torch.linalg.vector_norm(mod_test.w.grad, dim=1)
+    max_expected = 0.05 * torch.clamp(row_norms_w, min=1e-3)
+    assert (row_norms_g <= max_expected + 1e-5).all(), "gradient norm must be bounded by lambda * ||W||_2"
+
+    # 3. Recurrent decay parameters use decay_clip_factor
+    mod_decay = torch.nn.Module()
+    mod_decay.alpha_proj = torch.nn.Parameter(w_large.clone())
+    mod_decay.alpha_proj.grad = g_large.clone()
+    apply_adaptive_gradient_clipping(mod_decay, clip_factor=0.05, decay_clip_factor=0.01)
+    row_norms_decay_g = torch.linalg.vector_norm(mod_decay.alpha_proj.grad, dim=1)
+    max_expected_decay = 0.01 * torch.clamp(row_norms_w, min=1e-3)
+    assert (row_norms_decay_g <= max_expected_decay + 1e-5).all(), "decay gradients must be clipped with decay_clip_factor"
+    print("[self-test] adaptive gradient clipping ok")
+
+    # 4. Full step integration test with AGC and Differential AdamW
+    x_test = torch.randint(0, tiny_cfg.vocab_size, (2, tiny_cfg.block_size))
+    y_test = torch.randint(0, tiny_cfg.vocab_size, (2, tiny_cfg.block_size))
+    opt_diff.zero_grad()
+    _, l_test = m_diff(x_test, y_test)
+    l_test.backward()
+    apply_adaptive_gradient_clipping(m_diff, clip_factor=0.05, decay_clip_factor=0.01)
+    opt_diff.step()
+    print("[self-test] full training step with agc ok")
 
     print("[self-test] train ok")
 
