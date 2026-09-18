@@ -10,7 +10,9 @@
 
 # Parentheses
 
-A non-Transformer language model implementing selective linear attention (similar to RWKV and Mamba-2), built and trained from scratch on a single consumer laptop GPU.
+*Engineered by uncoalesced*
+
+A recurrent language model implementing selective linear attention (RWKV-style), built and trained from scratch on a single consumer laptop GPU.
 
 <div align="center">
   <img src="assets/parentheses_lockup_transparent.svg" alt="Parentheses" width="400">
@@ -18,20 +20,25 @@ A non-Transformer language model implementing selective linear attention (simila
 
 ### Status
 
-Active development, pre-benchmark. There are no standardized benchmark results yet because the core architecture is still changing (detailed in the Architecture pivot section below) and surrounding components (kernel optimizations, tokenization, evaluation harnesses) remain in progress. The documentation reflects the repository as of the latest commit.
+**As of 2026-09-18:** Active development, pre-benchmark. There are no standardized language-modeling benchmark results yet — the sections below cover verification/capacity results for the architecture itself, not trained-checkpoint quality. Two things landed this week that change what's true here relative to older copies of this document:
+
+1. `SelectiveLinearAttention` now has document-boundary reset support (`forward(..., reset_mask)`, shape `(B, L)`, plus the existing `step(..., reset)` for recurrent decoding) and a standalone pre-flight verification harness, `scripts/mqar_eval.py`. On the RTX 5050, Golden FP64 parity and boundary-isolation checks pass (max abs error `5.98e-7`, zero forward/backward leakage across a reset boundary), and the Multi-Query Associative Recall sweep passes through `N=16` key-value pairs and shows the expected (mathematically predicted, not a bug) cross-talk degradation at `N=32` given the recurrent state's `d_h=18` dimensionality — see `out/mqar_preflight_report.json` and `docs/FORMAL_MATHEMATICAL_SPECIFICATION.md`.
+2. A first Dravidian training corpus has been tokenized and is staged at `data/processed_dravidian_v1/` — 1.65B byte tokens across Kannada, Tamil, Malayalam, and Telugu (325,627 documents; mix 43.1% Kannada / 28.2% Tamil / 14.7% Malayalam / 14.0% Telugu), with companion `*_boundaries.npy` document-boundary index files for the reset mechanism above. **This is not wired into `train.py` yet** — collating `train_boundaries.npy` into a `reset_mask` at batch time is the next open task. Don't assume a Dravidian-trained checkpoint exists because the data does.
+
+Two things are still genuinely open, not resolved by the above: the 34% selective-linear-vs-causal training throughput gap (a `torch.compile`/chunked-attention optimization task is blocked on reconciling two conflicting briefs — see `.agents/open/` — and on a stale verification-command reference inside one of them, `self_test_selective()` vs. the actual `self_test()`), and the chunked linear-attention forward pass (`C=64`, per the formal spec) is designed but not implemented — the live forward pass is still the O(T²) dense-masked form.
 
 ## Overview
 
 Parentheses tests a selective linear attention architecture along with two inference features, Free Think Mode and Modular Free Think (RAG), at small parameter scales on consumer hardware. The current codebase focuses on small models that run locally. Larger 1B to 2B parameter configurations requiring cloud GPU compute are planned for later stages and are not implemented here.
 
-Training currently uses English text. Expanding to Dravidian languages and adding a translation layer (detailed in `docs/translation-corpus-sourcing.md`) requires larger model capacities and is reserved for future work.
+No checkpoint has been trained on Dravidian text yet. Training to date uses English text; a first Dravidian byte-level corpus (Kannada/Tamil/Malayalam/Telugu, see Status above) is now tokenized and staged, pending the `reset_mask` wiring into `train.py` before a run can use it. A translation layer (detailed in `docs/translation-corpus-sourcing.md`) is separate work, still reserved for later, and requires larger model capacities than the current presets.
 
 ## Architecture pivot
 
 Two attention implementations exist side by side, controlled by `attn_type` in `model/config.py`:
 
-- `causal`: A standard GPT-style decoder-only transformer using `CausalSelfAttention` (fused QKV, `F.scaled_dot_product_attention`), RMSNorm, RoPE, SwiGLU MLP, and tied input/output embeddings. This implementation serves as a comparison baseline and receives no new development.
-- `selective_linear`: Implemented as `SelectiveLinearAttention` in `model/selective_linear_attention.py`, this is the primary architecture under active development. It uses selective linear attention from the RWKV and Mamba-2 families instead of softmax attention. Because it currently relies on several unfused operations (cumsum, mask build, clamp, exp, and two matmuls) compared to the single fused kernel in causal attention, training steps are roughly 34% slower at identical model sizes. Closing this gap is in progress (see `OPTIMIZE_SELECTIVE_LINEAR_AGENT.md` for profiling details).
+- `causal`: A standard GPT-style decoder-only architecture using `CausalSelfAttention` (fused QKV, `F.scaled_dot_product_attention`), RMSNorm, RoPE, SwiGLU MLP, and tied input/output embeddings. This implementation serves as a comparison baseline and receives no new development.
+- `selective_linear`: Implemented as `SelectiveLinearAttention` in `model/selective_linear_attention.py`, this is the primary architecture under active development. It uses selective linear attention from the RWKV and Mamba-2 families instead of softmax attention. Because it currently relies on several unfused operations (cumsum, mask build, clamp, exp, and two matmuls) compared to the single fused kernel in causal attention, training steps are roughly 34% slower at identical model sizes. Closing this gap is blocked, not just "in progress": two overlapping optimization briefs (`OPTIMIZE_SELECTIVE_LINEAR_AGENT.md` and a separate `NEMOTRON-01` brief targeting the same file) prescribe conflicting approaches — real-preset profiling vs. a fixed 2048-token/`torch.compile` benchmark, and one forbids custom kernels while the other conditionally allows them — and need to be reconciled into one task before either is executed. The module now also accepts a `reset_mask: (B, L)` argument for document-boundary isolation (verified via `scripts/mqar_eval.py`, see Status above); the chunked (`C=64`) forward pass described in `docs/FORMAL_MATHEMATICAL_SPECIFICATION.md` is designed but not yet implemented — the live path is still the dense O(T²) masked form.
 
 Both architectures share the same `generate()` and `stream()` decoding paths, so Free Think Mode, Modular Free Think, conversation memory, and `chat.py` work across checkpoints for either type without modification.
 
@@ -70,7 +77,7 @@ model/            selective_linear and causal baseline attention, RMSNorm, RoPE,
 train.py          Training loop supporting AMP, gradient accumulation, and optional 8-bit optimization
 data/             Corpus pipeline (Wikipedia, books, OPUS-parallel, Dravidian sourcing) and tokenizer (see data/README.md)
 features/         Free Think Mode, Modular Free Think (RAG with BM25), and conversation memory
-scripts/          Utility scripts including chat.py, benchmark_step.py, benchmark_retrieval.py, and check_docs.py
+scripts/          Utility scripts including chat.py, benchmark_step.py, benchmark_retrieval.py, mqar_eval.py (selective-linear parity + MQAR capacity pre-flight), and check_docs.py
 docs/             Documentation including training-time-estimate.md and translation-corpus-sourcing.md
 TOOLING.md        Target-state MLOps specifications and tooling roadmap
 
@@ -116,13 +123,14 @@ Replace `checkpoints/<run-name>/<checkpoint-file>` with your actual checkpoint p
 Run the standalone self-tests to verify parity and baseline functionality without external dependencies:
 
 ```bash
-python3 -m model.transformer                 # causal baseline: KV-cached decoding == uncached decoding
+python3 -m model.backbone                    # backbone: KV-cached / recurrent state decoding parity
 python3 -m model.selective_linear_attention  # selective_linear: dual/recurrent parity
 python3 -m features.free_think --self-test
 python3 -m features.modular_free_think --self-test
 python3 -m features.conversation_memory --self-test
 python3 data/prepare_parallel.py --self-test
 python3 scripts/check_docs.py                # docs don't name code that no longer exists
+python3 scripts/mqar_eval.py --self-test      # selective-linear parity + MQAR capacity pre-flight
 ```
 
 ## Free Think Mode
@@ -146,9 +154,9 @@ Training checkpoints with sufficient semantic coherence. At current sub-1M param
 Comparative benchmarks will be added once trained weights reach viable quality thresholds.
 
 ## Roadmap
-Current focus: Evaluate selective linear attention at small parameter budgets, eliminate the training-throughput gap relative to the causal transformer baseline, and maintain functional parity for Free Think Mode and Modular Free Think across both attention implementations.
+Current focus, in dependency order: (1) wire `train_boundaries.npy` into a `reset_mask` collated at batch time in `train.py` so the staged Dravidian corpus (`data/processed_dravidian_v1/`) can actually be trained on; (2) reconcile the two conflicting selective-linear optimization briefs and close the 34% training-throughput gap relative to the causal baseline; (3) maintain functional parity for Free Think Mode and Modular Free Think across both attention implementations as this proceeds. None of these are blocked on each other in a way that requires serial execution, but (1) is the most immediate unblock — the data has been ready since 2026-09-18 and nothing has trained on it yet.
 
-Long-term goals: Scale to 1B to 2B parameters on multi-GPU cloud hardware, introduce Dravidian and broader Indic language corpora, build a dedicated morphological tokenizer, and set up the distributed training and deployment infrastructure outlined in TOOLING.md (including FSDP, Kubeflow, DVC, and model serving). Transitioning to larger scale depends on performance outcomes from the current small-scale experiments.
+Long-term goals: Scale to 1B to 2B parameters on multi-GPU cloud hardware, extend the Dravidian corpus and build the proprietary Akshara morphological tokenizer (Rust/PyO3 crate architecture confirmed 2026-09-10 — see `docs/MASTER_ARCHITECTURAL_BLUEPRINT.md` and `TOOLING.md` §3.1.1), and set up the distributed training and deployment infrastructure outlined in `TOOLING.md` (including FSDP, Kubeflow, DVC, and model serving). Transitioning to larger scale depends on performance outcomes from the current small-scale experiments; the Akshara tokenizer and any custom CUDA kernel remain explicitly Plan Two work, designed now but not wired into the live Plan One training loop.
 
 ## License
 This project is licensed under the MIT License.
