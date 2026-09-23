@@ -1,6 +1,8 @@
 """
 Modular Free Think / RAG.
 
+Engineered by uncoalesced
+
 From the plan: same free-thinking behavior as Free Think Mode, but with a
 user-supplied, decentralized data store loaded alongside the model (SSD,
 RAM, or VRAM depending on user choice) so the model can "rethink" using
