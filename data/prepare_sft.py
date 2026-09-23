@@ -1,6 +1,8 @@
 r"""
 Pipeline step 5 (see data/README.md): the instruction/conversation stage.
 
+Engineered by uncoalesced
+
 Steps 1-4 all end in one undifferentiated byte stream that train.py runs
 next-token prediction over. That teaches a model what a transcript looks
 like, not how to answer when asked. This script is the other half: it
