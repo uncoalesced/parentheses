@@ -1,0 +1,23 @@
+{
+  "timestamp": "2026-09-17T18:39:54Z",
+  "device": "NVIDIA GeForce RTX 5050 Laptop GPU",
+  "mqar_results": {
+    "N_04": {
+      "accuracy": 1.0,
+      "status": "PASS"
+    },
+    "N_08": {
+      "accuracy": 1.0,
+      "status": "PASS"
+    },
+    "N_16": {
+      "accuracy": 1.0,
+      "status": "PASS"
+    },
+    "N_32": {
+      "accuracy": 1.0,
+      "status": "PASS"
+    }
+  },
+  "peak_vram_mb": 96.9
+}
