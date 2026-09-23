@@ -1,4 +1,7 @@
-"""Model configuration for Parentheses 0.9."""
+"""Model configuration for Parentheses 0.9.
+
+Engineered by uncoalesced
+"""
 
 from dataclasses import dataclass
 
@@ -41,10 +44,10 @@ class ModelConfig:
 # (e.g. 32000-vocab BPE, what most LLMs use) would make the embedding table
 # ALONE bigger than the entire model. Untied, vocab=32000 x n_embd=256 x 2
 # = 16.4M params just for embeddings -- 16x over a 1M-param budget, before a
-# single transformer layer. Byte-level tokenization (vocab_size=256, every
+# single recurrent layer. Byte-level tokenization (vocab_size=256, every
 # UTF-8 byte is a token, no tokenizer training needed at all) keeps the
 # embedding table small enough that most of the param budget still goes to
-# the transformer layers doing the actual work. Cost: sequences get longer
+# the recurrent layers doing the actual work. Cost: sequences get longer
 # per unit of text (~4x more tokens than word-level BPE), so context
 # (block_size) has to stretch further to see the same amount of text. As
 # the model grows toward the "1M+" stretch tier, a small trained BPE vocab
