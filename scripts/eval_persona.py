@@ -2,6 +2,8 @@ r"""
 Qualitative generation eval: what a checkpoint actually says, on a frozen
 prompt set, written to a diffable artifact.
 
+Engineered by uncoalesced
+
 Every other benchmark in this repo measures retrieval (benchmark_retrieval.py,
 retrieval_sidebyside.py, recall@1). Nothing measured the thing the project is
 for -- whether a checkpoint's generations sound like the persona in
@@ -40,7 +42,7 @@ import torch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from model.transformer import Parentheses
+from model.backbone import Parentheses
 from data.prepare_sft import START, SEP, END
 
 # Frozen so successive runs are diffable, and versioned so a run from before a
