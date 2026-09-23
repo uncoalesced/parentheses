@@ -4,6 +4,8 @@ on something other than CPU/CUDA, specifically the Ryzen AI NPU via
 onnxruntime's VitisAIExecutionProvider, or DirectML as a lighter-weight
 alternative on hardware where that's set up.
 
+Engineered by uncoalesced
+
 Tokenization stays outside the graph (plain UTF-8 byte encoding, same as
 model/embedding_head.py's batch_bytes) -- only the tensor math (backbone
 hidden states + pooling + projection + L2-normalize) goes through ONNX.
@@ -32,7 +34,7 @@ import torch.nn as nn
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from model.embedding_head import EmbeddingHead, batch_bytes, load_trained
-from model.transformer import Parentheses
+from model.backbone import Parentheses
 
 
 class _EmbedForExport(nn.Module):
@@ -77,7 +79,7 @@ def export(checkpoint: str, head_path: str, out_path: str, opset: int = 17) -> d
     # Stash block_size in the ONNX file's own metadata so a caller loading
     # only the .onnx (not the original .pt checkpoint) still truncates text
     # correctly. This matters, not just informational: RoPE's precomputed
-    # table (precompute_rope in model/transformer.py) is sized to
+    # table (precompute_rope in model/backbone.py) is sized to
     # cfg.block_size at trace time -- feeding a longer sequence at
     # inference would index past it.
     import onnx
