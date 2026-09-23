@@ -1,6 +1,8 @@
 """
 Roll every raw-sourced/<source>/SOURCE.txt up into one ATTRIBUTION.md.
 
+Engineered by uncoalesced
+
 Wikipedia (CC BY-SA), OpenStax (CC BY 4.0), open-web-math (ODC-By) and
 hermes-function-calling-v1 (Apache 2.0, which asks for its NOTICE to be
 preserved) all carry attribution obligations. Every source already records
