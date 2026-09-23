@@ -1,0 +1,28 @@
+{
+  "timestamp": "2026-09-22T10:20:59Z",
+  "device": "NVIDIA GeForce RTX 5050 Laptop GPU",
+  "parity_check": {
+    "status": "PASS",
+    "max_absolute_error": 6.281781248923535e-07,
+    "boundary_isolation_verified": true
+  },
+  "mqar_results": {
+    "N_04": {
+      "accuracy": 0.998,
+      "status": "PASS"
+    },
+    "N_08": {
+      "accuracy": 0.979,
+      "status": "PASS"
+    },
+    "N_16": {
+      "accuracy": 0.907,
+      "status": "PASS"
+    },
+    "N_32": {
+      "accuracy": 0.637,
+      "status": "WARN"
+    }
+  },
+  "peak_vram_mb": 49.3
+}
