@@ -1,7 +1,9 @@
 """
 Training time estimator for Parentheses 0.9 on an RTX 5050 Laptop GPU (8GB).
 
-Method: standard compute approximation for dense transformer training,
+Engineered by uncoalesced
+
+Method: standard compute approximation for dense recurrent language model training,
 FLOPs_train ~= 6 * N_params * N_tokens (Kaplan et al. 2020 / Chinchilla).
 time = FLOPs_train / (peak_tensor_FLOPs * utilization_fraction)
 
