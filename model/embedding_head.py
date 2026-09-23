@@ -2,6 +2,8 @@
 Sentence-embedding head for Parentheses -- the piece that turns text into a
 vector so TurboVec has something to index (see handoff-vector-memory.md).
 
+Engineered by uncoalesced
+
 Beside Parentheses, not a fork of it: this module owns only the pooling and
 projection, and calls the backbone's `hidden()` for everything else. Same
 composition shape features/modular_free_think.py used over free_think.py.
@@ -114,7 +116,7 @@ def load_trained(checkpoint: str, head_path: str, device: str):
     checked only in scripts/export_embedder_onnx.py; moved here so every
     caller of the shared loader gets it, not just the one that remembered to.
     """
-    from .transformer import Parentheses
+    from .backbone import Parentheses
 
     ck = torch.load(checkpoint, map_location=device, weights_only=False)
     backbone = Parentheses(ck["cfg"]).to(device).eval()
@@ -151,7 +153,7 @@ def info_nce(a: torch.Tensor, b: torch.Tensor, temperature: float = 0.05) -> tor
 
 def self_test():
     from .config import PRESETS
-    from .transformer import Parentheses
+    from .backbone import Parentheses
 
     torch.manual_seed(0)
     cfg = PRESETS["parentheses-0.9-300k"]
