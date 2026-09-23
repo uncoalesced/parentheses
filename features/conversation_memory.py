@@ -1,6 +1,8 @@
 """
 Live conversation memory + auto-FreeThink trigger.
 
+Engineered by uncoalesced
+
 From handoff-conversation-memory.md: two gaps sitting between Free Think and a
 real support-style exchange.
 
