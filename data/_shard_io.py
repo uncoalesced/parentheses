@@ -3,6 +3,8 @@ Shared shard-writing helper for the data prep scripts (prepare_wikipedia.py,
 prepare_books.py). Both pull text from an HF dataset and write it to
 out_dir as plain-text shards; data/tokenize_corpus.py reads those shards back in.
 One tiny shared function instead of duplicating it in both scripts.
+
+Engineered by uncoalesced
 """
 
 import os
