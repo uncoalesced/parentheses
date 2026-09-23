@@ -49,8 +49,34 @@ def supervised_starts(mask: np.memmap, hi: int, block_size: int, batch_size: int
         f"--sft-spans pointing at the mask for a different corpus than --data?")
 
 
+def boundary_reset_mask(boundaries: np.ndarray, ix, block_size: int) -> torch.Tensor:
+    """(len(ix), block_size) uint8 mask: 1 everywhere, 0 at each document start.
+
+    `boundaries` is an ascending array of document-start *token offsets*, one
+    entry per document, first entry 0 -- not a per-token mask, which is the one
+    way it differs from --sft-spans and the easiest thing to get wrong here.
+    SelectiveLinearAttention.forward reads 0 as "a document starts at this
+    position" (doc_id = cumsum(reset_mask == 0)), so a window straddling no
+    boundary is all ones and behaves exactly like reset_mask=None.
+
+    ponytail: searchsorted picks each window's boundary slice in one vectorized
+    pass, then a Python loop writes only the rows that actually contain one. At
+    block_size 256 against a ~5,000-token mean document that is ~5% of rows;
+    the upgrade path (flat scatter over concatenated offsets) only pays for
+    itself if documents ever get short enough that most rows are hits.
+    """
+    starts = np.asarray(ix, dtype=np.int64)
+    out = np.ones((len(starts), block_size), dtype=np.uint8)
+    lo = np.searchsorted(boundaries, starts, side="left")
+    hi = np.searchsorted(boundaries, starts + block_size, side="left")
+    for row in np.nonzero(hi > lo)[0]:
+        inside = np.asarray(boundaries[lo[row]:hi[row]], dtype=np.int64) - starts[row]
+        out[row, inside] = 0
+    return torch.from_numpy(out)
+
+
 def get_batch(data: np.memmap, block_size: int, batch_size: int, device: str,
-              mask: np.memmap | None = None):
+              mask: np.memmap | None = None, boundaries: np.ndarray | None = None):
     hi = len(data) - block_size - 1
     ix = (torch.randint(hi, (batch_size,)) if mask is None
           else torch.tensor(supervised_starts(mask, hi, block_size, batch_size)))
@@ -62,11 +88,19 @@ def get_batch(data: np.memmap, block_size: int, batch_size: int, device: str,
         # the assistant's turn, not on reciting the prompt back.
         keep = torch.stack([torch.from_numpy(mask[i + 1:i + 1 + block_size].astype(bool)) for i in ix])
         y = y.masked_fill(~keep, -1)
+    # reset_mask is aligned to x's positions (absolute offsets i..i+block_size-1),
+    # not y's: it gates which past tokens the attention may carry state from, and
+    # the model reads it alongside the inputs.
+    reset_mask = None if boundaries is None else boundary_reset_mask(boundaries, ix.numpy(), block_size)
     if device == "cuda":
         x, y = x.pin_memory().to(device, non_blocking=True), y.pin_memory().to(device, non_blocking=True)
+        if reset_mask is not None:
+            reset_mask = reset_mask.pin_memory().to(device, non_blocking=True)
     else:
         x, y = x.to(device), y.to(device)
-    return x, y
+        if reset_mask is not None:
+            reset_mask = reset_mask.to(device)
+    return x, y, reset_mask
 
 
 def apply_adaptive_gradient_clipping(
@@ -192,6 +226,12 @@ def main():
                    help="SFT stage: uint8 loss mask written by data/prepare_sft.py --pack "
                         "(e.g. data/processed_sft/train.mask.bin), same length as --data. "
                         "Loss is scored only on the assistant-turn bytes it marks.")
+    p.add_argument("--boundaries", default=None,
+                   help="document-boundary reset: .npy array of document-start token "
+                        "offsets for --data (e.g. data/processed_dravidian_v1/"
+                        "train_boundaries.npy). Builds a per-batch reset_mask so "
+                        "selective_linear attention carries no state across a packed "
+                        "document boundary. selective_linear presets only.")
     p.add_argument("--out-dir", default="checkpoints")
     p.add_argument("--resume-from", default=None,
                    help="checkpoint .pt to resume from (for staged/batched runs). "
@@ -267,6 +307,41 @@ def main():
         print(f"[info] SFT loss masking on: {int(np.count_nonzero(mask)):,} of {len(mask):,} "
               f"bytes supervised ({np.count_nonzero(mask)/len(mask):.1%})")
 
+    boundaries = None
+    if args.boundaries:
+        # Raise here rather than letting Block.forward's assert fire five frames
+        # into the first backward pass: causal attention has no recurrent state
+        # to reset, so --boundaries on a causal preset is a launch-command bug.
+        if cfg.attn_type != "selective_linear":
+            raise ValueError(
+                f"--boundaries needs attn_type='selective_linear'; --preset {args.preset!r} "
+                f"is {cfg.attn_type!r}. Causal attention carries no state across a document "
+                f"boundary, so there is nothing for a reset_mask to do.")
+        boundaries = np.load(args.boundaries, mmap_mode="r")
+        # These are document-start offsets, not a per-token mask -- a per-token
+        # mask of the same name would load fine and silently mark ~every window
+        # as one long document, so check the shape claim rather than trusting it.
+        if boundaries.ndim != 1 or len(boundaries) < 1:
+            raise ValueError(
+                f"{args.boundaries} has shape {boundaries.shape}; expected a 1-D array of "
+                f"document-start token offsets (one entry per document).")
+        if int(boundaries[0]) != 0:
+            raise ValueError(
+                f"{args.boundaries} starts at offset {int(boundaries[0])}, not 0 -- the first "
+                f"document must begin at token 0, so this is not a document-start index.")
+        if not np.all(np.diff(np.asarray(boundaries, dtype=np.int64)) > 0):
+            raise ValueError(
+                f"{args.boundaries} is not strictly increasing. boundary_reset_mask() uses "
+                f"np.searchsorted, which needs a sorted array; an unsorted one would mark "
+                f"the wrong positions with no error.")
+        if int(boundaries[-1]) >= len(data):
+            raise ValueError(
+                f"{args.boundaries}'s last document starts at token {int(boundaries[-1]):,}, "
+                f"past the end of {args.data} ({len(data):,} tokens). These two files are not "
+                f"the same corpus; re-pair them with the manifest that wrote both.")
+        print(f"[info] document-boundary reset on: {len(boundaries):,} documents over "
+              f"{len(data):,} tokens ({len(data)/len(boundaries):,.0f} tokens/doc mean)")
+
     os.makedirs(args.out_dir, exist_ok=True)
 
     start_step = 0
@@ -301,9 +376,10 @@ def main():
         optimizer.zero_grad(set_to_none=True)
         loss_accum = 0.0
         for _ in range(args.grad_accum):
-            x, y = get_batch(data, cfg.block_size, args.batch_size, args.device, mask)
+            x, y, reset_mask = get_batch(data, cfg.block_size, args.batch_size,
+                                         args.device, mask, boundaries)
             with torch.autocast(device_type=args.device, dtype=torch.bfloat16, enabled=use_amp):
-                logits, loss = model(x, y)
+                logits, loss = model(x, y, reset_mask=reset_mask)
                 if args.z_loss_coeff > 0.0 and logits is not None:
                     log_z = torch.logsumexp(logits, dim=-1)
                     loss = loss + args.z_loss_coeff * (log_z ** 2).mean()
@@ -345,12 +421,17 @@ def main():
 
 
 def _self_test():
+    from dataclasses import replace
+
+    from model.backbone import Parentheses
+
     torch.manual_seed(0)
     block, batch = 8, 4
     data = np.arange(200, dtype=np.uint16) % 256
 
     # no mask: unchanged behaviour, y is x shifted by one
-    x, y = get_batch(data, block, batch, "cpu")
+    x, y, reset_mask = get_batch(data, block, batch, "cpu")
+    assert reset_mask is None, "no --boundaries must mean no reset_mask, not an all-ones one"
     assert x.shape == y.shape == (batch, block)
     assert torch.equal(x[:, 1:], y[:, :-1])
     assert (y == -1).sum() == 0
@@ -359,7 +440,7 @@ def _self_test():
     # else is ignore_index, and a real model's loss ignores them
     mask = np.zeros(200, dtype=np.uint8)
     mask[100:120] = 1
-    x, y = get_batch(data, block, batch, "cpu", mask)
+    x, y, _ = get_batch(data, block, batch, "cpu", mask)
     sup = (y != -1)
     assert sup.any(), "every sampled window was fully masked"
     # every supervised target is a byte that mask marks, and its value is the
@@ -372,7 +453,6 @@ def _self_test():
             if sup[row, t]:
                 assert int(y[row, t]) == int(data[j])
 
-    from model.backbone import Parentheses
     cfg = PRESETS["tiny-smoke"]
     m = Parentheses(cfg)
     logits, loss = m(x.clamp(max=cfg.vocab_size - 1), y.clamp(max=cfg.vocab_size - 1))
@@ -387,6 +467,63 @@ def _self_test():
         raise AssertionError("an all-zero mask must raise")
     except RuntimeError as e:
         assert "no supervised targets" in str(e)
+
+    # --boundaries: the mask is 0 at exactly the document starts that fall
+    # inside each sampled window. Expected positions are built from `bounds` by
+    # hand below, never read back out of boundary_reset_mask() itself.
+    bounds = np.array([0, 3, 11, 50, 137, 190], dtype=np.uint32)
+
+    # hand-picked windows first, so the interesting cases are hit deterministically
+    # rather than only when randint happens to land on one
+    rm = boundary_reset_mask(bounds, np.array([48, 100]), block)
+    assert rm.shape == (2, block) and rm.dtype == torch.uint8, (rm.shape, rm.dtype)
+    assert rm[0].tolist() == [1, 1, 0, 1, 1, 1, 1, 1], rm[0].tolist()   # 50 is 2 past 48
+    assert rm[1].tolist() == [1] * block, rm[1].tolist()                # [100, 108) holds none
+    # a window opening exactly on a document start resets at t=0
+    assert boundary_reset_mask(bounds, np.array([137]), block)[0].tolist() == [0] + [1] * (block - 1)
+    # two starts in one window
+    assert boundary_reset_mask(bounds, np.array([3]), block)[0].tolist() == [0, 1, 1, 1, 1, 1, 1, 1]
+    assert boundary_reset_mask(np.array([0, 4, 6], dtype=np.uint32),
+                               np.array([2]), block)[0].tolist() == [1, 1, 0, 1, 0, 1, 1, 1]
+
+    # and through get_batch, on sampled windows
+    x, y, rm = get_batch(data, block, batch, "cpu", None, bounds)
+    assert rm is not None and rm.shape == (batch, block)
+    for row in range(batch):
+        start = int(x[row, 0].item())                    # data is a byte ramp, so value == index
+        expected = [1] * block
+        for b in bounds.tolist():
+            if start <= b < start + block:
+                expected[b - start] = 0
+        assert rm[row].tolist() == expected, (row, start, rm[row].tolist(), expected)
+
+    # Wiring, not just collation: a reset_mask handed to Parentheses.forward has
+    # to reach SelectiveLinearAttention. If any link in
+    # forward -> hidden -> Block.forward -> attn drops it, collation above still
+    # passes and training silently runs with no boundary isolation at all.
+    sel_cfg = replace(PRESETS["tiny-smoke"], attn_type="selective_linear")
+    m_sel = Parentheses(sel_cfg).eval()
+    xi = torch.randint(0, sel_cfg.vocab_size, (2, 16))
+    rm_sel = torch.ones(2, 16, dtype=torch.uint8)
+    rm_sel[:, 8] = 0
+    with torch.no_grad():
+        plain, _ = m_sel(xi)
+        reset, _ = m_sel(xi, reset_mask=rm_sel)
+    # causality: a boundary at t=8 cannot reach back before it, so those logits
+    # must be bitwise identical -- a mask that changed them would be a real bug
+    assert torch.equal(plain[:, :8], reset[:, :8]), "reset_mask altered pre-boundary positions"
+    assert not torch.equal(plain[:, 8:], reset[:, 8:]), (
+        "reset_mask never reached the attention block -- forward/hidden/Block dropped it")
+
+    # and the causal path must refuse it loudly rather than ignoring it
+    causal = Parentheses(PRESETS["tiny-smoke"]).eval()
+    try:
+        causal(xi, reset_mask=rm_sel)
+    except AssertionError as e:
+        assert "reset_mask" in str(e), e
+    else:
+        raise AssertionError("causal model silently accepted a reset_mask")
+    print("[self-test] document-boundary reset_mask ok")
 
     # resume: a checkpoint saved by one run loads cleanly into another and
     # continues from step+1 (exercises the same load/step-arithmetic main()
@@ -418,7 +555,6 @@ def _self_test():
     print("[self-test] train resume ok")
 
     # Differential AdamW verification: 3 segregated groups
-    from dataclasses import replace
     m_diff = Parentheses(replace(tiny_cfg, attn_type="selective_linear"))
     opt_diff = build_differential_adamw(m_diff, lr=3e-4, weight_decay=0.1, recurrent_lr_ratio=0.1)
     group_map = {g["name"]: g for g in opt_diff.param_groups}
