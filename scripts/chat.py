@@ -2,6 +2,8 @@
 Interactive terminal chat: type a prompt, get a completion back, repeat.
 For eyeballing quality by hand -- no scoring, no logging, no format assumed.
 
+Engineered by uncoalesced
+
 Same checkpoint-load + model.generate() pattern as sample_freeform.py, just
 wrapped in an input() loop instead of a fixed PROMPTS dict. Works for both
 attn_type="causal" and "selective_linear" checkpoints unmodified -- generate()
