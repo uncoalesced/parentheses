@@ -1,6 +1,8 @@
 """
 Download + clean Wikipedia into plain-text shards for tokenization.
 
+Engineered by uncoalesced
+
 Defaults to **Simple English Wikipedia**, not the full English dump --
 sized to actually match the ~100K-1M param tier (see
 docs/training-time-estimate.md): ~226K articles / ~161MB text, versus full
