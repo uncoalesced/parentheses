@@ -2,6 +2,8 @@
 Download + clean public-domain books (Project Gutenberg etc.) into
 plain-text shards for tokenization.
 
+Engineered by uncoalesced
+
 Pulls from a pre-packaged Gutenberg mirror dataset on Hugging Face (e.g.
 `manu/project_gutenberg`) rather than scraping gutenberg.org directly, and
 strips Gutenberg's standard license header/footer boilerplate from each
