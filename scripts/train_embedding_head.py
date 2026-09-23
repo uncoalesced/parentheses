@@ -2,6 +2,8 @@
 Train the sentence-embedding head (model/embedding_head.py) on parallel pairs,
 against a backbone that is frozen by default.
 
+Engineered by uncoalesced
+
 An `<en> src` and its `<kn> tgt` are semantically identical text in two forms,
 which is exactly the positive pair an in-batch-negative contrastive objective
 wants, and the data is already downloaded and already licensed.
@@ -10,7 +12,7 @@ wants, and the data is already downloaded and already licensed.
 them; `--max-pairs` is a *per-directory* cap, so pooling stays balanced across
 languages instead of being dominated by whichever one loads first.
 
-`--unfreeze-last-block` additionally trains the backbone's top transformer
+`--unfreeze-last-block` additionally trains the backbone's top recurrent
 block at `--backbone-lr` (default: a tenth of the head's lr). Everything below
 that block stays frozen, and the embedding table always stays frozen. This is
 the fallback handoff-vector-memory.md named for the case where a fully frozen
@@ -157,7 +159,7 @@ def main():
     p.add_argument("--steps", type=int, default=1500)
     p.add_argument("--lr", type=float, default=1e-3)
     p.add_argument("--unfreeze-last-block", action="store_true",
-                   help="also train the backbone's top transformer block (everything below stays frozen)")
+                   help="also train the backbone's top recurrent block (everything below stays frozen)")
     p.add_argument("--backbone-lr", type=float, default=None,
                    help="lr for the unfrozen block; default lr/10")
     p.add_argument("--temperature", type=float, default=0.05)
