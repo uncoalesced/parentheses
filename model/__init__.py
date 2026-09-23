@@ -1,4 +1,4 @@
 from .config import ModelConfig, PRESETS
-from .transformer import Parentheses
+from .backbone import Parentheses
 
 __all__ = ["ModelConfig", "PRESETS", "Parentheses"]
