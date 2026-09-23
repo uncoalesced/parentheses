@@ -2,6 +2,8 @@
 Sanity-check a trained checkpoint: aggregate val loss + raw translation-format
 samples, written to a file for a human to actually read.
 
+Engineered by uncoalesced
+
 Two separate jobs, both deliberately dumb:
 
 1. `val_loss` -- train.py has no validation loop at all, so the ~1.3 figure in
