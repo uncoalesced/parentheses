@@ -1,6 +1,8 @@
 """
 Free-form (non-translation-format) sampling for `all-sources-v1` and friends.
 
+Engineered by uncoalesced
+
 `sample_translation.py` only prompts in the `<en> ... -> <lang>` pair format.
 This is the throwaway script TESTING_HANDOFF.md called for: byte-encode a
 plain prompt, run it through `model.generate`, write the continuation. No
