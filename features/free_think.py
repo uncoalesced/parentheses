@@ -1,6 +1,8 @@
 """
 Free Think Mode.
 
+Engineered by uncoalesced
+
 From the plan: given a non-question / "safe statement" prompt, the model keeps
 generating a live, viewable/exportable stream of "thinking" tokens about the
 input, using whatever's in its trained knowledge -- rather than stopping after
