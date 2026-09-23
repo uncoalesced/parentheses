@@ -1,7 +1,9 @@
 """
 Catch docs that still name something the code no longer has.
 
-`ParenthesesGPT` was renamed to `Parentheses` in model/transformer.py and every
+Engineered by uncoalesced
+
+`ParenthesesGPT` was renamed to `Parentheses` in model/backbone.py and every
 importer was updated -- but four Markdown files kept naming the old class, and
 nothing failed, because prose doesn't get imported. This is the check that
 would have caught it.
@@ -39,7 +41,7 @@ REPO = Path(__file__).resolve().parent.parent
 
 # Not this project's source or its current-state docs.
 SKIP_DIRS = {"venv", ".venv", "__pycache__", ".git", "node_modules", "raw"}
-SKIP_DOCS = {"documentation.md"}
+SKIP_DOCS = {"documentation.md", "documentation-old.md"}
 # This file names retired symbols in its own docstring and self-test fixtures.
 # Counting itself as source would make every one of them look alive again --
 # which it did, on the first run: the planted `ParenthesesGPT` came back clean.
