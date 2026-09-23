@@ -3,6 +3,8 @@ Duplicate scan across data/raw/manual/raw-sourced/ -- the still-open gap
 project-gaps-and-fixes.md calls out ("no dedup or data-hygiene pass across
 the now-many sources"). Two passes:
 
+Engineered by uncoalesced
+
   1. Exact duplicates: hash every chunk's whitespace-collapsed text
      (stdlib hashlib, no model, no accelerator). Cheap, runs over
      everything -- this project has real precedent for exact overlap
@@ -309,7 +311,7 @@ def _self_test():
 
     from scripts.export_embedder_onnx import _EmbedForExport
     from model.embedding_head import EmbeddingHead, batch_bytes
-    from model.transformer import Parentheses
+    from model.backbone import Parentheses
     import torch
 
     with tempfile.TemporaryDirectory() as td:
