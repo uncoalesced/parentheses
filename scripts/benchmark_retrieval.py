@@ -1,6 +1,8 @@
 """
 Throughput: plain Free Think vs Modular Free Think on each retrieval backend.
 
+Engineered by uncoalesced
+
 handoff-vector-memory.md holds Modular Free Think to the tokens/sec bar the
 BM25 path already cleared (0.98x GPU vs plain Free Think), and says plainly
 that a vector query costs a full forward pass through the frozen backbone,
