@@ -3,6 +3,8 @@ Pipeline step 4 (see data/README.md): turn the raw text shards written by
 prepare_wikipedia.py / prepare_books.py into the uint16 binary files
 train.py's np.memmap loader expects (data/processed/train.bin, val.bin).
 
+Engineered by uncoalesced
+
 Byte-level by default (vocab_size=256, matches the 100k/300k/600k presets --
 `text.encode("utf-8")`, no tokenizer training needed). Pass --tokenizer-dir
 to encode with a trained BPE tokenizer instead (the 1m preset -- see
