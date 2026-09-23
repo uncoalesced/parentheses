@@ -1,6 +1,8 @@
 """
 Download + clean English<->X parallel sentence pairs into plain-text shards.
 
+Engineered by uncoalesced
+
 Third data source alongside prepare_wikipedia.py (monolingual English) and
 prepare_books.py (monolingual English): this one pulls *parallel* text for
 the translation layer (see handoff-translation-layer.md), from OPUS
