@@ -2,6 +2,8 @@
 Qualitative retrieval comparison: what BM25 and the vector head actually
 return for the same query over the same store.
 
+Engineered by uncoalesced
+
 The recall@1 number in scripts/train_embedding_head.py is measured on parallel
 sentence pairs. This is the other half -- monolingual English paragraphs, the
 use case Modular Free Think is actually for, which handoff-vector-memory.md
@@ -167,7 +169,7 @@ def main():
 
 def _self_test():
     from model import PRESETS
-    from model.transformer import Parentheses
+    from model.backbone import Parentheses
 
     torch.manual_seed(0)
     cfg = PRESETS["parentheses-0.9-100k"]
