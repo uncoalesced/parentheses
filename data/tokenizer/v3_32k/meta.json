@@ -1,0 +1,8 @@
+{
+ "vocab_size": 32768,
+ "regex": "indic",
+ "pattern": "'(?i:[sdmt]|ll|ve|re)| ?[\\p{L}\\p{M}\u200c\u200d]+|\\p{N}| ?[^\\s\\p{L}\\p{M}\\p{N}\u200c\u200d]+[\\r\\n]*|\\s*[\\r\\n]+|\\s+(?!\\S)|\\s+",
+ "sample_mb_per_group": 100,
+ "derived_from": "first 32768 ids of the 65536 run",
+ "sha256": "7a9b4187d5bc000134b5f646e45e8e5a0435adb0e7d20afb99ac4bde0a9808a6"
+}
