@@ -1,0 +1,8 @@
+{
+ "vocab_size": 49152,
+ "regex": "gpt",
+ "pattern": "'(?i:[sdmt]|ll|ve|re)| ?\\p{L}+|\\p{N}| ?[^\\s\\p{L}\\p{N}]+[\\r\\n]*|\\s*[\\r\\n]+|\\s+(?!\\S)|\\s+",
+ "sample_mb_per_group": 100,
+ "derived_from": null,
+ "sha256": "98f1af2a38d290d83d18d283db694f1ac25b54c6898d5fb7c7dad9b35f62013c"
+}
