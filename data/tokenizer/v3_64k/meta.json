@@ -1,0 +1,8 @@
+{
+ "vocab_size": 65536,
+ "regex": "indic",
+ "pattern": "'(?i:[sdmt]|ll|ve|re)| ?[\\p{L}\\p{M}\u200c\u200d]+|\\p{N}| ?[^\\s\\p{L}\\p{M}\\p{N}\u200c\u200d]+[\\r\\n]*|\\s*[\\r\\n]+|\\s+(?!\\S)|\\s+",
+ "sample_mb_per_group": 100,
+ "derived_from": null,
+ "sha256": "9d9b78b3923c3d6523d7b257376e85e50b18d696286d1cf1e19c2e88d3aa36d1"
+}
