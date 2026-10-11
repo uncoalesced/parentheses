@@ -23,6 +23,11 @@ class ModelConfig:
     #                              "causal" off the class attribute and compares equal to
     #                              PRESETS["parentheses-0.9-300k"] -- train.py --resume-from
     #                              and features/free_think.py both depend on that equality.
+    slab_v2: bool = False        # selective_linear only: short causal conv on q/k/v, L2-normed
+    #                              q/k, per-head RMSNorm + silu output gate, longer decay init
+    #                              (documentation.md 2026-10-07). Same default-last pattern as
+    #                              attn_type: old checkpoints have no field, read False, and
+    #                              keep loading and comparing equal.
 
     @property
     def approx_params(self) -> int:
@@ -74,6 +79,20 @@ PRESETS = {
     # Stretch tier ("over time... a million or more"): small trained BPE
     # vocab instead of raw bytes, since there's finally enough budget for it.
     "parentheses-0.9-1m": ModelConfig(vocab_size=512, block_size=512, n_layer=5, n_head=8, n_embd=128),
+
+    # First public model, picked by the 2026-10-07 benchmark (documentation.md): the
+    # largest config whose projected tokens in 6 h on the RTX 5050 are >= ~15x params with
+    # T >= 2048 (40.9M params, ~32k tok/s -> ~690M tokens, 16.9x), and the largest vocab
+    # whose tied embedding stays <= ~35% of params (32k: 31%; 48k would be 40%).
+    # BPE vocab data/tokenizer/v3_32k, head_dim 64. -slab2 is the A/B arm.
+    "parentheses-0.9-41M": ModelConfig(vocab_size=32768, block_size=4096, n_layer=16, n_head=6, n_embd=384,
+                                       attn_type="selective_linear"),
+    "parentheses-0.9-43M-slab2": ModelConfig(vocab_size=32768, block_size=4096, n_layer=16, n_head=6, n_embd=384,
+                                             attn_type="selective_linear", slab_v2=True),
+    # Grown from 41M-v4 by scripts/grow_model.py (width 384->512, 6->8 heads, 16->32 layers,
+    # function-preserving), same v3_32k vocab and head_dim 64. ~119.6M params.
+    "parentheses-0.9-120M": ModelConfig(vocab_size=32768, block_size=4096, n_layer=32, n_head=8, n_embd=512,
+                                        attn_type="selective_linear"),
 
     # Long-term / Plan Two territory -- kept for reference, not a near-term
     # target on the RTX 5050 laptop. See docs/training-time-estimate.md.

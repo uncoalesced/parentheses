@@ -14,6 +14,13 @@
 
 A recurrent language model implementing selective linear attention (RWKV-style), built and trained from scratch on a single consumer laptop GPU.
 
+> [!IMPORTANT]
+> **ARCHITECTURE NOTICE (Mamba-2 / RWKV / Selective Linear Attention):**
+> Parentheses is **NOT a Transformer / GPT model**. It does **NOT** use quadratic causal self-attention ($O(T^2)$ Softmax attention matrices) or standard Transformer KV-caches.
+> Parentheses is a **from-scratch Recurrent / State Space Duality (SSD) model** belonging to the **Mamba-2 / RWKV / Selective Linear Attention** family:
+> - **Training (Parallel Form):** Chunked associative linear attention / semi-separable state space duality with linear $O(T)$ complexity.
+> - **Inference / Decoding (Recurrent Form):** Constant $O(1)$ recurrent memory state updates: $S_t = \alpha_t S_{t-1} + (k_t \otimes v_t)$ and $y_t = q_t S_t$. Fixed state size, zero growing KV-cache, zero sequence Softmax.
+
 <div align="center">
   <img src="assets/parentheses_lockup_transparent.svg" alt="Parentheses" width="400">
 </div>

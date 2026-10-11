@@ -14,6 +14,7 @@ from dataclasses import replace
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.utils.checkpoint import checkpoint
 
 from .config import ModelConfig, PRESETS
 from .selective_linear_attention import SelectiveLinearAttention
@@ -163,6 +164,11 @@ class Block(nn.Module):
         x = x + self.mlp(self.ln2(x))
         return x, new_state
 
+    def compile_projections(self, backend: str = "inductor", mode: str | None = None):
+        """Opt-in compilation of attention projection/output paths."""
+        if self.is_selective and hasattr(self.attn, "compile_projections"):
+            self.attn.compile_projections(backend=backend, mode=mode)
+
 
 class Parentheses(nn.Module):
     def __init__(self, cfg: ModelConfig):
@@ -198,6 +204,12 @@ class Parentheses(nn.Module):
 
     def num_params(self) -> int:
         return sum(p.numel() for p in self.parameters())
+
+    def compile_projections(self, backend: str = "inductor", mode: str | None = None):
+        """Opt-in compilation of projection/output paths across all blocks."""
+        for block in self.blocks:
+            if hasattr(block, "compile_projections"):
+                block.compile_projections(backend=backend, mode=mode)
 
     def empty_cache(self) -> list[list]:
         """One empty KV slot per layer. Pass to forward()/stream() to enable caching."""
@@ -248,13 +260,22 @@ class Parentheses(nn.Module):
         still exactly one definition of the stack.
         """
         x = self.drop(self.tok_emb(idx))
+        # Activation checkpointing (train.py --grad-checkpointing): keep only each block's input,
+        # recompute the rest in backward. 120M at T=4096 OOMs at batch 1 on 8 GB without it.
+        ckpt = getattr(self, "grad_checkpointing", False) and cache is None and torch.is_grad_enabled()
         for i, block in enumerate(self.blocks):
-            x = block(x, None if cache is None else cache[i], reset_mask)
+            if ckpt:
+                x = checkpoint(block, x, None, reset_mask, use_reentrant=False)
+            else:
+                x = block(x, None if cache is None else cache[i], reset_mask)
         return self.ln_f(x)
 
     def forward(self, idx: torch.Tensor, targets: torch.Tensor | None = None,
-                cache: list | None = None, reset_mask: torch.Tensor | None = None):
+                cache: list | None = None, reset_mask: torch.Tensor | None = None,
+                return_logits: bool = True, ce_rows: int = 4096):
         x = self.hidden(idx, cache, reset_mask)
+        if targets is not None and not return_logits:
+            return None, self.chunked_loss(x, targets, rows=ce_rows)
         logits = self.head(x)
         loss = None
         if targets is not None:
@@ -262,6 +283,21 @@ class Parentheses(nn.Module):
                 logits.view(-1, logits.size(-1)), targets.view(-1), ignore_index=-1
             )
         return logits, loss
+
+    def chunked_loss(self, x: torch.Tensor, targets: torch.Tensor, rows: int = 4096) -> torch.Tensor:
+        """Mean cross-entropy without materializing (B*T, vocab) logits.
+
+        At vocab 65,536 the full fp32 logits + their grad are ~1.3 GB per 2048-token
+        row -- more than the whole model. Each `rows`-token slice's head matmul + CE
+        is checkpointed, so only one slice of logits is alive at a time and backward
+        recomputes it (one extra head matmul). Same value and gradients as forward().
+        """
+        from torch.utils.checkpoint import checkpoint
+        h, t = x.reshape(-1, x.size(-1)), targets.reshape(-1)
+        part = lambda hh, tt: F.cross_entropy(self.head(hh).float(), tt, ignore_index=-1, reduction="sum")
+        total = sum(checkpoint(part, h[i:i + rows], t[i:i + rows], use_reentrant=False)
+                    for i in range(0, h.size(0), rows))
+        return total / (t != -1).sum().clamp_min(1)
 
     @torch.no_grad()
     def stream(self, idx: torch.Tensor, max_new_tokens: int | None = None,
@@ -419,7 +455,7 @@ def self_test():
     print("[self-test] kv-cache ok")
 
 
-def self_test_selective():
+def self_test_selective(slab_v2: bool = False):
     """Whole-model forward() must equal token-by-token step() accumulation.
 
     model/selective_linear_attention.py already proves one block's dual and
@@ -434,7 +470,7 @@ def self_test_selective():
     fp32 noise would mask a real algorithmic mismatch.
     """
     torch.manual_seed(0)
-    cfg = replace(PRESETS["tiny-smoke"], attn_type="selective_linear")
+    cfg = replace(PRESETS["tiny-smoke"], attn_type="selective_linear", slab_v2=slab_v2)
     model = Parentheses(cfg).double().eval()
 
     B, T = 2, 24
@@ -455,7 +491,8 @@ def self_test_selective():
 
     head_dim = cfg.n_embd // cfg.n_head
     assert len(states) == cfg.n_layer
-    assert all(s.shape == (B, cfg.n_head, head_dim, head_dim) for s in states)
+    mats = [s[0] if slab_v2 else s for s in states]
+    assert all(m.shape == (B, cfg.n_head, head_dim, head_dim) for m in mats)
 
     # A causal model must refuse the recurrent path loudly rather than dying on
     # a cryptic AttributeError three frames down.
@@ -470,11 +507,11 @@ def self_test_selective():
         else:
             raise AssertionError(f"causal model accepted {name}()")
 
-    print(f"[self-test] selective-linear wiring: forward/step parity ok "
+    print(f"[self-test] selective-linear wiring (slab_v2={slab_v2}): forward/step parity ok "
           f"(max abs diff {delta:.3e})")
 
 
-def self_test_selective_stream():
+def self_test_selective_stream(slab_v2: bool = False):
     """stream()/generate() on the recurrent path must match hand-driven step().
 
     self_test_selective() proves forward() == step(); this proves stream()
@@ -484,7 +521,7 @@ def self_test_selective_stream():
     plausible bytes and pass every other test in this file.
     """
     torch.manual_seed(0)
-    cfg = replace(PRESETS["tiny-smoke"], attn_type="selective_linear")
+    cfg = replace(PRESETS["tiny-smoke"], attn_type="selective_linear", slab_v2=slab_v2)
     model = Parentheses(cfg).eval()
 
     prompt = torch.randint(0, cfg.vocab_size, (2, 7))
@@ -515,10 +552,47 @@ def self_test_selective_stream():
     # sink_tokens is a no-op here but must not raise -- free_think.py always passes one
     assert len(list(model.stream(prompt, 3, top_k=1, sink_tokens=4))) == 3
 
-    print("[self-test] selective-linear stream: generate/step parity ok")
+    print(f"[self-test] selective-linear stream (slab_v2={slab_v2}): generate/step parity ok")
+
+
+def self_test_chunked_loss():
+    """chunked_loss == full cross_entropy, value and every gradient, with ignored
+    targets and a slice size that does not divide B*T."""
+    torch.manual_seed(0)
+    cfg = replace(PRESETS["tiny-smoke"], attn_type="selective_linear", slab_v2=True)
+    model = Parentheses(cfg)
+    idx = torch.randint(0, cfg.vocab_size, (3, 40))
+    tgt = torch.randint(0, cfg.vocab_size, (3, 40))
+    tgt[0, :7] = -1
+    _, full = model(idx, tgt)
+    g_full = torch.autograd.grad(full, list(model.parameters()))
+    x = model.hidden(idx)
+    chunked = model.chunked_loss(x, tgt, rows=17)
+    g_chunk = torch.autograd.grad(chunked, list(model.parameters()))
+    assert abs(full.item() - chunked.item()) < 1e-5, (full.item(), chunked.item())
+    gd = max((a - b).abs().max().item() for a, b in zip(g_full, g_chunk))
+    assert gd < 1e-5, gd
+    _, via_fwd = model(idx, tgt, return_logits=False)
+    assert abs(via_fwd.item() - full.item()) < 1e-5
+    print(f"[self-test] chunked loss == full CE (loss diff {abs(full.item() - chunked.item()):.1e}, grad diff {gd:.1e})")
+
+    # activation checkpointing: same loss and grads, with document resets
+    rm = torch.ones(3, 40)
+    rm[:, 13] = 0
+    _, plain = model(idx, tgt, reset_mask=rm, return_logits=False)
+    g_plain = torch.autograd.grad(plain, list(model.parameters()))
+    model.grad_checkpointing = True
+    _, ck = model(idx, tgt, reset_mask=rm, return_logits=False)
+    g_ck = torch.autograd.grad(ck, list(model.parameters()))
+    model.grad_checkpointing = False
+    cd = max((a - b).abs().max().item() for a, b in zip(g_plain, g_ck))
+    assert abs(plain.item() - ck.item()) < 1e-6 and cd < 1e-6, (plain.item(), ck.item(), cd)
+    print(f"[self-test] activation checkpointing == plain (grad diff {cd:.1e})")
 
 
 if __name__ == "__main__":
     self_test()
-    self_test_selective()
-    self_test_selective_stream()
+    self_test_chunked_loss()
+    for v2 in (False, True):
+        self_test_selective(v2)
+        self_test_selective_stream(v2)

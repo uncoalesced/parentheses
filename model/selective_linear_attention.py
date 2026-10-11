@@ -36,6 +36,11 @@ import torch.nn.functional as F
 from .config import ModelConfig
 
 
+def _up(t: torch.Tensor) -> torch.Tensor:
+    """bf16/fp16 -> fp32 for a reduction; fp32/fp64 untouched (fp64 parity tests)."""
+    return t.float() if t.element_size() < 4 else t
+
+
 class SelectiveLinearAttention(nn.Module):
     def __init__(self, cfg: ModelConfig):
         super().__init__()
@@ -59,7 +64,32 @@ class SelectiveLinearAttention(nn.Module):
         # trains with cfg.dropout=0.0 anyway) -- add if a preset ever sets
         # dropout > 0 and this block is actually in use.
         self._causal_bias_cache: torch.Tensor | None = None
+        # slab_v2 (GLA / Mamba-2 / GatedDeltaNet practice). Created only when on, so
+        # a slab_v2=False model has exactly the old state_dict.
+        #  - depthwise causal conv k=4 on q/k/v (+silu): cheap local mixing, and it is
+        #    reset-masked so packed documents still never see each other;
+        #  - L2-normalized q/k: bounded scores, no per-head scale drift;
+        #  - per-head RMSNorm on y, then y * silu(W_g x): y sums ~1/(1-alpha) terms
+        #    and is otherwise unbounded at long horizons.
+        self.slab_v2 = getattr(cfg, "slab_v2", False)
+        if self.slab_v2:
+            self.conv_k = 4
+            self.conv_w = nn.Parameter(torch.zeros(3 * cfg.n_embd, self.conv_k))
+            self.conv_b = nn.Parameter(torch.zeros(3 * cfg.n_embd))
+            self.y_norm = nn.Parameter(torch.ones(cfg.n_embd))
+            self.gate = nn.Linear(cfg.n_embd, cfg.n_embd, bias=cfg.bias)
+            self.init_conv()
         self.init_decay_bias()
+
+    def init_conv(self):
+        """Identity taps (current token weight 1, history 0): at init the conv is a
+        pass-through and the block starts as plain silu(qkv). Parentheses'
+        _init_weights only touches nn.Linear/nn.Embedding, so this survives it."""
+        if self.slab_v2:
+            with torch.no_grad():
+                self.conv_w.zero_()
+                self.conv_w[:, -1] = 1.0
+                self.conv_b.zero_()
 
     def init_decay_bias(self):
         """Give each head a different starting memory horizon.
@@ -80,7 +110,10 @@ class SelectiveLinearAttention(nn.Module):
         self.apply(_init_weights), which zeros every nn.Linear bias in the model
         -- this has to be re-applied after that sweep or the spread is lost.
         """
-        one_minus_alpha = torch.logspace(-1, -3, self.n_head)   # 0.1 ... 0.001
+        # slab_v2: 1-alpha down to 10^-4.5 (~30k-token horizon) -- 0.999 is only
+        # ~700 tokens, too short once block_size is 2048-4096.
+        lo = -4.5 if self.slab_v2 else -3
+        one_minus_alpha = torch.logspace(-1, lo, self.n_head)   # 0.1 ... 0.001 (v1)
         rate = -torch.log1p(-one_minus_alpha)                   # r = -log(alpha) > 0
         with torch.no_grad():
             self.alpha_proj.bias.copy_(torch.log(torch.expm1(rate)).to(self.alpha_proj.bias.dtype))
@@ -111,19 +144,90 @@ class SelectiveLinearAttention(nn.Module):
             return c
         return c[:T, :T]
 
-    def empty_state(self, batch_size: int, device=None, dtype=None) -> torch.Tensor:
-        """Zero initial state: (B, H, head_dim, head_dim), one matrix per head."""
-        return torch.zeros(batch_size, self.n_head, self.head_dim, self.head_dim,
-                            device=device, dtype=dtype)
+    def empty_state(self, batch_size: int, device=None, dtype=None):
+        """Zero initial state: (B, H, head_dim, head_dim), one matrix per head.
+        slab_v2: (that matrix, conv history (B, 3C, k-1))."""
+        S = torch.zeros(batch_size, self.n_head, self.head_dim, self.head_dim,
+                        device=device, dtype=dtype)
+        if not self.slab_v2:
+            return S
+        return S, torch.zeros(batch_size, 3 * self.n_head * self.head_dim, self.conv_k - 1,
+                              device=device, dtype=dtype)
+
+    def _conv(self, u: torch.Tensor, reset_mask: torch.Tensor | None) -> torch.Tensor:
+        """Causal depthwise conv over time, u: (B, T, 3C). A tap reaching back
+        across a document start is zeroed, same isolation as the state reset."""
+        # One depthwise conv1d kernel in the activation dtype (bf16 under autocast): an
+        # elementwise version promoted to fp32 against the fp32 taps and saved several
+        # (B, T, 3C) fp32 copies per layer -- enough to OOM at T=2048 (2026-10-07).
+        w = self.conv_w.to(u.dtype)
+        out = F.conv1d(F.pad(u.transpose(1, 2), (self.conv_k - 1, 0)), w.unsqueeze(1),
+                       self.conv_b.to(u.dtype), groups=u.size(-1)).transpose(1, 2)
+        if reset_mask is not None:
+            # Document isolation: subtract the few taps that reach back across a
+            # document start (<= k-1 positions per boundary), sparsely, in one index_put.
+            bi, ti, s = self._crossing_taps(reset_mask)
+            if bi.numel():
+                out = out.index_put((bi, ti), -(u[bi, ti - s] * w.t()[self.conv_k - 1 - s]), accumulate=True)
+        return F.silu(out)
+
+    def _crossing_taps(self, reset_mask: torch.Tensor):
+        """(batch, position, shift) of every conv tap that crosses a document start.
+
+        nonzero() is a host sync, and every layer sees the same reset_mask object, so
+        the result is cached on that tensor: one sync per forward instead of one per
+        shift per layer (48 at 16 layers, which cost 26% of a slab_v2 step).
+        """
+        cached = getattr(reset_mask, "_slab_taps", None)
+        if cached is not None and cached[0] == reset_mask._version:
+            return cached[1]
+        T, K = reset_mask.size(1), self.conv_k
+        doc = torch.cumsum((reset_mask == 0).long(), dim=1)  # (B, T)
+        cross = torch.zeros(K - 1, *doc.shape, dtype=torch.bool, device=doc.device)
+        for s in range(1, min(K, T)):
+            cross[s - 1, :, s:] = doc[:, s:] != doc[:, :-s]      # tap t-s is in an earlier doc
+        si, bi, ti = cross.nonzero(as_tuple=True)
+        taps = (bi, ti, si + 1)
+        reset_mask._slab_taps = (reset_mask._version, taps)
+        return taps
+
+    def _project(self, x: torch.Tensor, reset_mask: torch.Tensor | None = None):
+        """q, k, v (B, H, T, Dh) and log_alpha (B, T, H) for the whole sequence."""
+        B, T, C = x.shape
+        H, Dh = self.n_head, self.head_dim
+        u = self.qkv(x)
+        if self.slab_v2:
+            u = self._conv(u, reset_mask)
+        qkv = u.view(B, T, 3, H, Dh).permute(2, 0, 3, 1, 4)
+        q, k, v = qkv[0], qkv[1], qkv[2]
+        if self.slab_v2:   # norms in >= fp32, result back in the activation dtype
+            q, k = F.normalize(_up(q), dim=-1).to(q.dtype), F.normalize(_up(k), dim=-1).to(k.dtype)
+        return q, k, v, -F.softplus(self.alpha_proj(x))
+
+    def _output(self, y: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
+        """y: (B, H, T, Dh) or (B, H, Dh) step form; x: the block input (B, T, C) / (B, C)."""
+        if self.slab_v2:
+            w = self.y_norm.view(self.n_head, self.head_dim).to(y.dtype)
+            w = w.unsqueeze(1) if y.dim() == 4 else w
+            yf = _up(y)
+            y = (yf * torch.rsqrt(yf.pow(2).mean(-1, keepdim=True) + 1e-5)).to(y.dtype) * w
+        y = y.transpose(1, 2).reshape(x.shape) if y.dim() == 4 else y.reshape(x.shape)
+        if self.slab_v2:
+            y = y * F.silu(self.gate(x))
+        return self.proj(y)
+
+    def compile_projections(self, backend: str = "inductor", mode: str | None = None):
+        """Opt-in compilation of _project and _output paths."""
+        kwargs = {"backend": backend}
+        if mode is not None:
+            kwargs["mode"] = mode
+        self._project = torch.compile(self._project, **kwargs)
+        self._output = torch.compile(self._output, **kwargs)
 
     def _forward_dense(self, x: torch.Tensor, reset_mask: torch.Tensor | None = None) -> torch.Tensor:
         """Dense quadratic dual/parallel form O(T^2). Fallback for arbitrary/short sequence lengths."""
         B, T, C = x.shape
-        H, Dh = self.n_head, self.head_dim
-        qkv = self.qkv(x).view(B, T, 3, H, Dh).permute(2, 0, 3, 1, 4)
-        q, k, v = qkv[0], qkv[1], qkv[2]  # each (B, H, T, Dh)
-
-        log_alpha = -F.softplus(self.alpha_proj(x))          # (B, T, H), <= 0
+        q, k, v, log_alpha = self._project(x, reset_mask)  # q/k/v (B, H, T, Dh); log_alpha (B, T, H) <= 0
         Lambda = torch.cumsum(log_alpha, dim=1).transpose(1, 2)  # (B, H, T)
         log_M = Lambda.unsqueeze(-1) - Lambda.unsqueeze(-2)   # (B,H,T,T): [i,j] = Lam_i - Lam_j
         log_M = torch.clamp(log_M, min=-30.0)
@@ -138,8 +242,7 @@ class SelectiveLinearAttention(nn.Module):
 
         scores = torch.matmul(q * self.scale, k.transpose(-2, -1))  # (B,H,T,T)
         y = torch.matmul(scores * M, v)  # (B, H, T, Dh)
-        y = y.transpose(1, 2).contiguous().view(B, T, C)
-        return self.proj(y)
+        return self._output(y, x)
 
     def forward(self, x: torch.Tensor, reset_mask: torch.Tensor | None = None) -> torch.Tensor:
         """Dual/parallel form with chunked linear attention (C=64) per
@@ -166,9 +269,8 @@ class SelectiveLinearAttention(nn.Module):
         H, Dh = self.n_head, self.head_dim
         n_chunks = T // chunk_size
 
-        qkv = self.qkv(x).view(B, T, 3, H, Dh).permute(2, 0, 3, 1, 4)
-        q, k, v = qkv[0], qkv[1], qkv[2]  # each (B, H, T, Dh)
-        log_alpha = -F.softplus(self.alpha_proj(x)).transpose(1, 2)  # (B, H, T)
+        q, k, v, log_alpha = self._project(x, reset_mask)  # each (B, H, T, Dh)
+        log_alpha = log_alpha.transpose(1, 2)  # (B, H, T)
 
         q_c = q.view(B, H, n_chunks, chunk_size, Dh)
         k_c = k.view(B, H, n_chunks, chunk_size, Dh)
@@ -190,59 +292,42 @@ class SelectiveLinearAttention(nn.Module):
         scores_intra = torch.matmul(q_c * self.scale, k_c.transpose(-2, -1))
         o_intra = torch.matmul(scores_intra * M_intra, v_c)  # (B, H, n_chunks, C, Dh)
 
-        # Inter-chunk recurrence (spec Section 10.6 Proofs 1-3)
-        o_inter_list = []
-        S = torch.zeros(B, H, Dh, Dh, device=x.device, dtype=x.dtype)
-
-        for c_idx in range(n_chunks):
-            q_curr = q_c[:, :, c_idx]
-            Lam_curr = Lambda_c[:, :, c_idx]
-            k_curr = k_c[:, :, c_idx]
-            v_curr = v_c[:, :, c_idx]
-
-            if reset_mask is not None:
-                r_c = reset_mask.view(B, n_chunks, chunk_size)
-                r_curr = r_c[:, c_idx]
-                doc_curr = doc_id_c[:, c_idx]
-                doc_prev_end = doc_id[:, c_idx * chunk_size - 1] if c_idx > 0 else doc_id[:, 0]
-
-                # 1. Annihilate incoming state if token 0 of this chunk is a reset
-                S = S * r_curr[:, 0].view(B, 1, 1, 1).to(x.dtype)
-
-                # 2. Inter-chunk query: token i only attends to S if doc_curr[:, i] == doc_prev_end
-                can_see_prev = (doc_curr == doc_prev_end.unsqueeze(-1)).unsqueeze(1)
-                gamma_i = torch.exp(Lam_curr) * can_see_prev.to(x.dtype)
-                q_S = torch.matmul(q_curr, S)
-                o_inter = q_S * gamma_i.unsqueeze(-1)
-                o_inter_list.append(o_inter)
-
-                # 3. Accumulated outgoing chunk state: tokens belonging to final doc of chunk
-                is_final_doc = (doc_curr == doc_curr[:, -1:]).unsqueeze(1)
-                decay_to_end = torch.exp((Lam_curr[:, :, -1:] - Lam_curr).clamp(min=-30.0)) * is_final_doc.to(x.dtype)
-                k_end = k_curr * decay_to_end.unsqueeze(-1) * self.scale
-                delta_S = torch.matmul(k_end.transpose(-2, -1), v_curr)
-
-                # 4. Total chunk decay for carrying S forward
-                has_reset_anywhere = (doc_curr[:, -1] != doc_prev_end)
-                chunk_survives = (~has_reset_anywhere).view(B, 1, 1, 1).to(x.dtype)
-                gamma_c = torch.exp(Lam_curr[:, :, -1:]).unsqueeze(-1) * chunk_survives
-                S = S * gamma_c + delta_S
-            else:
-                gamma_i = torch.exp(Lam_curr)
-                q_S = torch.matmul(q_curr, S)
-                o_inter = q_S * gamma_i.unsqueeze(-1)
-                o_inter_list.append(o_inter)
-
-                decay_to_end = torch.exp((Lam_curr[:, :, -1:] - Lam_curr).clamp(min=-30.0))
-                k_end = k_curr * decay_to_end.unsqueeze(-1) * self.scale
-                delta_S = torch.matmul(k_end.transpose(-2, -1), v_curr)
-                gamma_c = torch.exp(Lam_curr[:, :, -1:]).unsqueeze(-1)
-                S = S * gamma_c + delta_S
-
-        o_inter_all = torch.stack(o_inter_list, dim=2)
-        o_all = (o_intra + o_inter_all).view(B, H, T, Dh)
-        y = o_all.transpose(1, 2).contiguous().view(B, T, C)
-        return self.proj(y)
+        # Inter-chunk recurrence (spec Section 10.6 Proofs 1-3), in closed form.
+        # The loop it replaces ran S_out[c] = g[c] * surv[c] * S_out[c-1] + dS[c] chunk by
+        # chunk: ~10 small kernels per chunk per layer, forward and backward, so at
+        # T=2048 (32 chunks) the GPU sat idle waiting on Python launches (profiled
+        # 2026-10-07: CPU time == step time). Decay is a scalar per head, so the state
+        # entering chunk c unrolls to
+        #     S_in[c] = sum_{j<c} exp(LA[c-1] - LA[j]) * same_doc(c-1, j) * dS[j]
+        # with A[c] = chunk c's total log decay and LA its cumsum: one masked (n x n)
+        # weight matrix and one einsum, launch count independent of T.
+        # Resets: dS[j] holds only chunk j's final document (as before), state survives
+        # chunk i iff its last doc id equals chunk i-1's, so it survives j+1..c-1 iff
+        # E[c-1] == E[j] (doc ids are non-decreasing), and token i of chunk c reads it
+        # iff its doc id == E[c-1] -- exactly the old loop's can_see_prev / survives.
+        A = Lambda_c[..., -1]                                          # (B, H, n)
+        decay_to_end = torch.exp((A.unsqueeze(-1) - Lambda_c).clamp(min=-30.0))
+        valid = torch.ones(n_chunks, n_chunks, dtype=torch.bool, device=x.device).tril(-1)
+        can_see = None
+        if reset_mask is not None:
+            E = doc_id_c[:, :, -1]                                       # (B, n) last doc id per chunk
+            E_prev = torch.cat([E[:, :1], E[:, :-1]], dim=1)             # E[c-1] (c=0: no j<0 anyway)
+            decay_to_end = decay_to_end * (doc_id_c == E.unsqueeze(-1)).unsqueeze(1).to(decay_to_end.dtype)
+            valid = valid & (E_prev.unsqueeze(-1) == E.unsqueeze(-2)).unsqueeze(1)          # (B, 1, n, n)
+            can_see = (doc_id_c == E_prev.unsqueeze(-1)).unsqueeze(1).unsqueeze(-1)         # (B, 1, n, C, 1)
+        k_end = k_c * decay_to_end.unsqueeze(-1) * self.scale
+        dS = torch.matmul(k_end.transpose(-2, -1), v_c)                 # (B, H, n, Dh, Dh)
+        LA = torch.cumsum(A, dim=-1)
+        expo = (LA - A).unsqueeze(-1) - LA.unsqueeze(-2)                # [c, j] = LA[c-1] - LA[j]
+        # where() before exp: masked (j >= c) entries are -inf -> exactly 0 with zero grad,
+        # never exp(+large) * 0 = nan in backward
+        W = torch.exp(torch.where(valid, expo, torch.full_like(expo, float("-inf"))))
+        S_in = torch.einsum("bhcj,bhjde->bhcde", W.to(dS.dtype), dS)
+        o_inter = torch.matmul(q_c, S_in) * torch.exp(Lambda_c).unsqueeze(-1)
+        if can_see is not None:
+            o_inter = o_inter * can_see.to(o_inter.dtype)
+        o_all = (o_intra + o_inter).reshape(B, H, T, Dh)
+        return self._output(o_all, x)
 
     def step(self, x: torch.Tensor, state: torch.Tensor | None, reset: torch.Tensor | None = None):
         """Recurrent form. x: (B, C) single-token input at this layer.
@@ -257,18 +342,28 @@ class SelectiveLinearAttention(nn.Module):
         if state is None:
             state = self.empty_state(B, device=x.device, dtype=x.dtype)
         elif reset is not None:
-            state = state * reset.view(B, 1, 1, 1).to(state.dtype)
+            r = reset.view(B, 1, 1).to(x.dtype)
+            state = (state[0] * r.unsqueeze(-1), state[1] * r) if self.slab_v2 else state * r.unsqueeze(-1)
 
-        qkv = self.qkv(x).view(B, 3, H, Dh)
+        u = self.qkv(x)
+        if self.slab_v2:
+            state, hist = state
+            window = torch.cat([hist, u.unsqueeze(-1)], dim=-1)          # (B, 3C, k)
+            u = F.silu((window * self.conv_w).sum(-1) + self.conv_b)
+            hist = window[:, :, 1:]
+        qkv = u.view(B, 3, H, Dh)
         q, k, v = qkv[:, 0], qkv[:, 1], qkv[:, 2]  # each (B, H, Dh)
+        if self.slab_v2:
+            q, k = F.normalize(q, dim=-1), F.normalize(k, dim=-1)
 
         log_alpha = -F.softplus(self.alpha_proj(x))  # (B, H)
         alpha = torch.exp(log_alpha)
 
         kv_outer = torch.einsum("bhd,bhe->bhde", k, v) * self.scale  # (B,H,Dh,Dh)
         new_state = alpha.unsqueeze(-1).unsqueeze(-1) * state + kv_outer
-        y = torch.einsum("bhd,bhde->bhe", q, new_state).reshape(B, C)
-        return self.proj(y), new_state
+        y = torch.einsum("bhd,bhde->bhe", q, new_state)
+        out = self._output(y, x)
+        return out, ((new_state, hist) if self.slab_v2 else new_state)
 
 
 class CausalDepthwiseConv1d(nn.Module):
@@ -552,6 +647,95 @@ def self_test():
           f"packed isolation ok, conv diff {conv_diff:.3e}, deltanet ok)")
 
 
+def self_test_v2():
+    """slab_v2 gates (fp64): forward == step, chunked == dense, reset parity,
+    packed isolation (conv taps included), and slab_v2=False keeps the old
+    state_dict keys. Random conv taps, so the history path is actually tested."""
+    torch.manual_seed(1)
+    from dataclasses import replace
+    base = ModelConfig(vocab_size=64, block_size=128, n_layer=2, n_head=4, n_embd=32)
+    assert set(SelectiveLinearAttention(base).state_dict()) == {
+        "qkv.weight", "alpha_proj.weight", "alpha_proj.bias", "proj.weight"}
+    attn = SelectiveLinearAttention(replace(base, slab_v2=True)).double().eval()
+    with torch.no_grad():
+        attn.conv_w.normal_(0, 0.5)
+        attn.conv_b.normal_(0, 0.1)
+        attn.y_norm.normal_(1, 0.2)
+    B, T = 3, 128
+
+    def run_steps(x, reset=None):
+        st, out = None, []
+        for t in range(x.size(1)):
+            y, st = attn.step(x[:, t], st, reset=None if reset is None else reset[:, t])
+            out.append(y)
+        return torch.stack(out, 1)
+
+    x = torch.randn(B, T, 32, dtype=torch.float64)
+    reset = torch.ones(B, T, dtype=torch.float64)
+    reset[:, 37] = 0.0
+    reset[1, 64] = 0.0       # boundary exactly on a chunk edge
+    reset[2, 66] = 0.0       # boundary 2 tokens past a chunk edge (conv taps cross it)
+    with torch.no_grad():
+        d_step = (attn(x) - run_steps(x)).abs().max().item()
+        d_dense = (attn(x) - attn._forward_dense(x)).abs().max().item()
+        d_reset = (attn(x, reset_mask=reset) - run_steps(x, reset)).abs().max().item()
+        d_reset_dense = (attn(x, reset_mask=reset) - attn._forward_dense(x, reset)).abs().max().item()
+        xa, xb = torch.randn(B, 64, 32, dtype=torch.float64), torch.randn(B, 64, 32, dtype=torch.float64)
+        r = torch.ones(B, 128, dtype=torch.float64)
+        r[:, 64] = 0.0
+        yp = attn(torch.cat([xa, xb], 1), reset_mask=r)
+        d_iso = max((yp[:, :64] - attn(xa)).abs().max().item(), (yp[:, 64:] - attn(xb)).abs().max().item())
+        x40 = x[:, :40]
+        d_short = (attn(x40) - run_steps(x40)).abs().max().item()     # dense fallback path
+    for name, d in (("step", d_step), ("dense", d_dense), ("reset", d_reset),
+                    ("reset_dense", d_reset_dense), ("isolation", d_iso), ("short", d_short)):
+        assert d < 1e-9, f"slab_v2 {name} mismatch {d:.3e}"
+    one_minus = 1 - torch.exp(-F.softplus(attn.alpha_proj.bias))
+    assert abs(one_minus.min().item() - 10 ** -4.5) < 1e-6, one_minus
+
+    # Many chunks (closed-form inter-chunk recurrence): T=320 = 5 chunks, a document
+    # spanning chunks 2-4, a reset on a chunk edge and one mid-chunk, both settings.
+    # With only 2 chunks (T=128) the closed form is trivially exact, so this is the
+    # test that actually exercises the decay matrix.
+    for v2 in (False, True):
+        a = SelectiveLinearAttention(replace(base, slab_v2=v2)).double().eval()
+        if v2:
+            with torch.no_grad():
+                a.conv_w.normal_(0, 0.5)
+        xs = torch.randn(2, 320, 32, dtype=torch.float64)
+        r5 = torch.ones(2, 320, dtype=torch.float64)
+        r5[0, 64] = 0.0
+        r5[0, 150] = 0.0          # doc 150..319 spans chunks 2, 3, 4
+        r5[1, 200] = 0.0          # row 1: doc 0..199 spans chunks 0-3
+        st, outs = None, []
+        with torch.no_grad():
+            for t in range(320):
+                y, st = a.step(xs[:, t], st, reset=r5[:, t])
+                outs.append(y)
+            ref = torch.stack(outs, 1)
+            for rm, name in ((r5, "reset"), (None, "plain")):
+                got = a(xs, reset_mask=rm)
+                dense = a._forward_dense(xs, rm)
+                if rm is None:
+                    st, outs = None, []
+                    for t in range(320):
+                        y, st = a.step(xs[:, t], st)
+                        outs.append(y)
+                    want = torch.stack(outs, 1)
+                else:
+                    want = ref
+                d1, d2 = (got - want).abs().max().item(), (got - dense).abs().max().item()
+                assert d1 < 1e-9 and d2 < 1e-9, f"5-chunk {name} slab_v2={v2}: step {d1:.2e} dense {d2:.2e}"
+    # gradients flow and stay finite through the closed form (masked exp must not nan)
+    xg = torch.randn(2, 320, 32, dtype=torch.float64, requires_grad=True)
+    a(xg, reset_mask=r5).sum().backward()
+    assert torch.isfinite(xg.grad).all() and all(torch.isfinite(p.grad).all() for p in a.parameters()
+                                                   if p.grad is not None)
+    print(f"[self-test] slab_v2: step {d_step:.1e}, dense {d_dense:.1e}, reset {d_reset:.1e}, "
+          f"isolation {d_iso:.1e} ok")
+
+
 if __name__ == "__main__":
     self_test()
+    self_test_v2()
 

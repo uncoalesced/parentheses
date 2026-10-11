@@ -80,6 +80,58 @@ def _reject_questions(prompt: str, force: bool):
         )
 
 
+def load_bpe_tokenizer(ckpt: dict):
+    """The checkpoint's HF tokenizer (BPE runs save {path, sha256}), or None for byte models."""
+    meta = ckpt.get("tokenizer")
+    if not meta:
+        return None
+    from tokenizers import Tokenizer
+    tok = Tokenizer.from_file(str(Path(meta["path"]) / "tokenizer.json"))
+    tok.encode_special_tokens = True  # tags typed in the prompt stay text; specials go in by id
+    return tok
+
+
+def _stream_bpe(model: Parentheses, tok, primed: str, lang: str, max_tokens: int | None,
+                temperature: float, top_k: int, timings: list[float] | None = None):
+    """BPE twin of _stream_text: <lang> + primed text in, decoded text out. Stops at a
+    turn/document end token or once the output loops (same detector as eval_queries)."""
+    import sys
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
+    from eval_queries import STOP_TOKENS, looping
+
+    device = next(model.parameters()).device
+    tag = tok.token_to_id(f"<{lang}>")
+    if tag is None:
+        raise ValueError(f"tokenizer has no <{lang}> tag")
+    ids = [tag] + tok.encode(primed).ids
+    idx = torch.tensor([ids], dtype=torch.long, device=device)
+    sink_tokens = min(idx.size(1), model.cfg.block_size // 4)
+    stops = {tok.token_to_id(s) for s in STOP_TOKENS} - {None}
+    out, pending = [], []
+    stream = model.stream(idx, max_tokens, temperature, top_k, sink_tokens=sink_tokens)
+    while True:
+        started = time.perf_counter()
+        try:
+            t = int(next(stream))
+        except StopIteration:
+            break
+        if timings is not None:
+            timings.append(time.perf_counter() - started)
+        if t in stops:
+            break
+        out.append(t)
+        pending.append(t)
+        # byte-level BPE can split a character across tokens: hold them until it decodes whole
+        chunk = tok.decode(pending, skip_special_tokens=False)
+        if chunk and not chunk.endswith("�"):
+            pending = []
+            yield chunk
+        if looping(out):
+            break
+    if pending:  # stream ended mid-character: emit what's left rather than drop it
+        yield tok.decode(pending, skip_special_tokens=False)
+
+
 def _stream_text(model: Parentheses, primed: str, max_tokens: int | None,
                  temperature: float, top_k: int, timings: list[float] | None = None):
     """Yield decoded text as `model` continues `primed`.
@@ -106,7 +158,7 @@ def _stream_text(model: Parentheses, primed: str, max_tokens: int | None,
     # driven by next() rather than `for`, so the timed region is exactly the
     # model's work for one token -- a `for` body would also fold in however
     # long the consumer (printing, a UI) spends between yields.
-    stream = model.stream(idx, max_tokens, temperature, top_k, sink_tokens)
+    stream = model.stream(idx, max_tokens, temperature, top_k, sink_tokens=sink_tokens)
     while True:
         started = time.perf_counter()
         try:
@@ -171,16 +223,18 @@ def timing_summary(timings: list[float], window: int = 100) -> str:
 class FreeThinkSession:
     """A live, exportable stream of open-ended "thinking" about a statement."""
 
-    def __init__(self, model: Parentheses, temperature: float = 0.9, top_k: int = 40):
-        if model.cfg.vocab_size > 256:
+    def __init__(self, model: Parentheses, temperature: float = 0.9, top_k: int = 40,
+                 tokenizer=None, lang: str = "eng"):
+        if model.cfg.vocab_size > 256 and tokenizer is None:
             raise ValueError(
-                "FreeThinkSession decodes model output as raw UTF-8 bytes; the "
-                f"vocab_size={model.cfg.vocab_size} presets need their trained BPE "
-                "tokenizer wired in here first (see data/tokenizer/)."
+                f"vocab_size={model.cfg.vocab_size} is a BPE model: pass its tokenizer "
+                "(load_bpe_tokenizer(ckpt)); without one output is decoded as raw UTF-8 bytes."
             )
         self.model = model
         self.temperature = temperature
         self.top_k = top_k
+        self.tokenizer = tokenizer
+        self.lang = lang
         self.prompt: str | None = None
         self.history: list[str] = []
 
@@ -195,8 +249,12 @@ class FreeThinkSession:
         self.prompt = prompt
         self.history = []
         primed = PRIMING.format(prompt=prompt.strip())
-        for chunk in _stream_text(self.model, primed, max_tokens, self.temperature,
-                                  self.top_k, timings):
+        if self.tokenizer is not None:
+            chunks = _stream_bpe(self.model, self.tokenizer, primed, self.lang, max_tokens,
+                                 self.temperature, self.top_k, timings)
+        else:
+            chunks = _stream_text(self.model, primed, max_tokens, self.temperature, self.top_k, timings)
+        for chunk in chunks:
             self.history.append(chunk)
             yield chunk
 
@@ -236,6 +294,7 @@ def main():
                    help=f"filename to write per-token latencies to inside {EXPORT_DIR} "
                         "(token_index,ms CSV); also prints a first-vs-last summary")
     p.add_argument("--force", action="store_true", help="free-think even if the prompt looks like a question")
+    p.add_argument("--lang", default="eng", help="language tag for BPE checkpoints (kan, tam, tel, mal, ...)")
     p.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     p.add_argument("--self-test", action="store_true",
                    help="check the session logic on an untrained tiny model and exit")
@@ -251,7 +310,8 @@ def main():
     model.load_state_dict(ckpt["model"])
     model.eval()
 
-    session = FreeThinkSession(model, args.temperature, args.top_k)
+    session = FreeThinkSession(model, args.temperature, args.top_k,
+                               tokenizer=load_bpe_tokenizer(ckpt), lang=args.lang)
     print(f"[free-think] {args.checkpoint} (step {ckpt['step']}) on {args.device}")
     print(f"[free-think] prompt: {args.prompt}\n")
     timings = [] if args.timing else None
@@ -335,6 +395,23 @@ def _self_test():
                 raise AssertionError(f"export should have rejected {escape!r}")
             except ValueError:
                 pass
+
+    # BPE path: untrained tiny model with the real v3_32k vocab (tokenizer file only, no data)
+    from model.config import ModelConfig
+    tok_dir = Path(__file__).resolve().parent.parent / "data" / "tokenizer" / "v3_32k"
+    tok = load_bpe_tokenizer({"tokenizer": {"path": str(tok_dir)}})
+    bpe = Parentheses(ModelConfig(vocab_size=32768, block_size=256, n_layer=2, n_head=2, n_embd=32,
+                                  attn_type="selective_linear")).eval()
+    try:
+        FreeThinkSession(bpe)
+        raise AssertionError("a BPE model without a tokenizer should be rejected")
+    except ValueError:
+        pass
+    s = FreeThinkSession(bpe, tokenizer=tok, lang="kan")
+    timings = []
+    text = s.run("ಬೆಂಗಳೂರು ಒಂದು ನಗರ.", max_tokens=30, timings=timings)
+    assert text == "".join(s.history) and "�" not in text[-1:], repr(text[-5:])
+    assert 1 <= len(timings) <= 30, len(timings)
     print("[self-test] free_think ok")
 
 

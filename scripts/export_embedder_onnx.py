@@ -56,21 +56,29 @@ class _EmbedForExport(nn.Module):
         return self.head(self.backbone.hidden(idx), mask)
 
 
-def export(checkpoint: str, head_path: str, out_path: str, opset: int = 17) -> dict:
+def export(checkpoint: str, head_path: str, out_path: str, opset: int = 17,
+           fixed_batch: int | None = None, fixed_seq: int | None = None) -> dict:
     """-> head_meta (dim, n_embd, etc.), same shape load_trained returns."""
     backbone, head, meta = load_trained(checkpoint, head_path, "cpu")
     wrapper = _EmbedForExport(backbone, head).eval()
 
-    # Two probe texts of different lengths so the traced graph's seq-len axis
-    # is exercised as genuinely dynamic before dynamic_axes gets to rely on it.
-    idx, mask = batch_bytes(["export probe", "a second, longer probe sentence"],
-                             backbone.cfg.block_size, "cpu")
+    if fixed_batch is not None and fixed_seq is not None:
+        # Fixed static shape for NPU / DPU compiler targets (e.g. AMD XDNA1 / Vitis AI)
+        idx = torch.zeros((fixed_batch, fixed_seq), dtype=torch.long)
+        mask = torch.ones((fixed_batch, fixed_seq), dtype=torch.bool)
+        dynamic_axes = None
+    else:
+        # Two probe texts of different lengths so the traced graph's seq-len axis
+        # is exercised as genuinely dynamic before dynamic_axes gets to rely on it.
+        idx, mask = batch_bytes(["export probe", "a second, longer probe sentence"],
+                                 backbone.cfg.block_size, "cpu")
+        dynamic_axes = {"idx": {0: "batch", 1: "seq"},
+                        "mask": {0: "batch", 1: "seq"},
+                        "embedding": {0: "batch"}}
     torch.onnx.export(
         wrapper, (idx, mask), out_path,
         input_names=["idx", "mask"], output_names=["embedding"],
-        dynamic_axes={"idx": {0: "batch", 1: "seq"},
-                       "mask": {0: "batch", 1: "seq"},
-                       "embedding": {0: "batch"}},
+        dynamic_axes=dynamic_axes,
         opset_version=opset,
         dynamo=False,  # torch>=2.5 defaults to the onnxscript-based exporter;
                         # force the legacy TorchScript one so onnxscript isn't a dep.
@@ -87,6 +95,13 @@ def export(checkpoint: str, head_path: str, out_path: str, opset: int = 17) -> d
     entry = onnx_model.metadata_props.add()
     entry.key = "block_size"
     entry.value = str(backbone.cfg.block_size)
+    if fixed_batch is not None and fixed_seq is not None:
+        fb_entry = onnx_model.metadata_props.add()
+        fb_entry.key = "fixed_batch"
+        fb_entry.value = str(fixed_batch)
+        fs_entry = onnx_model.metadata_props.add()
+        fs_entry.key = "fixed_seq"
+        fs_entry.value = str(fixed_seq)
     onnx.save(onnx_model, out_path)
 
     return meta
@@ -104,6 +119,10 @@ def main():
                         "multilingual-22's embedding_head_multi22.pt")
     p.add_argument("--out", default="checkpoints/all-sources-v1/embedder.onnx")
     p.add_argument("--opset", type=int, default=17)
+    p.add_argument("--fixed-batch", type=int, default=None,
+                   help="fixed batch size for static NPU compilation (e.g. 1)")
+    p.add_argument("--fixed-seq", type=int, default=None,
+                   help="fixed sequence length for static NPU compilation (e.g. 128)")
     p.add_argument("--self-test", action="store_true")
     args = p.parse_args()
 
@@ -128,7 +147,8 @@ def main():
     # its own now -- was checked here too before that guard moved into the
     # shared loader so every caller gets it, not just this script.
     try:
-        meta = export(args.checkpoint, args.head, args.out, args.opset)
+        meta = export(args.checkpoint, args.head, args.out, args.opset,
+                      fixed_batch=args.fixed_batch, fixed_seq=args.fixed_seq)
     except ValueError as e:
         raise SystemExit(str(e))
     print(f"[info] exported {args.out} (dim={meta['dim']}, n_embd={meta['n_embd']})")

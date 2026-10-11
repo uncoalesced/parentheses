@@ -103,6 +103,36 @@ def get_batch(data: np.memmap, block_size: int, batch_size: int, device: str,
     return x, y, reset_mask
 
 
+def mixed_batch(data, mixes, block_size: int, batch_size: int, device: str,
+                mask=None, boundaries=None):
+    """get_batch() where the last rows come from extra corpora.
+
+    `mixes` is a list of (data, boundaries_or_None, rows): each contributes a fixed
+    number of rows per batch, `data` fills the rest. A corpus without boundaries
+    gets all-ones reset rows (no document resets) whenever any part has a mask.
+    """
+    parts = [get_batch(data, block_size, batch_size - sum(n for _, _, n in mixes), device, mask, boundaries)]
+    parts += [get_batch(d, block_size, n, device, None, b) for d, b, n in mixes]
+    x, y = torch.cat([p[0] for p in parts]), torch.cat([p[1] for p in parts])
+    if all(p[2] is None for p in parts):
+        return x, y, None
+    rm = torch.cat([p[2] if p[2] is not None else torch.ones_like(p[0], dtype=torch.uint8) for p in parts])
+    return x, y, rm
+
+
+def lr_mult(step: int, decay_start: int | None, max_steps: int, min_ratio: float,
+            warmup: int = 0, start_step: int = 0) -> float:
+    """Warmup-stable-decay: linear warmup over the first `warmup` steps from `start_step`
+    (first step gets 1/warmup, never 0), 1.0 until decay_start, then linear to min_ratio at
+    the last step (max_steps - 1). decay_start=None keeps the old constant LR."""
+    rel = step - start_step
+    w = min(1.0, (rel + 1) / warmup) if warmup > 0 else 1.0
+    if decay_start is None or step < decay_start:
+        return w
+    frac = (step - decay_start) / max(1, max_steps - 1 - decay_start)
+    return w * (1.0 + (min_ratio - 1.0) * min(frac, 1.0))
+
+
 def apply_adaptive_gradient_clipping(
     model: torch.nn.Module,
     clip_factor: float = 0.05,
@@ -232,6 +262,16 @@ def main():
                         "train_boundaries.npy). Builds a per-batch reset_mask so "
                         "selective_linear attention carries no state across a packed "
                         "document boundary. selective_linear presets only.")
+    p.add_argument("--replay-data", default=None,
+                   help="second uint16 .bin mixed into every batch to stop forgetting the old "
+                        "domain (e.g. data/processed_all_sources_v1/train.bin). No boundaries: "
+                        "its rows train without document resets, as selective-v1 did.")
+    p.add_argument("--replay-frac", type=float, default=0.0,
+                   help="fraction of each micro-batch drawn from --replay-data")
+    p.add_argument("--mix", nargs="+", action="append", default=[], metavar="ARG",
+                   help="extra corpus: PATH ROWS [BOUNDARIES]. ROWS of every micro-batch come from "
+                        "PATH (uint16 .bin); BOUNDARIES (.npy) turns on document resets for it. "
+                        "Repeat per corpus, e.g. one per low-resource language.")
     p.add_argument("--out-dir", default="checkpoints")
     p.add_argument("--resume-from", default=None,
                    help="checkpoint .pt to resume from (for staged/batched runs). "
@@ -241,6 +281,21 @@ def main():
                     "so this defaults much higher than it would for the 50M+ presets")
     p.add_argument("--grad-accum", type=int, default=1)
     p.add_argument("--lr", type=float, default=3e-4)
+    p.add_argument("--decay-start", type=int, default=None,
+                   help="absolute step where LR starts a linear decay to --min-lr at --max-steps "
+                        "(cooldown). Unset = constant LR, the pre-2026-10-06 behaviour.")
+    p.add_argument("--min-lr", type=float, default=0.0, help="LR at the last step when --decay-start is set")
+    p.add_argument("--warmup-steps", type=int, default=0, help="linear LR warmup steps (absolute, from step 0)")
+    p.add_argument("--tokenizer", default=None,
+                   help="dir with the HF tokenizer.json --data was encoded with; its path and sha256 "
+                        "are saved in every checkpoint (byte-level runs leave this unset)")
+    p.add_argument("--seed", type=int, default=None,
+                   help="seed model init, and (separately, re-seeded after init) the batch sampler, so "
+                        "two architectures with different param counts still see identical batches")
+    p.add_argument("--ce-rows", type=int, default=4096,
+                   help="tokens per chunked cross-entropy slice (smaller = less peak memory, a little slower)")
+    p.add_argument("--deadline", type=float, default=None,
+                   help="unix time: save a final checkpoint and stop once passed (overnight runs)")
     p.add_argument("--weight-decay", type=float, default=0.1)
     p.add_argument("--differential-adamw", action="store_true",
                    help="use segregated Differential AdamW (separate recurrent decay, matrix, and bias/norm groups)")
@@ -269,13 +324,19 @@ def main():
         return
 
     cfg: ModelConfig = PRESETS[args.preset]
+    if args.device == "cuda":
+        # Windows lets CUDA spill into shared system RAM instead of raising OOM, which
+        # runs ~10x slower with no error. Cap it so overflow is a real OOM the overnight
+        # driver can react to (halve batch, double grad-accum).
+        torch.cuda.set_per_process_memory_fraction(0.92)
+    if args.seed is not None:
+        torch.manual_seed(args.seed)
     model = Parentheses(cfg).to(args.device)
     print(f"[info] {args.preset}: {model.num_params()/1e6:.1f}M params on {args.device}")
 
     if args.grad_checkpointing:
-        # Simple manual checkpointing hook point; wire into Block.forward via
-        # torch.utils.checkpoint if/when VRAM pressure requires it.
-        print("[info] gradient checkpointing requested (enable per-block checkpoint() calls as needed)")
+        model.grad_checkpointing = True   # per-block activation checkpointing in Parentheses.hidden
+        print("[info] activation checkpointing on (per block)")
 
     optimizer = build_optimizer(
         model,
@@ -342,6 +403,31 @@ def main():
         print(f"[info] document-boundary reset on: {len(boundaries):,} documents over "
               f"{len(data):,} tokens ({len(data)/len(boundaries):,.0f} tokens/doc mean)")
 
+    mix_specs = list(args.mix)
+    if args.replay_data:
+        n_replay = round(args.batch_size * args.replay_frac)
+        if n_replay < 1:
+            raise ValueError(f"--replay-frac {args.replay_frac} of --batch-size {args.batch_size} gives "
+                             f"{n_replay} replay rows; need at least one.")
+        mix_specs.append([args.replay_data, str(n_replay)])
+    mixes = []
+    for spec in mix_specs:
+        if len(spec) not in (2, 3):
+            raise ValueError(f"--mix takes PATH ROWS [BOUNDARIES], got {spec}")
+        mdata = np.memmap(spec[0], dtype=np.uint16, mode="r")
+        mbound = np.load(spec[2], mmap_mode="r") if len(spec) == 3 else None
+        if mbound is not None and (int(mbound[0]) != 0 or int(mbound[-1]) >= len(mdata)):
+            raise ValueError(f"{spec[2]} does not index {spec[0]} (first {int(mbound[0])}, "
+                             f"last {int(mbound[-1])}, {len(mdata):,} tokens)")
+        if mbound is not None and cfg.attn_type != "selective_linear":
+            raise ValueError(f"--mix boundaries need a selective_linear preset, not {cfg.attn_type!r}")
+        mixes.append((mdata, mbound, int(spec[1])))
+        print(f"[info] mix: {spec[1]}/{args.batch_size} rows per batch from {spec[0]}"
+              f"{' (doc resets)' if mbound is not None else ''}")
+    if sum(n for _, _, n in mixes) >= args.batch_size or any(n < 1 for _, _, n in mixes):
+        raise ValueError(f"mix rows {[n for _, _, n in mixes]} must each be >= 1 and leave at least one "
+                         f"row of --data in a batch of {args.batch_size}")
+
     os.makedirs(args.out_dir, exist_ok=True)
 
     start_step = 0
@@ -360,7 +446,12 @@ def main():
                 f"architecture would silently produce garbage.")
         model.load_state_dict(ckpt["model"])
         if "optimizer" in ckpt:
+            # load_state_dict restores the saved per-group lr too, which would
+            # silently override --lr on every resume; keep momentum, take this run's lr.
+            fresh_lrs = [g["lr"] for g in optimizer.param_groups]
             optimizer.load_state_dict(ckpt["optimizer"])
+            for g, lr in zip(optimizer.param_groups, fresh_lrs):
+                g["lr"] = lr
         else:
             print(f"[warn] {args.resume_from} has no saved optimizer state (older checkpoint "
                   f"format) -- resuming with a fresh optimizer, momentum is lost")
@@ -371,15 +462,47 @@ def main():
             raise ValueError(f"--max-steps {args.max_steps} is not past the resumed step "
                               f"{ckpt['step']}; nothing to do")
 
+    tok_meta = None
+    if args.tokenizer:
+        import hashlib
+        tj = os.path.join(args.tokenizer, "tokenizer.json")
+        with open(tj, "rb") as f:
+            tok_meta = {"path": args.tokenizer, "sha256": hashlib.sha256(f.read()).hexdigest()}
+        if args.resume_from and ckpt.get("tokenizer") and ckpt["tokenizer"]["sha256"] != tok_meta["sha256"]:
+            raise ValueError(f"--tokenizer {args.tokenizer} is not the tokenizer {args.resume_from} was "
+                             f"trained with ({ckpt['tokenizer']['path']})")
+        print(f"[info] tokenizer {args.tokenizer} sha256 {tok_meta['sha256'][:12]}, slab_v2={cfg.slab_v2}")
+
+    def save(path, step):
+        torch.save({"model": model.state_dict(), "optimizer": optimizer.state_dict(),
+                    "cfg": cfg, "step": step, "tokenizer": tok_meta}, path)
+
+    if args.seed is not None:
+        # batch sampling only from here on; offset by start_step so a resume does not
+        # replay the windows of the first steps
+        torch.manual_seed(args.seed + 1 + start_step)
+    base_lrs = [g["lr"] for g in optimizer.param_groups]
+    min_ratio = args.min_lr / args.lr
     t0 = time.time()
+    final_step = args.max_steps - 1
     for step in range(start_step, args.max_steps):
+        if args.deadline is not None and time.time() > args.deadline:
+            final_step = step - 1
+            print(f"[info] --deadline passed, stopping after step {final_step}")
+            break
+        mult = lr_mult(step, args.decay_start, args.max_steps, min_ratio, args.warmup_steps, start_step)
+        for g, lr in zip(optimizer.param_groups, base_lrs):
+            g["lr"] = lr * mult
         optimizer.zero_grad(set_to_none=True)
         loss_accum = 0.0
         for _ in range(args.grad_accum):
-            x, y, reset_mask = get_batch(data, cfg.block_size, args.batch_size,
-                                         args.device, mask, boundaries)
+            x, y, reset_mask = mixed_batch(data, mixes, cfg.block_size, args.batch_size,
+                                           args.device, mask, boundaries)
             with torch.autocast(device_type=args.device, dtype=torch.bfloat16, enabled=use_amp):
-                logits, loss = model(x, y, reset_mask=reset_mask)
+                # logits are only needed for z-loss; otherwise the chunked CE never builds
+                # the (B*T, vocab) tensor -- the dominant memory cost at a 64k vocab
+                logits, loss = model(x, y, reset_mask=reset_mask, return_logits=args.z_loss_coeff > 0.0,
+                                     ce_rows=args.ce_rows)
                 if args.z_loss_coeff > 0.0 and logits is not None:
                     log_z = torch.logsumexp(logits, dim=-1)
                     loss = loss + args.z_loss_coeff * (log_z ** 2).mean()
@@ -401,22 +524,19 @@ def main():
 
         if step % args.log_every == 0:
             dt = time.time() - t0
-            print(f"step {step:6d} | loss {loss_accum:.4f} | {dt:.1f}s elapsed")
+            print(f"step {step:6d} | loss {loss_accum:.4f} | lr {args.lr * mult:.2e} | {dt:.1f}s elapsed")
 
         if step > 0 and step % args.ckpt_every == 0:
             path = os.path.join(args.out_dir, f"step_{step}.pt")
-            torch.save({"model": model.state_dict(), "optimizer": optimizer.state_dict(),
-                        "cfg": cfg, "step": step}, path)
+            save(path, step)
             print(f"[info] saved checkpoint: {path}")
 
     # final save -- the loop above only checkpoints on a step%ckpt_every==0
     # step *inside* range(max_steps), so whenever max_steps isn't hit by
     # that stride (e.g. range(162000) stops at step 161999) the last
     # <ckpt_every steps of training were never written to disk.
-    final_step = args.max_steps - 1
     path = os.path.join(args.out_dir, f"step_{final_step}_final.pt")
-    torch.save({"model": model.state_dict(), "optimizer": optimizer.state_dict(),
-                "cfg": cfg, "step": final_step}, path)
+    save(path, final_step)
     print(f"[info] saved final checkpoint: {path}")
 
 
@@ -428,6 +548,35 @@ def _self_test():
     torch.manual_seed(0)
     block, batch = 8, 4
     data = np.arange(200, dtype=np.uint16) % 256
+
+    # cooldown: flat before decay_start, linear to min_ratio at max_steps-1
+    assert lr_mult(50, None, 100, 0.0) == 1.0
+    assert lr_mult(79, 80, 101, 0.1) == 1.0
+    assert lr_mult(80, 80, 101, 0.1) == 1.0
+    assert abs(lr_mult(90, 80, 101, 0.1) - 0.55) < 1e-9
+    assert abs(lr_mult(100, 80, 101, 0.1) - 0.1) < 1e-9
+    # warmup composes with the cooldown and never yields lr 0
+    assert abs(lr_mult(0, 80, 101, 0.1, warmup=10) - 0.1) < 1e-9
+    assert abs(lr_mult(4, 80, 101, 0.1, warmup=10) - 0.5) < 1e-9
+    assert lr_mult(9, 80, 101, 0.1, warmup=10) == 1.0 == lr_mult(50, 80, 101, 0.1, warmup=10)
+    assert abs(lr_mult(100, 80, 101, 0.1, warmup=10) - 0.1) < 1e-9
+    # warmup on resumed run
+    assert abs(lr_mult(100, 180, 201, 0.1, warmup=10, start_step=100) - 0.1) < 1e-9
+    assert abs(lr_mult(104, 180, 201, 0.1, warmup=10, start_step=100) - 0.5) < 1e-9
+    assert lr_mult(109, 180, 201, 0.1, warmup=10, start_step=100) == 1.0
+
+    # mixes: rows come from each corpus in order; one without boundaries never resets,
+    # one with boundaries does, and main-only-without-boundaries still gets a mask
+    rep = (np.arange(200, dtype=np.uint16) % 256) + 1000
+    low = (np.arange(200, dtype=np.uint16) % 256) + 2000
+    x, y, rm = mixed_batch(data, [(rep, None, 1)], block, batch, "cpu", None, np.array([0, 50, 120]))
+    assert x.shape == rm.shape == (batch, block)
+    assert (x[:-1] < 1000).all() and (x[-1] >= 1000).all()
+    assert rm[-1].all()
+    x, y, rm = mixed_batch(data, [(rep, None, 1), (low, np.arange(0, 200, 2), 1)], block, batch, "cpu")
+    assert (x[:2] < 1000).all() and (x[2] // 1000 == 1).all() and (x[3] >= 2000).all()
+    assert rm[:3].all() and not rm[3].all(), "only the bounded corpus row should contain resets"
+    assert mixed_batch(data, [], block, batch, "cpu")[2] is None
 
     # no mask: unchanged behaviour, y is x shifted by one
     x, y, reset_mask = get_batch(data, block, batch, "cpu")

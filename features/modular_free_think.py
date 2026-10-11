@@ -375,6 +375,12 @@ def main():
     p.add_argument("--export", default=None,
                    help="filename to write inside features/free_think.py's EXPORT_DIR "
                         "(.json, .txt, .md -- can't escape that directory)")
+    p.add_argument("--backend", choices=["bm25", "vector"], default="bm25",
+                   help="retrieval backend (default: bm25; 'vector' runs ONNX/NPU embedder)")
+    p.add_argument("--embedder-onnx", default=None,
+                   help="path to ONNX embedder model (default: checkpoints/all-sources-v1/embedder_fixed128.onnx)")
+    p.add_argument("--embedder-provider", choices=["auto", "npu", "cpu"], default="auto",
+                   help="execution provider for vector embedder (default: auto -> VitisAI on NPU with CPU fallback)")
     p.add_argument("--force", action="store_true", help="free-think even if the prompt looks like a question")
     p.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     p.add_argument("--self-test", action="store_true",
@@ -393,6 +399,12 @@ def main():
 
     if args.web_search:
         store = WebSearchStore(args.web_search)
+    elif args.backend == "vector":
+        from .npu_embedder import make_onnx_embedder
+        onnx_model = args.embedder_onnx or "checkpoints/all-sources-v1/embedder_fixed128.onnx"
+        embedder = make_onnx_embedder(onnx_model, provider=args.embedder_provider)
+        store = IngestedStore(backend="vector", embedder=embedder)
+        store.ingest([Path(f) for f in args.ingest])
     else:
         store = IngestedStore()
         store.ingest([Path(f) for f in args.ingest])

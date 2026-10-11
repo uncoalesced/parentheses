@@ -12,3 +12,14 @@ exports/
 
 documentation.md
 documentation-old.md
+
+# Large model binaries and export releases
+release/
+*.pt
+*.safetensors
+*.onnx
+
+# Local run logs, locks, and output artifacts
+out/
+!out/mqar_causal_report.json
+!out/mqar_preflight_report.json
