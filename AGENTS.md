@@ -166,7 +166,8 @@ Other self-tests that exist (flag-based):
 - Don't name a script after a stdlib module.
 
 ## Don't touch
-- `venv/`, `.venv/`: vendored packages.
+- `.venv/`: vendored packages.
+- `E:\Parentheses\parentheses-0.9-archive\`: files moved out of the repo on 2026-10-12. They include dead checkpoints, old data, old `out/` logs and NPU exports, finished briefs and the legacy `venv/`. Its `MANIFEST.tsv` maps each old path to its new one. Look there before assuming a historical file is gone.
 - `checkpoints/`: weights (≈0.49 GB per 41M checkpoint).
 - `data/raw/`, `data/tests/`, `data/processed*`: bulk binary/corpus data. Don't read, enumerate or
   regenerate them casually.
