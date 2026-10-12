@@ -57,12 +57,13 @@ def score(q: dict, text: str) -> dict:
 
 
 @torch.no_grad()
-def answer(model, tok, q: dict, fmt: str, device: str, temperature: float, top_k: int) -> dict:
+def answer(model, tok, q: dict, fmt: str, device: str, temperature: float, top_k: int,
+           min_p: float | None = None) -> dict:
     stops = {tok.token_to_id(s) for s in STOP_TOKENS}
     idx = torch.tensor([prompt_ids(tok, q, fmt)], dtype=torch.long, device=device)
     out, stop, t0 = [], "max_tokens", time.perf_counter()
     max_tokens = min(q.get("max_new_tokens", 256), 256)
-    for nxt in model.stream(idx, max_tokens, temperature, top_k):
+    for nxt in model.stream(idx, max_tokens, temperature, top_k, min_p):
         i = int(nxt)
         if i in stops:
             stop = "eos"
@@ -91,7 +92,13 @@ def main():
     parser.add_argument("--temperature", type=float, default=0.7)
     parser.add_argument("--top_k", type=int, default=50)
     parser.add_argument("--seed", type=int, default=1234)
+    parser.add_argument("--min-p", type=float, default=None)
+    parser.add_argument("--limit-per-lang", type=int, default=0,
+                        help="first N queries of each language (decoding-sweep subset); 0 = all")
+    parser.add_argument("--self-test", action="store_true")
     args = parser.parse_args()
+    if args.self_test:
+        return self_test()
 
     print(f"Loading checkpoint: {args.checkpoint} on {args.device}...")
     ckpt = torch.load(args.checkpoint, map_location=args.device, weights_only=False)
@@ -103,7 +110,7 @@ def main():
 
     # Read queries
     with open(args.queries, "r", encoding="utf-8") as f:
-        queries = [json.loads(line) for line in f if line.strip()]
+        queries = subset([json.loads(line) for line in f if line.strip()], args.limit_per_lang)
 
     # Resume support
     done_ids = set()
@@ -119,11 +126,12 @@ def main():
     
     for idx, q in enumerate(todo, 1):
         torch.manual_seed(args.seed + idx)
-        ans = answer(model, tok, q, args.format, args.device, args.temperature, args.top_k)
+        ans = answer(model, tok, q, args.format, args.device, args.temperature, args.top_k, args.min_p)
         rec = {
             **q,
             "checkpoint": args.checkpoint,
             "format": args.format,
+            "decode": {"temperature": args.temperature, "top_k": args.top_k, "min_p": args.min_p},
             **ans,
         }
         with open(args.out, "a", encoding="utf-8") as f:
@@ -143,6 +151,29 @@ def main():
     print(f"\nAll {len(queries)} queries completed in {time.time()-t_start:.1f}s.")
     print("\n--- Summary by Language ---")
     summarize(args.out)
+
+
+def subset(queries: list[dict], per_lang: int) -> list[dict]:
+    """First per_lang queries of each language, file order kept (deterministic sweep subset)."""
+    if not per_lang:
+        return queries
+    seen: dict[str, int] = {}
+    out = []
+    for q in queries:
+        seen[q["lang"]] = seen.get(q["lang"], 0) + 1
+        if seen[q["lang"]] <= per_lang:
+            out.append(q)
+    return out
+
+
+def self_test():
+    assert looping([1, 2] * 64) and not looping(list(range(200)))
+    qs = [{"id": i, "lang": l} for i, l in enumerate("aabbbcaaa")]
+    assert [q["id"] for q in subset(qs, 2)] == [0, 1, 2, 3, 5]
+    assert subset(qs, 0) == qs
+    assert score({"lang": "eng"}, "hello world")["script_ok"] is True
+    assert score({"lang": "kan"}, "hello")["script_ok"] is False
+    print("[self-test] run_120m_eval_250 ok")
 
 
 def summarize(path: str):

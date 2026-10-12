@@ -75,6 +75,20 @@ def main():
     e_free_gb = shutil.disk_usage("E:").free / (1024**3)
     f_free_gb = shutil.disk_usage("F:").free / (1024**3) if os.path.exists("F:") else 0
     print(f"[INFO] Storage Headroom: Drive E: {e_free_gb:.2f} GB Free | Drive F: {f_free_gb:.2f} GB Free")
+    # 13 checkpoints every 150 steps + final + SFT-trial final, 1.37 GB each ~= 20.6 GB
+    disk_ok = e_free_gb >= 22
+    print(f"{check_mark(disk_ok)} Drive E: >= 22 GB free for session-2 + SFT-trial checkpoints")
+    all_ok &= disk_ok
+
+    ready_ok = (REPO_ROOT / "out" / "locks" / "V5_DATA_READY").is_file()
+    print(f"{check_mark(ready_ok)} out/locks/V5_DATA_READY present")
+    all_ok &= ready_ok
+
+    # launch_120M_session.ps1 resumes from the newest-by-mtime checkpoint
+    pts = sorted((REPO_ROOT / "checkpoints" / "parentheses-0.9-120M").glob("*.pt"), key=lambda p: p.stat().st_mtime)
+    newest_ok = bool(pts) and pts[-1].name == "step_1907_final.pt"
+    print(f"{check_mark(newest_ok)} Newest checkpoint is step_1907_final.pt ({pts[-1].name if pts else 'none'})")
+    all_ok &= newest_ok
 
     # 7. NPU Byte Filter artifact check
     npu_filter_path = REPO_ROOT / "checkpoints" / "npu_byte_filter" / "byte_filter.pt"

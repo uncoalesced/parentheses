@@ -6,7 +6,9 @@ Runs strictly in the background during Session 2 training:
 - Every 300 steps (or designated interval), evaluates 9 languages (kan, tam, tel, mal, tcy, kff, kxv, nit, eng).
 - Uses torch.set_num_threads(1) so host CPU cycles and memory bus remain 99% free for PyTorch DataLoader workers.
 - Records metrics in out/session2_val_log.jsonl.
-- Detects anomalies / divergence and writes out/locks/ALERT_DIVERGENCE if val loss spikes.
+- Writes out/locks/ALERT_DIVERGENCE (alert only, training is not touched) when a language's
+  val loss exceeds --alert-ratio x its loss on the first (baseline) checkpoint.
+- Skips checkpoints below --min-step, so session-1 checkpoints are not re-evaluated.
 """
 
 import argparse
@@ -28,7 +30,7 @@ from model.backbone import Parentheses
 LANGS = ("kan", "tam", "tel", "mal", "tcy", "kff", "kxv", "nit", "eng")
 
 
-def get_val_windows(T: int = 500, n_per_lang: int = 2, seed: int = 1234) -> dict:
+def get_val_windows(T: int = 1024, n_per_lang: int = 4, seed: int = 1234) -> dict:
     rng = np.random.default_rng(seed)
     data = {}
     for lang in LANGS:
@@ -72,54 +74,69 @@ def main():
     parser.add_argument("--ckpt-dir", default=str(ROOT / "checkpoints" / "parentheses-0.9-120M"))
     parser.add_argument("--out-log", default=str(ROOT / "out" / "session2_val_log.jsonl"))
     parser.add_argument("--interval-steps", type=int, default=300)
-    parser.add_argument("--once", action="store_true", help="Run once on latest checkpoint and exit")
+    parser.add_argument("--min-step", type=int, default=1907, help="skip checkpoints below this step")
+    parser.add_argument("--alert-ratio", type=float, default=1.10)
+    parser.add_argument("--once", action="store_true", help="Run one pass over existing checkpoints and exit")
     args = parser.parse_args()
 
     ckpt_dir = Path(args.ckpt_dir)
     out_log = Path(args.out_log)
     out_log.parent.mkdir(parents=True, exist_ok=True)
+    alert_path = ROOT / "out" / "locks" / "ALERT_DIVERGENCE"
+    status_path = ROOT / "out" / "overnight_status.txt"
 
-    print(f"[val_watcher] Starting background validation watcher on {ckpt_dir} (interval: every {args.interval_steps} steps)")
+    print(f"[val_watcher] watching {ckpt_dir} (every {args.interval_steps} steps, from step {args.min_step})")
     val_data = get_val_windows()
-    evaluated = set()
-
-    # Preload previously evaluated steps
+    evaluated, baseline = set(), None
     if out_log.is_file():
-        with open(out_log, "r", encoding="utf-8") as f:
-            for line in f:
-                try:
-                    obj = json.loads(line)
-                    evaluated.add(obj["step"])
-                except Exception:
-                    pass
-
-    while True:
-        ckpts = glob.glob(str(ckpt_dir / "step_*.pt"))
-        for c in ckpts:
-            m = re.search(r"step_(\d+)", os.path.basename(c))
-            if not m:
+        for line in out_log.read_text(encoding="utf-8").splitlines():
+            try:
+                obj = json.loads(line)
+            except ValueError:
                 continue
-            step = int(m.group(1))
-            if step in evaluated:
+            evaluated.add(obj["step"])
+            if baseline is None and obj["step"] >= args.min_step:
+                baseline = obj["losses"]
+
+    started, seen_running = time.time(), False
+    while True:
+        found = []
+        for c in glob.glob(str(ckpt_dir / "step_*.pt")):
+            m = re.search(r"step_(\d+)", os.path.basename(c))
+            if m:
+                found.append((int(m.group(1)), c))
+        for step, c in sorted(found):
+            if step < args.min_step or step in evaluated:
                 continue
             if step % args.interval_steps == 0 or "final" in os.path.basename(c):
-                print(f"[val_watcher] Evaluating new checkpoint: {os.path.basename(c)} (step {step})...")
+                print(f"[val_watcher] evaluating {os.path.basename(c)} (step {step})...", flush=True)
                 res = eval_checkpoint(Path(c), val_data)
+                if baseline is None:
+                    baseline = res["losses"]
+                bad = {k: (v, baseline[k]) for k, v in res["losses"].items()
+                       if k in baseline and v > args.alert_ratio * baseline[k]}
+                res["alert"] = bool(bad)
                 with open(out_log, "a", encoding="utf-8") as f:
                     f.write(json.dumps(res) + "\n")
                 evaluated.add(step)
-                print(f"[val_watcher] Step {step} val losses: {res['losses']}")
+                print(f"[val_watcher] step {step} val losses: {res['losses']}", flush=True)
+                if bad:
+                    alert_path.parent.mkdir(parents=True, exist_ok=True)
+                    alert_path.write_text(f"step {step} {os.path.basename(c)}: (loss, baseline) "
+                                          f"{json.dumps(bad)}\n", encoding="utf-8")
+                    print(f"[val_watcher] ALERT: {bad}", flush=True)
 
         if args.once:
             break
-
-        # Check if driver finished
-        lock_path = ROOT / "out" / "locks" / "GPU.lock"
-        status_path = ROOT / "out" / "overnight_status.txt"
-        if not lock_path.is_file() and status_path.is_file():
+        # status still says DONE from the previous session until the driver's first 60 s
+        # write, so only trust DONE after a fresh non-DONE status was seen
+        if status_path.is_file():
             text = status_path.read_text(encoding="utf-8", errors="replace")
-            if "DONE" in text:
-                print("[val_watcher] Main driver status DONE and GPU.lock released. Exiting watcher.")
+            if status_path.stat().st_mtime > started and "DONE" not in text:
+                seen_running = True
+            elif seen_running and "DONE" in text and not any(
+                    s not in evaluated and s >= args.min_step and "final" in c for s, c in found):
+                print("[val_watcher] driver DONE; exiting.", flush=True)
                 break
         time.sleep(30)
 
