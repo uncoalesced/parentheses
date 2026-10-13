@@ -120,8 +120,17 @@ def cmd_audit(out_path, judged_path):
     clash = [(v["id"], v.get("correct"), score_row(rows[v["id"]]).get("lenient")) for v in vs
              if v.get("id") in rows and rows[v["id"]]["bucket"] in ("math", "code", "logic")
              and bool(v.get("correct")) != bool(score_row(rows[v["id"]]).get("lenient"))]
+    import distill_eval   # F:\Lingual_Data\scripts, already on sys.path: same scripted-judging tells
+    scripted = distill_eval.scripted_signs(vs, {i: r["output"] for i, r in rows.items()})
+    by = defaultdict(list)
+    for v in vs:
+        if v.get("id") in rows:
+            by[rows[v["id"]]["bucket"]].append(v)
+    constant = [b for b, L in by.items() if len(L) >= 10 and
+                all(len({v.get(f) for v in L}) == 1 for f in ("correct", "on_task", "fluent"))]
     print(f"verdicts {len(vs)} / rows {len(rows)}: missing {len(missing)}, extra {len(extra)}, dup ids {dups}, "
           f"dup comments {dup_c}, comments sharing no word with row {len(generic)}, judge-vs-autocheck clashes {len(clash)}")
+    print(f"scripted-judging signs: {scripted or 'none'}; buckets with constant scores: {constant or 'none'}")
     for c in clash[:20]:
         print("   clash", *c)
 

@@ -55,3 +55,9 @@ PY = E:\Parentheses\parentheses-0.9\.venv\Scripts\python.exe
   EVIDENCE (19:50): full_000..003 audited clean (spot-checked comments match rows) -> merge bakeoff1,full = 453 rows (169 code, 284 math, 0 dup); full run has 730 kept rows generated
 - [ ] D8b documentation.md entry, vault handoff, independent review .agents/reviews/2026-10-13-distill.md
   EVIDENCE: pending
+
+## 2026-10-13 22:50 re-audit with scripted-judging detectors (Claude Code)
+- [x] D9 distill_eval audit now also flags template comments (>20% share one 25-char opening) and sliced comments (>10% quote the row's first 20 chars). Self-test covers a scripted and a genuine set.
+  EVIDENCE: bakeoff1 11/11 clean. full: 48 clean; 3 template (full_034 5/12, full_036 15/50, full_046 11/50); 5 with fabricated ids (full_028 36, full_030 40, full_031 2, full_032 39, full_033 31 verdict ids that exist in no key file).
+  All 8 are excluded from the merge.
+- [x] D10 merge rebuilt from clean batches only: 2,322 rows (judged keep 2,401 minus blocked teachers), 16 batches excluded (8 dirty + 8 unjudged).
