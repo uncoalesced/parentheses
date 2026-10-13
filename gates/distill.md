@@ -52,5 +52,6 @@ PY = E:\Parentheses\parentheses-0.9\.venv\Scripts\python.exe
 ## D8 Full run + SFT rebuild + review
 - [ ] D8a full runs code then math (resume-safe), logs on F:
   EVIDENCE (running): distill_full.ps1 19:18, 5 teachers x {code,math}, disjoint --shard k/5; ~180 rows in first 3 min; pack loop hourly -> eval\inbox\full_NNN (first: full_000..003, 161 rows). Merge so far: 349 rows (bakeoff1) in out\sft_tail_distill.jsonl, 0 dup
+  EVIDENCE (19:50): full_000..003 audited clean (spot-checked comments match rows) -> merge bakeoff1,full = 453 rows (169 code, 284 math, 0 dup); full run has 730 kept rows generated
 - [ ] D8b documentation.md entry, vault handoff, independent review .agents/reviews/2026-10-13-distill.md
   EVIDENCE: pending

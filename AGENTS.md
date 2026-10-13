@@ -29,15 +29,26 @@ on one RTX 5050 Laptop (8 GB) for Dravidian languages + English. Owner: Joel ("u
 **README.md's "Status" section is stale (2026-09-18).** When it disagrees with the newest
 documentation.md entry, the journal wins.
 
-## Current state (2026-10-07)
-- Release candidate: `checkpoints/parentheses-0.9-41M/step_8082_final.pt`.
-  - Preset `parentheses-0.9-41M`: 40.9M params, d384, 16 layers, 6 heads x 64, T=4096.
-  - BPE tokenizer `data/tokenizer/v3_32k`.
-  - Trained on 1.06B tokens of `data/processed_v3`.
-- Beats the old byte models on every language (bits/byte, documentation.md 2026-10-07 §26).
-- Open work: `.agents/open/HANDOFF_2026-10-08_POST_41M.md` (release, NPU, slab_v2 retry,
-  distillation), `JOB_ANTIGRAVITY_LONG_RUN_PREP.md`, `JOB_DATA_LEDGER_AND_CLEANUP.md`.
-- Ledger of the last session: `GATES.md` (repo root).
+## Current state (2026-10-13)
+- **Main line: Parentheses 0.9-120M** (preset `parentheses-0.9-120M`).
+  - 119,702,272 params: d512, 32 layers, 8 heads x 64, vocab 32,768, tied embeddings, T=4096.
+  - The state_dict holds 136.5M floats because the tied matrix is stored twice.
+  - Grown from the 41M by `scripts/grow_model.py`.
+  - Trained in 5 step-gated sessions of 1,908 steps on `data/processed_v5`. LR 1e-4 constant; decay from step 7632; session 5 mixes the SFT tail.
+- **Sessions:**
+  - Session 2 ended at `checkpoints/parentheses-0.9-120M/step_3815_final.pt`.
+  - Session 3 (3816→5723) is launched by `out/launch_120M_session3.ps1` (armed for 2026-10-14 00:00); post chain `out/session3_post_chain.ps1`.
+  - Per-session gates live in `gates/session<N>.md`.
+- **Previous release candidate:** `checkpoints/parentheses-0.9-41M/step_8082_final.pt` (40.9M, 1.06B tokens of v3).
+- **Distillation lives on F:** (script in F:\Lingual_Data\scripts, work dir `F:\Lingual_Data\distillation`, README there).
+  - Hosted teachers on NVIDIA NIM.
+  - Every row is verified (MBPP asserts / GSM8K gold, refusal filter), judged by Antigravity, and audited by Claude.
+  - **All rows are research-only** under the NVIDIA API trial terms. Gates: `gates/distill.md`.
+- **Disk:** `DATA_LEDGER.md` accounts for every top-level folder on E:\Parentheses and F:\Lingual_Data, with a KEEP / DELETE / ASK category for each (2026-10-13 cleanup).
+- **Goals that shape all future data:**
+  - honesty: never fabricate, say "I don't know", never refuse; brief in the vault `Briefs/BRIEF_HONESTY_NO_FABRICATION.md`;
+  - uncensored: no refusal or moralising text in training rows.
+- **Newest handoff:** the Heafod vault's `parentheses-0.9-handoffs/`, indexed by the vault's `HANDOFF.md`.
 
 ## Commands
 - Torch Python: `.venv\Scripts\python.exe` (torch dev cu128, tokenizers, onnxruntime-directml).
@@ -166,6 +177,20 @@ Other self-tests that exist (flag-based):
   acting on them. This project has caught real discrepancies that way.
 - **Never invoke `gemini.exe` headlessly.** Claude Code must not call `gemini` CLI via subshells (it requires interactive auth and fails headless). Antigravity is active and responsive through the shared swarm files (`out/swarm/COORDINATION_120M.md`, `F:\Lingual_Data\Agents-Brain\journal.md`). Post there to ping Antigravity for watchdog coverage.
 - Don't name a script after a stdlib module.
+- **GPU.lock is the GPU contract.** `out/locks/GPU.lock` exists = someone owns the GPU.
+  - Every session launcher and preflight refuses to start while it exists.
+  - Take it for any GPU job and delete it when done, before a scheduled session start.
+  - The session-3 launcher waits at most 45 min for a lock held by Antigravity.
+- **Text encodings on Windows:**
+  - PS5 `*>`/`*>>` writes UTF-16 logs, which grep misses. Use `*>&1 | ForEach-Object { "$_" } | Out-File -Encoding utf8`.
+  - `python -I` ignores `PYTHONIOENCODING`, so printing Indic or odd Unicode crashes on cp1252. Write to a UTF-8 file instead.
+- **Don't patch Python through nested shell escapes** (a bash heredoc running a Python string replace). It once turned `\t`/`\b` into control characters inside a script. Write the file with an editor tool.
+- **Model-output terms:**
+  - The NVIDIA API trial key is for internal testing only; its outputs can't be distributed.
+  - The Llama licence requires a "Llama" name prefix on any model distilled from it, so Llama is not used as a teacher.
+  - Never use guard or safety models as a teacher, judge or filter.
+  - Record each teacher's terms before a full run.
+- **Eval sets stay clean.** Run `scripts/check_eval_contamination.py` on any new query file before using it, and never build eval prompts from training or distillation seeds (GSM8K train, MBPP train/validation/prompt, SFT v1).
 
 ## Don't touch
 - `.venv/`: vendored packages.

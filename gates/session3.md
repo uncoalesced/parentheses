@@ -40,10 +40,11 @@ Post chain: `out\session3_post_chain.ps1 -End "2026-10-14 13:50"`. Stages: load,
   EVIDENCE: pending
 
 ## Claude review of eval250x2 (Joel 2026-10-13: "look at them and give your comments so we can tune the model and update data")
-- [ ] C1 contamination check run on both query files before the GPU run; flagged ids reported to Antigravity
+- [x] C1 contamination check run on both query files before the GPU run; flagged ids reported to Antigravity
   CHECK: .venv\Scripts\python.exe scripts\check_eval_contamination.py eval\queries_120m_lingual250.jsonl eval\queries_120m_reason250.jsonl
   EXPECT: "0 flagged" twice
-  EVIDENCE: pending
+  EVIDENCE: 19:57 (Haiku agent, files written 19:56): lingual250 0 flagged, reason250 0 flagged vs gsm8k_train 289,403 / mbpp 9,974 / sft_v1 7,211,482 8-grams. Counts match job exactly.
+  C2 note: golds 0 problems (70 GSM8K, 60 MBPP); logic 20/20 hand-checked -> reason-logic-017 WRONG (Claude confirmed: "five cars" but only A-D placed, far-left undetermined). Fix requested from Antigravity 19:57; re-run golds after fix.
 - [ ] C2 query-set quality: counts per lang/bucket match the job, golds checked (all 70 GSM8K gold vs dataset, all 60 MBPP asserts vs dataset; logic golds hand-checked on 20), Dravidian prompts sane
   EVIDENCE: pending
 - [ ] C3 judged files audited: 500/500 ids, unique row-specific comments, auto-check numbers re-computed by Claude independently
@@ -52,6 +53,13 @@ Post chain: `out\session3_post_chain.ps1 -End "2026-10-14 13:50"`. Stages: load,
   EVIDENCE: pending
 - [ ] C5 tuning + data recommendations written to out\eval250x2\claude_review_step3815.md: per weakness -> concrete data change (source, size, licence) or training change, each tied to failure counts
   EVIDENCE: pending
+
+### Haiku pre-run check 2026-10-13 19:57
+- Step 1 contamination (check_eval_contamination.py): lingual250 = 250 queries, 0 flagged; reason250 = 250 queries, 0 flagged. Flagged ids: none.
+- Step 2 golds (review_eval250.py golds, reason250): bucket counter math 70, code 60, logic 60, reasoning 60; gold problems: 0.
+- Step 3 counts: lingual lang counter matches expected (kan 50, tam 40, tel 40, mal 40, eng 40, tcy 15, kff 9, kxv 9, nit 7): True. reason bucket counter matches expected (math 70, code 60, logic 60, reasoning 60): True. Both files: duplicate ids 0, empty prompt 0, empty reference 0, code rows with no "assert" in notes 0.
+- Step 4 logic golds (first 20 logic rows, out/eval250x2/haiku_logic20.md): 19/20 correct. WRONG: reason-logic-017 (five cars, only A-D are placed, so the far-left car is not determined; gold "Car D" is not entailed). Problem reported to Antigravity in out/swarm/COORDINATION_120M.md.
+- Boxes not ticked (Claude decides). C1 evidence: above. C2 is not clean until reason-logic-017 is fixed.
 
 ## Post
 - [ ] S3-E1 bpb step_final vs step_3815, main-4 mean change (if < 0.5%, move decay to 5724 per handoff)

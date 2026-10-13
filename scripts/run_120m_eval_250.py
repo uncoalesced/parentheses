@@ -58,11 +58,12 @@ def score(q: dict, text: str) -> dict:
 
 @torch.no_grad()
 def answer(model, tok, q: dict, fmt: str, device: str, temperature: float, top_k: int,
-           min_p: float | None = None) -> dict:
+           min_p: float | None = None, max_cap: int = 256) -> dict:
     stops = {tok.token_to_id(s) for s in STOP_TOKENS}
     idx = torch.tensor([prompt_ids(tok, q, fmt)], dtype=torch.long, device=device)
     out, stop, t0 = [], "max_tokens", time.perf_counter()
-    max_tokens = min(q.get("max_new_tokens", 256), 256)
+    # 256 keeps s250 runs comparable across sessions (11 queries ask for 1024); reason250 code uses --max-cap 320
+    max_tokens = min(q.get("max_new_tokens", 256), max_cap)
     for nxt in model.stream(idx, max_tokens, temperature, top_k, min_p):
         i = int(nxt)
         if i in stops:
@@ -93,6 +94,7 @@ def main():
     parser.add_argument("--top_k", type=int, default=50)
     parser.add_argument("--seed", type=int, default=1234)
     parser.add_argument("--min-p", type=float, default=None)
+    parser.add_argument("--max-cap", type=int, default=256, help="upper bound on each query's max_new_tokens")
     parser.add_argument("--limit-per-lang", type=int, default=0,
                         help="first N queries of each language (decoding-sweep subset); 0 = all")
     parser.add_argument("--self-test", action="store_true")
@@ -126,7 +128,7 @@ def main():
     
     for idx, q in enumerate(todo, 1):
         torch.manual_seed(args.seed + idx)
-        ans = answer(model, tok, q, args.format, args.device, args.temperature, args.top_k, args.min_p)
+        ans = answer(model, tok, q, args.format, args.device, args.temperature, args.top_k, args.min_p, args.max_cap)
         rec = {
             **q,
             "checkpoint": args.checkpoint,
