@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """SFT trial set for session 2 (Claude Code, 2026-10-12): data/processed_sft_v1 + verified
-distill rows (scripts/distill_reasoning.py output), same format train.py --sft-spans expects.
+distill rows (F:\\Lingual_Data\\scripts\\distill_reasoning.py output), same format train.py --sft-spans expects.
 
     .venv\\Scripts\\python.exe scripts\\build_sft_trial.py --out data/processed_sft_trial
     .venv\\Scripts\\python.exe scripts\\build_sft_trial.py --self-test
@@ -98,7 +98,7 @@ def self_test():
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--base", default=str(ROOT / "data/processed_sft_v1"))
-    p.add_argument("--distill", default=str(ROOT / "data/processed_v5/sft_tail_distill.jsonl"))
+    p.add_argument("--distill", default=r"F:\Lingual_Data\distillation\out\sft_tail_distill.jsonl")
     p.add_argument("--out", default=str(ROOT / "data/processed_sft_trial"))
     p.add_argument("--self-test", action="store_true")
     a = p.parse_args()

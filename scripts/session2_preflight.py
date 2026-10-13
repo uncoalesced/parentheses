@@ -17,13 +17,20 @@ def check_mark(ok: bool) -> str:
     return "[PASS]" if ok else "[FAIL]"
 
 def main():
+    # session 3+ reuse this file (2026-10-13): --session 3 --step 3815 --min-free-gb 20
+    import argparse
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--session", type=int, default=2)
+    ap.add_argument("--step", type=int, default=1907, help="resume checkpoint step_<step>_final.pt")
+    ap.add_argument("--min-free-gb", type=float, default=22)
+    a = ap.parse_args()
     print("=" * 65)
-    print("PARENTHESES 0.9-120M: SESSION 2 PRE-FLIGHT VERIFICATION MATRIX")
+    print(f"PARENTHESES 0.9-120M: SESSION {a.session} PRE-FLIGHT VERIFICATION MATRIX")
     print("=" * 65)
     all_ok = True
 
     # 1. Checkpoint verification
-    ckpt_path = REPO_ROOT / "checkpoints" / "parentheses-0.9-120M" / "step_1907_final.pt"
+    ckpt_path = REPO_ROOT / "checkpoints" / "parentheses-0.9-120M" / f"step_{a.step}_final.pt"
     ckpt_ok = ckpt_path.is_file() and ckpt_path.stat().st_size > 1_000_000_000
     print(f"{check_mark(ckpt_ok)} Resume Checkpoint: {ckpt_path.name}")
     if ckpt_ok:
@@ -31,7 +38,7 @@ def main():
         has_model = "model" in ckpt
         has_opt = "optimizer" in ckpt and ckpt["optimizer"] is not None
         step = ckpt.get("step", -1)
-        opt_ok = has_model and has_opt and step == 1907
+        opt_ok = has_model and has_opt and step == a.step
         print(f"       -> Step: {step}, Optimizer Momentum Intact: {has_opt}")
         if not opt_ok:
             all_ok = False
@@ -75,9 +82,9 @@ def main():
     e_free_gb = shutil.disk_usage("E:").free / (1024**3)
     f_free_gb = shutil.disk_usage("F:").free / (1024**3) if os.path.exists("F:") else 0
     print(f"[INFO] Storage Headroom: Drive E: {e_free_gb:.2f} GB Free | Drive F: {f_free_gb:.2f} GB Free")
-    # 13 checkpoints every 150 steps + final + SFT-trial final, 1.37 GB each ~= 20.6 GB
-    disk_ok = e_free_gb >= 22
-    print(f"{check_mark(disk_ok)} Drive E: >= 22 GB free for session-2 + SFT-trial checkpoints")
+    # 13 checkpoints every 150 steps + final (+ SFT-trial final in session 2), 1.37 GB each
+    disk_ok = e_free_gb >= a.min_free_gb
+    print(f"{check_mark(disk_ok)} Drive E: >= {a.min_free_gb:g} GB free for session-{a.session} checkpoints")
     all_ok &= disk_ok
 
     ready_ok = (REPO_ROOT / "out" / "locks" / "V5_DATA_READY").is_file()
@@ -86,8 +93,8 @@ def main():
 
     # launch_120M_session.ps1 resumes from the newest-by-mtime checkpoint
     pts = sorted((REPO_ROOT / "checkpoints" / "parentheses-0.9-120M").glob("*.pt"), key=lambda p: p.stat().st_mtime)
-    newest_ok = bool(pts) and pts[-1].name == "step_1907_final.pt"
-    print(f"{check_mark(newest_ok)} Newest checkpoint is step_1907_final.pt ({pts[-1].name if pts else 'none'})")
+    newest_ok = bool(pts) and pts[-1].name == f"step_{a.step}_final.pt"
+    print(f"{check_mark(newest_ok)} Newest checkpoint is step_{a.step}_final.pt ({pts[-1].name if pts else 'none'})")
     all_ok &= newest_ok
 
     # 7. NPU Byte Filter artifact check
@@ -97,7 +104,7 @@ def main():
 
     print("=" * 65)
     if all_ok:
-        print("RESULT: ALL CRITICAL GATES PASSED -> READY FOR SESSION 2 LAUNCH")
+        print(f"RESULT: ALL CRITICAL GATES PASSED -> READY FOR SESSION {a.session} LAUNCH")
     else:
         print("RESULT: PRE-FLIGHT BLOCKED ON ONE OR MORE FAILED GATES")
     print("=" * 65)
