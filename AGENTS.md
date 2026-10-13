@@ -22,7 +22,8 @@ on one RTX 5050 Laptop (8 GB) for Dravidian languages + English. Owner: Joel ("u
 2. the **last entry** of `.agents/documentation.md` (session journal; the newest state);
 3. `.agents/CLAUDE.md` (map of where things are) and `.agents/ARCHITECTURE.md` /
    `.agents/CODING_STANDARDS.md` for depth;
-4. your brief in `.agents/open/`, if you were given one. Open work lives there; finished briefs
+4. your brief or handoff, if you were given one. Handoffs live in the Heafod vault's
+   `Parentheses\parentheses-0.9-handoffs\` (see Vault Handoff below); older briefs are in `.agents/open/`. Open work lives there; finished briefs
    move to `.agents/done/`.
 
 **README.md's "Status" section is stale (2026-09-18).** When it disagrees with the newest
@@ -163,6 +164,7 @@ Other self-tests that exist (flag-based):
   - Otherwise leave it idle (the driver power-gates it); no keep-alive loops.
 - **Verify delegated-agent claims against the actual files** (license calls, merges, sorting) before
   acting on them. This project has caught real discrepancies that way.
+- **Never invoke `gemini.exe` headlessly.** Claude Code must not call `gemini` CLI via subshells (it requires interactive auth and fails headless). Antigravity is active and responsive through the shared swarm files (`out/swarm/COORDINATION_120M.md`, `F:\Lingual_Data\Agents-Brain\journal.md`). Post there to ping Antigravity for watchdog coverage.
 - Don't name a script after a stdlib module.
 
 ## Don't touch
@@ -201,3 +203,17 @@ Other self-tests that exist (flag-based):
 - An independent reviewer (fresh-context agent or a different model) re-runs the checks and
   writes `.agents/reviews/<date>-<task>.md`.
 - No self-certified "done".
+
+## Multi-Agent Coordination: Antigravity Watchdog & Peer Invocations
+- **Antigravity is Joel's active watchdog agent:** Antigravity runs concurrently with interactive user sessions and background timers, actively monitoring pretraining runs, GPU/memory telemetry, loss divergence, automated validation sweeps, disk consumption, and post-training evaluation chains.
+- **NEVER attempt headless subshell CLI invocations of `gemini.exe`:** Claude Code (or any other agent) must NOT attempt to execute `gemini ...` directly via bash or PowerShell subshells. The local binary requires interactive user authentication and fails headless with `"Please set an Auth method"`. A CLI failure does NOT mean Antigravity is absent or unresponsive!
+- **How Claude must ping, invoke, and hand off to Antigravity:**
+  Claude Code must coordinate with Antigravity via established file-based communication channels:
+  1. **Swarm Coordination Log:** Post run notifications, gate updates, requests for watchdog coverage, and post-chain handoffs directly to `out/swarm/COORDINATION_120M.md` (or the corresponding active swarm log).
+  2. **Telemetry Log:** Check and update `F:\Lingual_Data\Agents-Brain\journal.md` for live cross-agent status and hardware/watchdog health.
+  3. **Shared Memory Vault:** Use ECC cross-agent memory (`node F:\Lingual_Data\ecc\scripts\ecc.js memory handoff --from claude --target antigravity --title "..."`) for persistent milestone transfers.
+  4. **Vault Handoff:** Keep `c:\Users\Joel Anthony\Documents\Phile\Heafod\Heafod\Parentheses\HANDOFF.md` updated with phase state.
+     Handoff files go **only** in the vault, under `...\Heafod\Heafod\Parentheses\parentheses-0.9-handoffs\` (Joel, 2026-10-13). Never put them at the vault root or in `.agents/open/`. Briefs, jobs, reports and session logs go in the vault's `Briefs\`, `Jobs\`, `Reports\` and `Session Logs\`. `HANDOFF.md` is the only file left at the root, as the index.
+- **Standing Watchdog Protocol during Training Runs:**
+  Whenever launching a training session (such as 120M Session 3) or post-training pipeline, Claude must write the launch parameters and expected milestones to `out/swarm/COORDINATION_120M.md` and explicitly invoke Antigravity's watchdog. Antigravity continuously tracks `out/overnight_status.txt`, `out/locks/GPU.lock`, GPU temperature/VRAM, checkpoint saves, disk headroom, and loss divergence.
+
