@@ -38,12 +38,12 @@ documentation.md entry, the journal wins.
 - **Sessions:**
   - Session 2 ended at `checkpoints/parentheses-0.9-120M/step_3815_final.pt`.
   - Session 3 (3816→5723) is launched by `out/launch_120M_session3.ps1` (armed for 2026-10-14 00:00); post chain `out/session3_post_chain.ps1`.
-  - Per-session gates live in `gates/session<N>.md`.
+  - Per-session gates live in the Heafod vault's `Parentheses\Gates\session<N>.md` (not in the repo).
 - **Previous release candidate:** `checkpoints/parentheses-0.9-41M/step_8082_final.pt` (40.9M, 1.06B tokens of v3).
 - **Distillation lives on F:** (script in F:\Lingual_Data\scripts, work dir `F:\Lingual_Data\distillation`, README there).
   - Hosted teachers on NVIDIA NIM.
   - Every row is verified (MBPP asserts / GSM8K gold, refusal filter), judged by Antigravity, and audited by Claude.
-  - **All rows are research-only** under the NVIDIA API trial terms. Gates: `gates/distill.md`.
+  - **All rows are research-only** under the NVIDIA API trial terms. Gates: vault `Parentheses\Gates\distill.md`.
 - **Disk:** `DATA_LEDGER.md` accounts for every top-level folder on E:\Parentheses and F:\Lingual_Data, with a KEEP / DELETE / ASK category for each (2026-10-13 cleanup).
 - **Goals that shape all future data:**
   - honesty: never fabricate, say "I don't know", never refuse; brief in the vault `Briefs/BRIEF_HONESTY_NO_FABRICATION.md`;
@@ -223,6 +223,8 @@ Other self-tests that exist (flag-based):
   auto-promoted.
 
 ## Reviews and gates (Joel's standing requirement)
+- **Gates files are private:** they live in the Heafod vault under `Parentheses\Gates\` and are
+  never committed (`gates/` is in `.gitignore`; Joel, 2026-10-13).
 - Every non-trivial task keeps a gates file: one checkbox per outcome, with `CHECK:`/`EXPECT:`
   where a command can decide it, and evidence pasted.
 - An independent reviewer (fresh-context agent or a different model) re-runs the checks and
