@@ -25,3 +25,8 @@ out/
 !out/mqar_preflight_report.json
 # gates ledgers live in the Heafod vault (Parentheses/Gates), never public (Joel 2026-10-13)
 gates/
+
+# Local agent orchestration files and folders
+AGENTS.md
+CLAUDE.md
+GATES.md
