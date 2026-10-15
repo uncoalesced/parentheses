@@ -121,15 +121,16 @@ def mixed_batch(data, mixes, block_size: int, batch_size: int, device: str,
 
 
 def lr_mult(step: int, decay_start: int | None, max_steps: int, min_ratio: float,
-            warmup: int = 0, start_step: int = 0) -> float:
+            warmup: int = 0, start_step: int = 0, decay_end: int | None = None) -> float:
     """Warmup-stable-decay: linear warmup over the first `warmup` steps from `start_step`
     (first step gets 1/warmup, never 0), 1.0 until decay_start, then linear to min_ratio at
-    the last step (max_steps - 1). decay_start=None keeps the old constant LR."""
+    decay_end (default: the last step, max_steps - 1). decay_start=None keeps the old constant LR."""
     rel = step - start_step
     w = min(1.0, (rel + 1) / warmup) if warmup > 0 else 1.0
     if decay_start is None or step < decay_start:
         return w
-    frac = (step - decay_start) / max(1, max_steps - 1 - decay_start)
+    end = max_steps - 1 if decay_end is None else decay_end
+    frac = (step - decay_start) / max(1, end - decay_start)
     return w * (1.0 + (min_ratio - 1.0) * min(frac, 1.0))
 
 
@@ -284,6 +285,9 @@ def main():
     p.add_argument("--decay-start", type=int, default=None,
                    help="absolute step where LR starts a linear decay to --min-lr at --max-steps "
                         "(cooldown). Unset = constant LR, the pre-2026-10-06 behaviour.")
+    p.add_argument("--decay-end", type=int, default=None,
+                   help="absolute step where the decay reaches --min-lr (default --max-steps - 1); "
+                        "lets one cooldown span several step-gated sessions")
     p.add_argument("--min-lr", type=float, default=0.0, help="LR at the last step when --decay-start is set")
     p.add_argument("--warmup-steps", type=int, default=0, help="linear LR warmup steps (absolute, from step 0)")
     p.add_argument("--tokenizer", default=None,
@@ -490,7 +494,8 @@ def main():
             final_step = step - 1
             print(f"[info] --deadline passed, stopping after step {final_step}")
             break
-        mult = lr_mult(step, args.decay_start, args.max_steps, min_ratio, args.warmup_steps, start_step)
+        mult = lr_mult(step, args.decay_start, args.max_steps, min_ratio, args.warmup_steps, start_step,
+                       args.decay_end)
         for g, lr in zip(optimizer.param_groups, base_lrs):
             g["lr"] = lr * mult
         optimizer.zero_grad(set_to_none=True)
@@ -555,6 +560,10 @@ def _self_test():
     assert lr_mult(80, 80, 101, 0.1) == 1.0
     assert abs(lr_mult(90, 80, 101, 0.1) - 0.55) < 1e-9
     assert abs(lr_mult(100, 80, 101, 0.1) - 0.1) < 1e-9
+    # decay_end past this run's max_steps: the cooldown continues in the next session
+    assert abs(lr_mult(90, 80, 91, 0.1, decay_end=100) - 0.55) < 1e-9
+    assert abs(lr_mult(100, 80, 200, 0.1, decay_end=100) - 0.1) < 1e-9
+    assert abs(lr_mult(150, 80, 200, 0.1, decay_end=100) - 0.1) < 1e-9
     # warmup composes with the cooldown and never yields lr 0
     assert abs(lr_mult(0, 80, 101, 0.1, warmup=10) - 0.1) < 1e-9
     assert abs(lr_mult(4, 80, 101, 0.1, warmup=10) - 0.5) < 1e-9
