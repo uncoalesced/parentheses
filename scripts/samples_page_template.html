@@ -1,0 +1,195 @@
+<title>Parentheses Samples</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Noto+Sans:wght@400;600&family=Noto+Sans+Kannada:wght@400;600&family=Noto+Sans+Tamil:wght@400;600&family=Noto+Sans+Telugu:wght@400;600&family=Noto+Sans+Malayalam:wght@400;600&family=Noto+Sans+Oriya:wght@400;600&family=Noto+Sans+Devanagari:wght@400;600&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: sticky header with language chips over one reading column; each prompt is a sheet with the two decodes side by side, stacking on phones. */
+:root {
+  --bg: #f4f6f6; --surface: #ffffff; --ink: #172322; --muted: #5b6b69; --line: #d7dfde;
+  --accent: #0b6b66; --accent-ink: #ffffff; --chip: #e6eeed; --star: #b7791f;
+  --display: "Bricolage Grotesque", "Noto Sans", system-ui, sans-serif;
+  --body: "Noto Sans", "Noto Sans Kannada", "Noto Sans Tamil", "Noto Sans Telugu", "Noto Sans Malayalam", "Noto Sans Oriya", "Noto Sans Devanagari", system-ui, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0f1716; --surface: #16211f; --ink: #e3ecea; --muted: #94a6a3; --line: #2a3936;
+  --accent: #4fc2b9; --accent-ink: #062320; --chip: #1e2c2a; --star: #e0a84a; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #0f1716; --surface: #16211f; --ink: #e3ecea; --muted: #94a6a3; --line: #2a3936;
+  --accent: #4fc2b9; --accent-ink: #062320; --chip: #1e2c2a; --star: #e0a84a; color-scheme: dark }
+body { background: var(--bg); color: var(--ink); font: 15px/1.6 var(--body); }
+.wrap { max-width: 1080px; margin: 0 auto; padding: 0 16px; }
+header { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--bg); border-bottom: 1px solid var(--line); }
+.head { display: flex; flex-wrap: wrap; gap: 8px 20px; align-items: baseline; padding-block: 16px 8px; }
+h1 { font: 700 1.6rem/1.15 var(--display); margin: 0; text-wrap: balance; }
+.meta { font: 12px/1.5 var(--mono); color: var(--muted); }
+.tabs { display: flex; gap: 6px; overflow-x: auto; padding-block: 4px 12px; scrollbar-width: thin; }
+.tab { flex: none; border: 1px solid var(--line); background: var(--chip); color: var(--ink); border-radius: 999px; padding: 4px 12px; font: 600 13px var(--body); cursor: pointer; }
+.tab[aria-selected="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.tab .n { font: 11px var(--mono); opacity: .75; margin-left: 4px; }
+.tab:focus-visible, button:focus-visible, textarea:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+main { display: grid; gap: 18px; padding-block: 20px 48px; }
+.intro { display: grid; gap: 10px; max-width: 70ch; color: var(--muted); }
+.intro p { margin: 0; }
+.rater { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; }
+.rater label { font-weight: 600; color: var(--ink); }
+input[type=text], textarea { font: 14px var(--body); color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; }
+.status { font: 12px var(--mono); color: var(--muted); }
+.sheet { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 16px; display: grid; gap: 12px; }
+.sheet h2 { margin: 0; font: 600 12px/1.4 var(--mono); letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
+.prompt { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 1.02rem; }
+details.ref { color: var(--muted); font-size: 14px; }
+details.ref div { white-space: pre-wrap; overflow-wrap: anywhere; margin-top: 4px; }
+.outs { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); gap: 12px; }
+.out { border-top: 2px solid var(--line); padding-top: 10px; display: grid; gap: 8px; min-width: 0; }
+.out h3 { margin: 0; font: 600 13px var(--display); }
+.out h3 span { font: 11px var(--mono); color: var(--muted); font-weight: 400; margin-left: 6px; }
+.text { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; }
+.missing { color: var(--muted); font-style: italic; }
+.rate { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.rate button { width: 34px; height: 34px; border-radius: 6px; border: 1px solid var(--line); background: var(--chip); color: var(--ink); font: 600 14px var(--mono); cursor: pointer; }
+.rate button[aria-pressed="true"] { background: var(--star); border-color: var(--star); color: var(--accent-ink); }
+.rate .scale { font: 11px var(--mono); color: var(--muted); }
+.out textarea { width: 100%; min-height: 2.6em; resize: vertical; box-sizing: border-box; }
+.btn { border: 1px solid var(--accent); color: var(--accent); background: transparent; border-radius: 6px; padding: 6px 12px; font: 600 13px var(--body); cursor: pointer; }
+#list { display: grid; gap: 18px; }
+@media (prefers-reduced-motion: no-preference) { .rate button { transition: background .12s; } }
+</style>
+
+<header>
+  <div class="wrap">
+    <div class="head">
+      <h1>Parentheses Samples</h1>
+      <span class="meta" id="meta"></span>
+    </div>
+    <nav class="tabs" id="tabs" role="tablist" aria-label="Language"></nav>
+  </div>
+</header>
+
+<div class="wrap">
+  <main>
+    <section class="intro">
+      <p>Raw outputs from Parentheses 0.9-120M, a 120M-parameter research model trained from scratch for Dravidian languages and English. Nothing is edited or hand-picked: every prompt shows exactly what the model wrote.</p>
+      <p><b>Base</b> continues the prompt as plain text. <b>Chat</b> answers it as an assistant turn. Rate each output from 1 (useless) to 5 (fluent and correct), and add a note on mistakes if you can.</p>
+      <div class="rater">
+        <label for="rater-name">Your name</label>
+        <input type="text" id="rater-name" placeholder="so Joel knows who rated" maxlength="60">
+        <span class="status" id="status">Loading…</span>
+        <button class="btn" id="copy" type="button">Copy my ratings</button>
+      </div>
+    </section>
+    <div id="list"></div>
+  </main>
+</div>
+
+<script>
+const DATA = /*__DATA__*/null;
+const $ = (s) => document.querySelector(s);
+const state = { lang: DATA.langs[0].code, ratings: {}, name: "", ref: null, canWrite: true };
+const key = (id, fmt) => id + "|" + fmt;
+try { const s = JSON.parse(localStorage.getItem("ps-draft") || "{}"); state.ratings = s.ratings || {}; state.name = s.name || ""; } catch (e) {}
+try { const h = location.hash.slice(1); if (DATA.langs.some(l => l.code === h)) state.lang = h; } catch (e) {}
+
+$("#meta").textContent = (DATA.step ? "step " + DATA.step + " · " : "") + DATA.decode + (DATA.note ? " · " + DATA.note : "");
+$("#rater-name").value = state.name;
+
+function tabs() {
+  const t = $("#tabs"); t.textContent = "";
+  for (const l of DATA.langs) {
+    const b = document.createElement("button");
+    b.className = "tab"; b.type = "button"; b.setAttribute("role", "tab");
+    b.setAttribute("aria-selected", String(l.code === state.lang));
+    b.textContent = l.name;
+    const n = document.createElement("span"); n.className = "n"; n.textContent = l.items.length; b.append(n);
+    b.onclick = () => { state.lang = l.code; try { history.replaceState(null, "", "#" + l.code); } catch (e) {} tabs(); list(); window.scrollTo(0, 0); };
+    t.append(b);
+  }
+}
+
+function outBlock(item, fmt, label) {
+  const d = document.createElement("div"); d.className = "out";
+  const h = document.createElement("h3"); h.textContent = label;
+  const sub = document.createElement("span"); sub.textContent = fmt === "base" ? "plain continuation" : "assistant turn"; h.append(sub);
+  d.append(h);
+  const txt = item[fmt];
+  const p = document.createElement("p");
+  if (txt === null || txt === undefined) { p.className = "text missing"; p.textContent = "Not generated for this checkpoint."; d.append(p); return d; }
+  p.className = "text"; p.textContent = txt.trim() ? txt : "(empty output)"; d.append(p);
+  const k = key(item.id, fmt), cur = state.ratings[k] || {};
+  const r = document.createElement("div"); r.className = "rate"; r.setAttribute("aria-label", "Rate " + label + " output");
+  for (let s = 1; s <= 5; s++) {
+    const b = document.createElement("button"); b.type = "button"; b.textContent = s;
+    b.setAttribute("aria-pressed", String(cur.s === s)); b.setAttribute("aria-label", s + " of 5");
+    b.onclick = () => { const v = state.ratings[k] || {}; v.s = v.s === s ? undefined : s; state.ratings[k] = v; save(); list(); };
+    r.append(b);
+  }
+  const sc = document.createElement("span"); sc.className = "scale"; sc.textContent = "1 useless · 5 fluent and correct"; r.append(sc);
+  d.append(r);
+  const ta = document.createElement("textarea"); ta.id = "c-" + k; ta.placeholder = "Note (optional): wrong script, made-up facts, grammar…";
+  ta.value = cur.c || ""; ta.oninput = () => { const v = state.ratings[k] || {}; v.c = ta.value; state.ratings[k] = v; save(true); };
+  d.append(ta);
+  return d;
+}
+
+function list() {
+  const L = DATA.langs.find(l => l.code === state.lang), box = $("#list"); box.textContent = "";
+  L.items.forEach((it, i) => {
+    const s = document.createElement("article"); s.className = "sheet";
+    const h = document.createElement("h2"); h.textContent = L.name + " · " + (i + 1) + " of " + L.items.length + (it.bucket ? " · " + it.bucket : ""); s.append(h);
+    const p = document.createElement("div"); p.className = "prompt"; p.textContent = it.prompt; s.append(p);
+    if (it.reference) { const d = document.createElement("details"); d.className = "ref"; const sm = document.createElement("summary"); sm.textContent = "Reference answer"; const dv = document.createElement("div"); dv.textContent = it.reference; d.append(sm, dv); s.append(d); }
+    const o = document.createElement("div"); o.className = "outs"; o.append(outBlock(it, "base", "Base"), outBlock(it, "chat", "Chat")); s.append(o);
+    box.append(s);
+  });
+}
+
+function rated() { return Object.values(state.ratings).filter(v => v && (v.s || (v.c && v.c.trim()))).length; }
+function setStatus(t) { $("#status").textContent = t; }
+
+let timer = null, writing = false, again = false;
+function save(debounce) {
+  try { localStorage.setItem("ps-draft", JSON.stringify({ ratings: state.ratings, name: state.name })); } catch (e) {}
+  clearTimeout(timer); timer = setTimeout(flush, debounce ? 900 : 150);
+}
+async function flush() {
+  if (!state.ref || !state.canWrite) { setStatus(rated() + " rated · saved in this browser only. Use Copy my ratings to send them to Joel."); return; }
+  if (writing) { again = true; return; }
+  writing = true; setStatus("Saving…");
+  const clean = {};
+  for (const [k, v] of Object.entries(state.ratings)) if (v && (v.s || (v.c && v.c.trim()))) clean[k] = { s: v.s || null, c: (v.c || "").slice(0, 2000) };
+  try { await state.ref.set({ name: state.name.slice(0, 60), ratings: clean, step: DATA.step, updated: new Date().toISOString() }); setStatus(rated() + " rated · saved"); }
+  catch (e) { if (e && e.code === "invalid_argument") state.canWrite = false; setStatus(rated() + " rated · could not save online (" + (e && e.code || "error") + "). Use Copy my ratings."); }
+  writing = false; if (again) { again = false; flush(); }
+}
+
+$("#rater-name").oninput = (e) => { state.name = e.target.value; save(true); };
+$("#copy").onclick = async () => {
+  const lines = ["Parentheses ratings" + (state.name ? " from " + state.name : "") + " (step " + DATA.step + ")"];
+  for (const L of DATA.langs) for (const it of L.items) for (const f of ["base", "chat"]) {
+    const v = state.ratings[key(it.id, f)]; if (v && (v.s || (v.c && v.c.trim()))) lines.push(it.id + " " + f + ": " + (v.s || "-") + (v.c ? " | " + v.c.replace(/\s+/g, " ") : ""));
+  }
+  const text = lines.join("\n");
+  try { await navigator.clipboard.writeText(text); setStatus("Copied " + (lines.length - 1) + " ratings"); }
+  catch (e) { const ta = document.createElement("textarea"); ta.value = text; ta.id = "copy-fallback"; ta.style.width = "100%"; $(".intro").append(ta); ta.select(); setStatus("Select and copy the text below"); }
+};
+
+tabs(); list();
+
+(async () => {
+  try {
+    const [db, user] = await Promise.all([window.claude?.use?.("db"), window.claude?.use?.("user")]);
+    const id = user ? await user.id() : null;
+    if (!db || !id) { state.canWrite = false; setStatus(rated() + " rated · ratings stay in this browser. Use Copy my ratings to send them to Joel."); return; }
+    if (user.can && (await user.can("data.write")) === false) state.canWrite = false;
+    state.ref = db.doc("ratings/" + id);
+    const snap = await state.ref.get();
+    if (snap.exists) {
+      const d = snap.data();
+      state.ratings = Object.assign({}, d.ratings || {}, state.ratings);
+      if (!state.name && d.name) { state.name = d.name; $("#rater-name").value = d.name; }
+      list();
+    }
+    setStatus(state.canWrite ? rated() + " rated · ratings save online" : rated() + " rated · view-only here. Use Copy my ratings to send them to Joel.");
+  } catch (e) { state.canWrite = false; setStatus("Ratings stay in this browser. Use Copy my ratings."); }
+})();
+</script>

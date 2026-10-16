@@ -1,0 +1,176 @@
+<title>Parentheses 120M Training Record</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Noto+Sans:wght@400;600&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: a training logbook. Headline figures first, then the run across time (loss, LR), then quality per checkpoint as tables and one chart each. */
+:root {
+  --bg: #f4f6f6; --surface: #ffffff; --ink: #172322; --muted: #5b6b69; --line: #d7dfde; --grid: #e7ecec;
+  --series: #2a78d6; --band: #eef3f3; --good: #1f7a4d; --bad: #b4462b;
+  --display: "Bricolage Grotesque", "Noto Sans", system-ui, sans-serif;
+  --body: "Noto Sans", system-ui, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0f1716; --surface: #16211f; --ink: #e3ecea; --muted: #94a6a3; --line: #2a3936; --grid: #22302d;
+  --series: #3987e5; --band: #1b2826; --good: #5cc28f; --bad: #e98466; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #0f1716; --surface: #16211f; --ink: #e3ecea; --muted: #94a6a3; --line: #2a3936; --grid: #22302d;
+  --series: #3987e5; --band: #1b2826; --good: #5cc28f; --bad: #e98466; color-scheme: dark }
+body { background: var(--bg); color: var(--ink); font: 15px/1.55 var(--body); }
+.wrap { max-width: 1080px; margin: 0 auto; padding: 0 16px; }
+header { padding-block: 28px 8px; display: grid; gap: 6px; }
+h1 { font: 700 2rem/1.1 var(--display); margin: 0; text-wrap: balance; }
+.sub { color: var(--muted); max-width: 70ch; margin: 0; }
+main { display: grid; gap: 22px; padding-block: 16px 56px; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.tile { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; display: grid; gap: 2px; }
+.tile b { font: 700 1.5rem/1.2 var(--display); font-variant-numeric: tabular-nums; }
+.tile span { font: 12px var(--mono); color: var(--muted); }
+section { display: grid; gap: 10px; }
+h2 { font: 700 1.2rem var(--display); margin: 0; }
+.note { color: var(--muted); font-size: 13px; margin: 0; max-width: 75ch; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 14px; min-width: 0; }
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 440px), 1fr)); gap: 14px; }
+svg { display: block; width: 100%; height: auto; overflow: visible; }
+svg text { fill: var(--muted); font: 11px var(--mono); }
+.tw { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font: 13px var(--mono); font-variant-numeric: tabular-nums; }
+th, td { padding: 6px 8px; text-align: right; border-bottom: 1px solid var(--grid); white-space: nowrap; }
+th:first-child, td:first-child { text-align: left; }
+th { color: var(--muted); font-weight: 600; }
+td.up { color: var(--bad); } td.down { color: var(--good); }
+.tip { position: fixed; pointer-events: none; background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; font: 12px var(--mono); }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>Parentheses 120M Training Record</h1>
+    <p class="sub">Parentheses 0.9-120M is a recurrent (selective linear attention) language model trained from scratch for Dravidian languages and English on one 8 GB laptop GPU, in five step-gated sessions. Every number here comes from the run's own logs and eval files.</p>
+  </header>
+  <main>
+    <div class="tiles" id="tiles"></div>
+
+    <section>
+      <h2>Training loss</h2>
+      <p class="note">Mean loss per 50-step bucket; shaded bands mark the five sessions. The Q&amp;A mix joined at step 3853, dictionaries at 5724, and the SFT tail at 7632, so later loss mixes harder text and isn't directly comparable.</p>
+      <div class="panel"><svg id="loss" viewBox="0 0 900 260" role="img" aria-label="Training loss by step"></svg></div>
+    </section>
+
+    <section>
+      <h2>Learning rate</h2>
+      <div class="panel"><svg id="lr" viewBox="0 0 900 150" role="img" aria-label="Learning rate by step"></svg></div>
+    </section>
+
+    <section>
+      <h2>Sessions</h2>
+      <div class="panel tw"><table id="sess"></table></div>
+    </section>
+
+    <section>
+      <h2>Bits per byte, per language</h2>
+      <p class="note">Lower is better. Same validation text at every checkpoint. The colored figure is the change from the previous checkpoint.</p>
+      <div class="grid2">
+        <div class="panel"><svg id="bpb4" viewBox="0 0 440 200" role="img" aria-label="Main four Dravidian languages mean bits per byte"></svg></div>
+        <div class="panel"><svg id="bpbe" viewBox="0 0 440 200" role="img" aria-label="English bits per byte"></svg></div>
+      </div>
+      <div class="panel tw"><table id="bpb"></table></div>
+    </section>
+
+    <section>
+      <h2>Benchmarks</h2>
+      <p class="note">lm-eval on 500 items per task: about ±2 points of noise, so small moves mean nothing. Multiple-choice reasoning uses acc_norm (raw accuracy is biased by answer length).</p>
+      <div class="grid2">
+        <div class="panel tw"><table id="lm"></table></div>
+        <div class="panel tw"><table id="mc"></table></div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Answer behaviour</h2>
+      <p class="note">Bare-number answers with no words on English reasoning prompts: a failure mode that appeared in Session 3 and was tracked afterwards. Lower is better. Next to it, the 250-query health checks.</p>
+      <div class="grid2">
+        <div class="panel tw"><table id="let"></table></div>
+        <div class="panel tw"><table id="q"></table></div>
+      </div>
+    </section>
+  </main>
+</div>
+<div class="tip" id="tip" hidden></div>
+
+<script>
+const D = /*__DATA__*/null;
+const NAMES = { kan: "Kannada", tam: "Tamil", tel: "Telugu", mal: "Malayalam", tcy: "Tulu", kff: "Koya", kxv: "Kuvi", nit: "SE Kolami", eng: "English" };
+const NS = "http://www.w3.org/2000/svg";
+const el = (t, a = {}, p) => { const e = document.createElementNS(NS, t); for (const k in a) e.setAttribute(k, a[k]); if (p) p.append(e); return e; };
+const fmt = (n, d = 0) => n == null ? "–" : Number(n).toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d });
+const tip = document.getElementById("tip");
+const showTip = (ev, t) => { tip.textContent = t; tip.hidden = false; tip.style.left = Math.min(ev.clientX + 12, innerWidth - 200) + "px"; tip.style.top = (ev.clientY + 12) + "px"; };
+const hideTip = () => { tip.hidden = true; };
+
+// tiles
+const tokensSeen = (D.last_step + 1) * D.tok_per_step;
+const hours = D.sessions.reduce((a, s) => a + s.hours, 0);
+const m4 = (r) => (r.kan + r.tam + r.tel + r.mal) / 4;
+const b0 = D.bpb[0], bN = D.bpb[D.bpb.length - 1];
+const tiles = [
+  [fmt(D.params / 1e6, 1) + "M", "parameters"],
+  [fmt(tokensSeen / 1e9, 2) + "B", "tokens trained (of " + fmt(D.tokens_total / 1e9, 2) + "B)"],
+  [fmt(D.last_step), "last logged step"],
+  [fmt(hours, 1) + " h", "GPU training time"],
+  [b0 && bN ? fmt(100 * (m4(bN) - m4(b0)) / m4(b0), 1) + "%" : "–", "Dravidian bpb, step " + (b0 ? b0.step : "") + " to " + (bN ? bN.step : "")],
+  [fmt(D.sessions.reduce((a, s) => a + Math.max(0, s.launches - 1), 0)), "extra launches (S3's second leg was planned)"],
+];
+const T = document.getElementById("tiles");
+for (const [v, l] of tiles) { const d = document.createElement("div"); d.className = "tile"; const b = document.createElement("b"); b.textContent = v; const s = document.createElement("span"); s.textContent = l; d.append(b, s); T.append(d); }
+
+function lineChart(svg, pts, x, y, opts) {
+  const W = +svg.viewBox.baseVal.width, H = +svg.viewBox.baseVal.height, L = 52, R = 12, Tp = 10, B = 26;
+  const xs = pts.map(x), ys = pts.map(y);
+  const x0 = opts.x0 ?? Math.min(...xs), x1 = opts.x1 ?? Math.max(...xs);
+  let y0 = Math.min(...ys), y1 = Math.max(...ys); const pad = (y1 - y0) * 0.08 || 0.01; y0 -= pad; y1 += pad;
+  const sx = (v) => L + (v - x0) / (x1 - x0 || 1) * (W - L - R), sy = (v) => Tp + (1 - (v - y0) / (y1 - y0)) * (H - Tp - B);
+  if (opts.bands) opts.bands.forEach((b, i) => { if (i % 2 === 0) el("rect", { x: sx(b[0]), y: Tp, width: sx(b[1]) - sx(b[0]), height: H - Tp - B, fill: "var(--band)" }, svg);
+    const t = el("text", { x: (sx(b[0]) + sx(b[1])) / 2, y: H - 4, "text-anchor": "middle" }, svg); t.textContent = "S" + (i + 1); });
+  for (let i = 0; i <= 4; i++) { const v = y0 + (y1 - y0) * i / 4, yy = sy(v);
+    el("line", { x1: L, x2: W - R, y1: yy, y2: yy, stroke: "var(--grid)", "stroke-width": 1 }, svg);
+    const t = el("text", { x: L - 6, y: yy + 4, "text-anchor": "end" }, svg); t.textContent = opts.yfmt(v); }
+  if (!opts.bands) pts.forEach((p) => { const t = el("text", { x: sx(x(p)), y: H - 6, "text-anchor": "middle" }, svg); t.textContent = fmt(x(p)); });
+  el("path", { d: pts.map((p, i) => (i ? "L" : "M") + sx(x(p)).toFixed(1) + " " + sy(y(p)).toFixed(1)).join(""), fill: "none", stroke: "var(--series)", "stroke-width": 2, "stroke-linejoin": "round" }, svg);
+  if (opts.dots) pts.forEach((p) => el("circle", { cx: sx(x(p)), cy: sy(y(p)), r: 4, fill: "var(--series)", stroke: "var(--surface)", "stroke-width": 2 }, svg));
+  const hair = el("line", { y1: Tp, y2: H - B, stroke: "var(--muted)", "stroke-width": 1, visibility: "hidden" }, svg);
+  const hit = el("rect", { x: L, y: Tp, width: W - L - R, height: H - Tp - B, fill: "transparent" }, svg);
+  hit.addEventListener("pointermove", (ev) => { const r = svg.getBoundingClientRect(), vx = (ev.clientX - r.left) / r.width * W;
+    let best = pts[0]; for (const p of pts) if (Math.abs(sx(x(p)) - vx) < Math.abs(sx(x(best)) - vx)) best = p;
+    hair.setAttribute("x1", sx(x(best))); hair.setAttribute("x2", sx(x(best))); hair.setAttribute("visibility", "visible"); showTip(ev, opts.tip(best)); });
+  hit.addEventListener("pointerleave", () => { hair.setAttribute("visibility", "hidden"); hideTip(); });
+}
+const bands = [0, 1, 2, 3, 4].map((i) => [i * D.per_session, Math.min((i + 1) * D.per_session, 9537)]);
+if (D.curve.length) {
+  lineChart(document.getElementById("loss"), D.curve, (p) => p.step, (p) => p.loss, { x0: 0, x1: 9537, bands, yfmt: (v) => v.toFixed(2), tip: (p) => "step ~" + p.step + " · loss " + p.loss.toFixed(3) });
+  lineChart(document.getElementById("lr"), D.curve, (p) => p.step, (p) => p.lr, { x0: 0, x1: 9537, bands, yfmt: (v) => v.toExponential(1), tip: (p) => "step ~" + p.step + " · lr " + p.lr.toExponential(2) });
+}
+if (D.bpb.length) {
+  lineChart(document.getElementById("bpb4"), D.bpb, (p) => p.step, m4, { dots: true, yfmt: (v) => v.toFixed(3), tip: (p) => "step " + p.step + " · Dravidian mean " + m4(p).toFixed(4) });
+  lineChart(document.getElementById("bpbe"), D.bpb, (p) => p.step, (p) => p.eng, { dots: true, yfmt: (v) => v.toFixed(3), tip: (p) => "step " + p.step + " · English " + p.eng.toFixed(4) });
+  [["bpb4", "Kannada / Tamil / Telugu / Malayalam mean"], ["bpbe", "English"]].forEach(([id, t]) => { const s = document.getElementById(id); const tt = el("text", { x: 52, y: 0 }, s); tt.textContent = t; });
+}
+
+function table(id, head, rows) {
+  const t = document.getElementById(id); t.textContent = "";
+  const tr = t.insertRow(); head.forEach((h) => { const th = document.createElement("th"); th.textContent = h; tr.append(th); });
+  rows.forEach((r) => { const row = t.insertRow(); r.forEach((c) => { const td = row.insertCell(); if (c && typeof c === "object") { td.textContent = c.t; if (c.cls) td.className = c.cls; } else td.textContent = c; }); });
+}
+table("sess", ["session", "steps", "launches", "GPU hours", "tokens / s", "data added"],
+  D.sessions.map((s) => ["S" + s.id + " (" + (s.id - 1) * D.per_session + "–" + Math.min(s.id * D.per_session - 1, 9536) + ")", fmt(s.steps), s.launches || "–", s.hours ? fmt(s.hours, 1) : "–", fmt(s.tok_per_s),
+    ["v5 corpus, warmup", "v5 corpus", "+ Q&A mix (16 lanes)", "+ dictionaries, LR decay starts", "+ SFT tail, decay to 1e-5"][s.id - 1]]));
+const delta = (cur, prev) => { if (prev == null) return { t: cur.toFixed(4) }; const d = 100 * (cur - prev) / prev; return { t: cur.toFixed(4) + "  " + (d > 0 ? "+" : "") + d.toFixed(1) + "%", cls: d > 0.05 ? "up" : d < -0.05 ? "down" : "" }; };
+table("bpb", ["language"].concat(D.bpb.map((b) => "step " + b.step)),
+  D.langs.map((l) => [NAMES[l]].concat(D.bpb.map((b, i) => delta(b[l], i ? D.bpb[i - 1][l] : null)))));
+const lmTasks = ["arc_easy", "arc_challenge", "hellaswag", "winogrande", "piqa"];
+table("lm", ["step"].concat(lmTasks), D.lm.map((r) => [r.step].concat(lmTasks.map((k) => r[k] == null ? "–" : r[k].toFixed(3)))));
+const mcB = ["code", "logic", "math", "reasoning"];
+table("mc", ["MC step"].concat(mcB), D.mc.map((r) => [r.step].concat(mcB.map((k) => r[k] == null ? "–" : r[k].toFixed(3)))));
+table("let", ["bare numbers", "math", "logic", "reasoning", "code"], D.letterless.map((r) => [r.step].concat(["math", "logic", "reasoning", "code"].map((k) => r[k] ? r[k][0] + " / " + r[k][1] : "–"))));
+table("q", ["250 queries", "script ok", "eos", "loop", "repetition"], D.s250.map((r) => [r.step, (100 * r.script_ok).toFixed(1) + "%", (100 * r.eos).toFixed(1) + "%", (100 * r.loop).toFixed(1) + "%", r.rep.toFixed(3)]));
+</script>
