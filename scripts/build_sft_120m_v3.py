@@ -260,6 +260,172 @@ ABSTENTION_TEMPLATES = {
 }
 
 # ---------------------------------------------------------------------------
+# Context-Free Unknown-Entity Abstention Drills (P1.4)
+# Training the honesty behavior for bare questions about invented entities:
+# direct "I don't know" answers with no passage references and no guessing.
+# ---------------------------------------------------------------------------
+
+UNKNOWN_ABSTENTION = {
+    "eng": [
+        "I don't know.",
+        "I don't know the answer to that.",
+        "I don't have information about that.",
+        "I don't have reliable information about that, so I can't answer.",
+        "I'm not sure — I don't have information about that.",
+        "I have no information about that.",
+        "I can't answer that — I don't know.",
+        "I don't know that.",
+        "I'm not sure about that.",
+        "I wouldn't know that; I have no information on it.",
+        "I can't say — I don't have that information.",
+        "I don't know — I have no information about that.",
+    ],
+    "kan": [
+        "ನನಗೆ ಅದರ ಬಗ್ಗೆ ಮಾಹಿತಿ ಇಲ್ಲ.",
+        "ಈ ಪ್ರಶ್ನೆಗೆ ಉತ್ತರ ನನಗೆ ಗೊತ್ತಿಲ್ಲ.",
+        "ಇದರ ಬಗ್ಗೆ ನನಗೆ ಖಚಿತವಾದ ಮಾಹಿತಿ ಇಲ್ಲ.",
+        "ಈ ಪ್ರಶ್ನೆಗೆ ಉತ್ತರ ನನ್ನ ಬಳಿ ಇಲ್ಲ.",
+        "ಇದರ ಬಗ್ಗೆ ನನಗೆ ತಿಳಿದಿಲ್ಲ.",
+        "ಇದು ನನಗೆ ಗೊತ್ತಿಲ್ಲ.",
+        "ಈ ವಿಷಯದ ಬಗ್ಗೆ ನನ್ನ ಬಳಿ ಮಾಹಿತಿ ಇಲ್ಲ.",
+        "ನನಗೆ ಇದರ ಬಗ್ಗೆ ಮಾಹಿತಿ ಇಲ್ಲ ಎಂದು ಹೇಳಬೇಕು.",
+    ],
+    "tam": [
+        "இது பற்றி என்னிடம் தகவல் இல்லை.",
+        "இந்தக் கேள்விக்கு எனக்குப் பதில் தெரியாது.",
+        "இதுபற்றி எனக்குத் தெரியாது.",
+        "இந்தக் கேள்விக்கு என்னிடம் பதில் இல்லை.",
+        "இது எனக்குத் தெரியாது.",
+        "என்னிடம் இதற்கான தகவல் இல்லை.",
+        "இதைப் பற்றி எனக்கு உறுதியான தகவல் இல்லை.",
+        "இந்த விஷயம் குறித்த தகவல் என்னிடம் இல்லை.",
+    ],
+    "tel": [
+        "దీని గురించి నా దగ్గర సమాచారం లేదు.",
+        "ఈ ప్రశ్నకు సమాధానం నాకు తెలియదు.",
+        "దీని గురించి నాకు తెలియదు.",
+        "ఈ ప్రశ్నకు నా దగ్గర సమాధానం లేదు.",
+        "ఇది నాకు తెలియదు.",
+        "నా దగ్గర దీనికి సంబంధించిన సమాచారం లేదు.",
+        "దీని గురించి నాకు ఖచ్చితమైన సమాచారం లేదు.",
+        "ఈ విషయం గురించి నా దగ్గర సమాచారం లేదు.",
+    ],
+    "mal": [
+        "ഇതിനെക്കുറിച്ച് എനിക്ക് വിവരമില്ല.",
+        "ഈ ചോദ്യത്തിന് ഉത്തരം എനിക്കറിയില്ല.",
+        "ഇതിനെക്കുറിച്ച് എനിക്കറിയില്ല.",
+        "ഈ ചോദ്യത്തിന് എന്റെ കൈവശം ഉത്തരമില്ല.",
+        "ഇത് എനിക്കറിയില്ല.",
+        "എന്റെ കൈവശം ഇതിനെക്കുറിച്ചുള്ള വിവരമില്ല.",
+        "ഇതിനെക്കുറിച്ച് എനിക്ക് ഉറപ്പുള്ള വിവരമില്ല.",
+        "ഈ വിഷയത്തെക്കുറിച്ചുള്ള വിവരം എനിക്കില്ല.",
+    ],
+}
+
+UNKNOWN_QUESTION_TEMPLATES = {
+    "eng": [
+        ("What is the capital of {name}?", "place"),
+        ("Which city is the capital of {name}?", "place"),
+        ("What is the population of {name}?", "place"),
+        ("Who is the current president of {name}?", "place"),
+        ("When was the Treaty of {name} signed?", "place"),
+        ("What did the Conclave of {name} decide?", "place"),
+        ("What is the tallest mountain in {name}?", "place"),
+        ("How long is the {name} River?", "place"),
+        ("Who invented the {name}?", "thing"),
+        ("In what year was the {name} invented?", "thing"),
+        ("What is the melting point of {name}?", "compound"),
+        ("What is the chemical formula of {name}?", "compound"),
+        ("Which company released the {name}?", "product"),
+        ("In what year did the {name} go on sale?", "product"),
+    ],
+    "kan": [
+        ("{name} ನ ರಾಜಧಾನಿ ಯಾವುದು?", "place"),
+        ("{name} ನ ಜನಸಂಖ್ಯೆ ಎಷ್ಟು?", "place"),
+        ("{name} ಅನ್ನು ಯಾರು ಕಂಡುಹಿಡಿದರು?", "thing"),
+    ],
+    "tam": [
+        ("{name} நாட்டின் தலைநகரம் என்ன?", "place"),
+        ("{name} மக்கள் தொகை என்ன?", "place"),
+        ("{name}-ஐ கண்டுபிடித்தவர் யார்?", "thing"),
+    ],
+    "tel": [
+        ("{name} రాజధాని ఏమిటి?", "place"),
+        ("{name} జనాభా ఎంత?", "place"),
+        ("{name} ను కనుగొన్నది ఎవరు?", "thing"),
+    ],
+    "mal": [
+        ("{name} രാജ്യത്തിന്റെ തലസ്ഥാനം ഏതാണ്?", "place"),
+        ("{name} ജനസംഖ്യ എത്രയാണ്?", "place"),
+        ("{name} കണ്ടുപിടിച്ചത് ആരാണ്?", "thing"),
+    ],
+}
+
+FAKE_PLACES = [
+    "Velmara", "Zarenta", "Tharovia", "Quelbrim", "Orvane", "Silthara",
+    "Kadmiros", "Vernalia", "Praxum", "Dunvale", "Mirkanth", "Solyara",
+    "Ithuvia", "Belmaran", "Corvath", "Dralvia", "Erethia", "Faldora",
+    "Gwynmar", "Halveth", "Iskaria", "Jorvane", "Kelthara", "Lyrinth",
+    "Morvani", "Nethara", "Ostvald", "Ravenmoor",
+]
+
+FAKE_THINGS = [
+    "thrimble", "zorvane device", "quellium engine", "marvonic coil",
+    "veldrine capacitor", "solithine reactor", "praxite lens", "mirkanite alloy",
+    "dunlight lantern", "orvane compass", "tharovian clock", "kadmir gear",
+    "velmaran telescope", "quellbrim battery", "faldoran pump", "ithuvian valve",
+]
+
+FAKE_COMPOUNDS = [
+    "zorvium", "quelline", "tharbium", "veldrone", "mirkanite",
+    "solithine", "praxite", "kadmirite", "orvanium", "dunvale salt",
+]
+
+FAKE_PRODUCTS = [
+    "Kestrel-7 handheld", "Vantry-2 watch", "Halveth X1 console",
+    "Mirkanth Tab-3", "Orvane Air speaker", "Quelbrim Mini radio",
+    "Silthara Cam-5", "Dunvale Book reader", "Tharovia Note-9",
+    "Kadmiros Drone-4",
+]
+
+_FAKE_POOLS = {
+    "place": FAKE_PLACES,
+    "thing": FAKE_THINGS,
+    "compound": FAKE_COMPOUNDS,
+    "product": FAKE_PRODUCTS,
+}
+
+DRILL_LANG_PLAN = [("eng", 0.60), ("kan", 0.10), ("tam", 0.10), ("tel", 0.10), ("mal", 0.10)]
+
+
+def collect_unknown_drills(tok: Tokenizer, rng: np.random.Generator, max_docs: int = 3000):
+    """Generates context-free unknown-entity drills (honesty_unknown): invented
+    questions answered with a direct, passage-free abstention. Deliberately uses
+    entity names disjoint from the P2.1 regression suite to keep the eval clean."""
+    emitted = 0
+    while emitted < max_docs:
+        r = float(rng.random())
+        acc = 0.0
+        lang = "eng"
+        for l, p in DRILL_LANG_PLAN:
+            acc += p
+            if r < acc:
+                lang = l
+                break
+        tpl_list = UNKNOWN_QUESTION_TEMPLATES[lang]
+        tpl, pool_kind = tpl_list[int(rng.integers(0, len(tpl_list)))]
+        pool = _FAKE_POOLS[pool_kind]
+        name = pool[int(rng.integers(0, len(pool)))]
+        question = tpl.format(name=name)
+        abst_list = UNKNOWN_ABSTENTION[lang]
+        answer = abst_list[int(rng.integers(0, len(abst_list)))]
+        tokens, mask = encode_chat_doc(tok, lang, question, answer)
+        if len(tokens) <= 1024:
+            emitted += 1
+            yield ("honesty_unknown", lang, tokens, mask)
+
+
+# ---------------------------------------------------------------------------
 # Grounded Low-Resource Prompt & Framing Templates (100% Attested Vocabulary)
 # ---------------------------------------------------------------------------
 LOWRES_PROMPT_TEMPLATES = {
@@ -836,6 +1002,16 @@ def collect_intelli_lanes(
                 ctx = clean_text(row.get("context", ""))
                 ans = clean_text(row.get("answer", ""))
                 if not q or not ans:
+                    continue
+                if "\ufffd" in ctx:
+                    continue
+                cjk_like = sum(
+                    1 for ch in ctx
+                    if 0x2E80 <= ord(ch) <= 0x9FFF
+                    or 0xAC00 <= ord(ch) <= 0xD7AF
+                    or 0xFF00 <= ord(ch) <= 0xFFEF
+                )
+                if cjk_like > 20:
                     continue
 
                 ascii_a, counts_a = script_profile(ans)
@@ -1440,7 +1616,8 @@ def main():
     eng_freethink_cap = 200 if args.dry_run else 14000
     eng_think_cap = 200 if args.dry_run else 8000
     eng_chat_cap = 250 if args.dry_run else 10000
-    intelli_abst = 50 if args.dry_run else 400
+    intelli_abst = 150 if args.dry_run else 4000
+    unknown_drills = 150 if args.dry_run else 3000
     aya_cap = 100 if args.dry_run else 5000
     indic_abst = 20 if args.dry_run else 100
     oasst_cap = 150 if args.dry_run else 8000
@@ -1468,6 +1645,11 @@ def main():
 
     print("[4/7] Collecting & filtering Intelli lanes (math capped at 2.5k, logic, code, diverse abstention)...", flush=True)
     for item in collect_intelli_lanes(tok, val_hashes, rng, max_total_abstention=intelli_abst):
+        raw_records.append(item)
+    print(f"      Total records so far: {len(raw_records):,}", flush=True)
+
+    print("[4b/7] Collecting context-free unknown-entity abstention drills...", flush=True)
+    for item in collect_unknown_drills(tok, rng, max_docs=unknown_drills):
         raw_records.append(item)
     print(f"      Total records so far: {len(raw_records):,}", flush=True)
 
@@ -1521,6 +1703,9 @@ def main():
         if not args.dry_run:
             # Low-resource languages: 2x
             if lang in ("tcy", "kff", "kxv", "nit"):
+                train_recs.append((cat, lang, toks, msk))
+            # Unknown-entity honesty drills: 2x
+            elif cat == "honesty_unknown":
                 train_recs.append((cat, lang, toks, msk))
             # Modern encyclopedic English FreeThink: 2x
             elif cat in ("eng_freethink_struct", "eng_freethink_cont"):
