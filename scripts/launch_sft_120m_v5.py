@@ -90,7 +90,8 @@ def get_train_cmd():
 
 
 def get_driver_cmd():
-    return [sys.executable, "-u", "scripts/overnight_driver.py", "--name", RUN_NAME, "--"] + get_train_cmd()
+    train_flags = get_train_cmd()[3:]
+    return [sys.executable, "-u", "scripts/overnight_driver.py", "--name", RUN_NAME, "--"] + train_flags
 
 
 def main():
