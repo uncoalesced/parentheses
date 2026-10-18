@@ -161,7 +161,9 @@ _URL_CMD_RE = _mm_re.compile(
 
 
 # SFT v1-v3 never trained a <|system|> preamble (<|system|> only appears as
-# "tool_result:" turns), so the identity prompt is opt-in via --system.
+# "tool_result:" turns), but without an identity prompt the model invents
+# facts instead of abstaining, so the identity prompt is ON by default and
+# --no-system is the opt-out.
 DEFAULT_SYSTEM_PROMPT = (
     "You are Parentheses 0.9, an efficient Dravidian and English recurrent language model "
     "developed by Joel Anthony. You answer questions directly, concisely, and accurately. "
@@ -195,6 +197,14 @@ _DISCOUNT_RE = _mm_re.compile(
 _DISCOUNT_ONLY_RE = _mm_re.compile(
     rf"^(?:the\s+)?(?:single\s+discount\s+equivalent\s+to\s+)?(?:successive\s+|combined\s+)?"
     rf"discounts?\s+of\s+{_PCT_LIST}$",
+    _mm_re.IGNORECASE,
+)
+_COST_RE = _mm_re.compile(
+    rf"^(?:if\s+)?(?:an?\s+|the\s+)?(?:product|item|shirt|thing|price)?\s*(?:costs?|priced\s+at)\s+₹?\$?({_NUM})\b",
+    _mm_re.IGNORECASE,
+)
+_ANSWER_CLAUSE_RE = _mm_re.compile(
+    r"[\s,.:;]*\b(?:answer|respond|reply)\b[^.!?\n]*[.!?]?\s*$",
     _mm_re.IGNORECASE,
 )
 _EXPR_CHARS_RE = _mm_re.compile(r"^[\d\.\s\+\-\*/\^\(\)x×÷]+$")
@@ -249,6 +259,7 @@ def solve_simple_math(prompt: str) -> str | None:
     if len(text) > 120 or "\n" in text:
         return None
     body = _MATH_PREFIX_RE.sub("", text)
+    body = _ANSWER_CLAUSE_RE.sub("", body)
     body = _MATH_SUFFIX_RE.sub("", body).strip()
     body = _mm_re.sub(r"(?<=\d),(?=\d{3}\b)", "", body)  # 1,000 -> 1000
     if not body:
@@ -287,6 +298,18 @@ def solve_simple_math(prompt: str) -> str | None:
                 keep *= 1 - p / 100
             return (f"Successive discounts of {', '.join(_fmt_num(p) + '%' for p in pcts)} "
                     f"equal a single discount of {_fmt_num((1 - keep) * 100)}%.")
+
+    m = _COST_RE.match(body)
+    if m and _mm_re.search(r"\b(?:discount|off)\b", body, _mm_re.IGNORECASE):
+        start = _Fraction(m.group(1))
+        pcts = [_Fraction(x) for x in _mm_re.findall(rf"({_NUM})\s*%", body[m.end():])]
+        if pcts and all(0 <= p <= 100 for p in pcts):
+            price = start
+            for p in pcts:
+                price *= 1 - p / 100
+            total_off = (1 - price / start) * 100 if start else _Fraction(0)
+            return (f"After discounts of {', '.join(_fmt_num(p) + '%' for p in pcts)}, "
+                    f"the price is {_fmt_num(price)} (a total discount of {_fmt_num(total_off)}%).")
 
     expr = _mm_re.sub(r"\s+plus\s+", " + ", body, flags=_mm_re.IGNORECASE)
     expr = _mm_re.sub(r"\s+minus\s+", " - ", expr, flags=_mm_re.IGNORECASE)
@@ -887,6 +910,30 @@ def load_model_and_tokenizer(ckpt_path: Path | str, device: str = "cpu"):
     return model, tok, cfg, ckpt.get("step", 0)
 
 
+def build_arg_parser(default_ckpt: str) -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(description="Parentheses 0.9 Interactive Chat")
+    p.add_argument("--checkpoint", default=default_ckpt)
+    p.add_argument("--lang", default="auto", help="language code: eng, kan, tam, tel, mal, tcy, kff, kxv, nit, or 'auto' (default: dynamic auto-detection per prompt)")
+    p.add_argument("--format", "--mode", choices=["think", "chat", "freethink", "base"], default="chat",
+                   help="prompt format: chat (direct conversational response, default), think (with  thinking traces), freethink (open-ended stream), base")
+    p.add_argument("--image", nargs="*", default=[], help="attach image(s) (.png, .jpg, .bmp, .webp) for SSM visual state & grounding")
+    p.add_argument("--doc", "--ingest", dest="doc", nargs="*", default=[], help="attach document(s) (.pdf, .docx, .html, .csv, .json, .txt)")
+    p.add_argument("--web", "--web-search", action="store_true",
+                   help="allow web grounding for clearly real-time questions (/web <query> always searches); "
+                        "injects a 1-2 sentence URL-free snippet")
+    p.add_argument("--system", nargs="?", const=DEFAULT_SYSTEM_PROMPT, default=DEFAULT_SYSTEM_PROMPT,
+                   help="prepend a <|system|> identity/honesty prompt (ON by default). "
+                        "Bare --system uses the built-in Parentheses prompt; --system \"...\" sets custom text.")
+    p.add_argument("--no-system", action="store_const", const=None, dest="system",
+                   help="disable the default <|system|> identity/honesty prompt.")
+    p.add_argument("--max-new-tokens", type=int, default=300)
+    p.add_argument("--temperature", type=float, default=0.7)
+    p.add_argument("--top-k", type=int, default=40)
+    p.add_argument("--device", default="cpu")
+    p.add_argument("--self-test", action="store_true")
+    return p
+
+
 def main():
     default_ckpt = "checkpoints/parentheses-0.9-120M-sft-v4/step_10036_final.pt"
     if not Path(default_ckpt).exists():
@@ -897,24 +944,7 @@ def main():
         elif (SCRIPT_DIR / "release/parentheses-0.9-120M-candidate/model.safetensors").exists():
             default_ckpt = str(SCRIPT_DIR / "release/parentheses-0.9-120M-candidate/model.safetensors")
 
-    p = argparse.ArgumentParser(description="Parentheses 0.9 Interactive Chat")
-    p.add_argument("--checkpoint", default=default_ckpt)
-    p.add_argument("--lang", default="auto", help="language code: eng, kan, tam, tel, mal, tcy, kff, kxv, nit, or 'auto' (default: dynamic auto-detection per prompt)")
-    p.add_argument("--format", "--mode", choices=["think", "chat", "freethink", "base"], default="chat",
-                   help="prompt format: chat (direct conversational response, default), think (with <think> traces), freethink (open-ended stream), base")
-    p.add_argument("--image", nargs="*", default=[], help="attach image(s) (.png, .jpg, .bmp, .webp) for SSM visual state & grounding")
-    p.add_argument("--doc", "--ingest", dest="doc", nargs="*", default=[], help="attach document(s) (.pdf, .docx, .html, .csv, .json, .txt)")
-    p.add_argument("--web", "--web-search", action="store_true",
-                   help="allow web grounding for clearly real-time questions (/web <query> always searches); "
-                        "injects a 1-2 sentence URL-free snippet")
-    p.add_argument("--system", nargs="?", const=DEFAULT_SYSTEM_PROMPT, default=None,
-                   help="prepend a <|system|> identity/honesty prompt (off by default: SFT never trained one). "
-                        "Bare --system uses the built-in Parentheses prompt; --system \"...\" sets custom text.")
-    p.add_argument("--max-new-tokens", type=int, default=300)
-    p.add_argument("--temperature", type=float, default=0.7)
-    p.add_argument("--top-k", type=int, default=40)
-    p.add_argument("--device", default="cpu")
-    p.add_argument("--self-test", action="store_true")
+    p = build_arg_parser(default_ckpt)
     args = p.parse_args()
 
     if args.self_test:
@@ -933,7 +963,9 @@ def main():
     if args.web:
         print("[chat] Web grounding: ENABLED for real-time questions only (or /web <query>).")
     if args.system:
-        print("[chat] System prompt: ON.")
+        print("[chat] System prompt: ON (--no-system to disable).")
+    else:
+        print("[chat] System prompt: OFF (--system to enable).")
     print("Commands: /lang <code|auto>, /think, /freethink, /chat, /kan, /tam, /tel, /mal, /eng, /image <path>, /doc <path>, /web <query>, /url <url>; Empty line to quit\n")
 
     while True:
@@ -995,6 +1027,27 @@ def _self_test():
     import tempfile
     from PIL import Image
     from features.multimodal import create_pdf_bytes
+
+    # Deterministic math intercept: exact test-01.md arithmetic cases
+    assert solve_simple_math("What is 17 × 6? Answer with the number only.") == "17 × 6 = 102"
+    assert solve_simple_math("What is 144 divided by 12? Answer with the number only.") == "144 divided by 12 = 12"
+    assert solve_simple_math("What is 15% of 80? Answer with the number only.") == "15% of 80 is 12."
+    assert solve_simple_math("What is 7 squared? Answer with the number only.") == "7 squared is 49."
+    assert solve_simple_math("What is 17 * 6?") == "17 * 6 = 102"
+    assert solve_simple_math("144 / 12") == "144 / 12 = 12"
+    assert solve_simple_math("7^2") == "7^2 = 49"
+    assert solve_simple_math("1,000 + 1,500") == "1000 + 1500 = 2500"
+    disc = solve_simple_math(
+        "If a product costs ₹1,500 and receives a 20% discount followed by a 10% discount, what is its final price?"
+    )
+    assert disc is not None and "1080" in disc, disc
+    assert solve_simple_math("Hello, how are you?") is None
+
+    # --system is ON by default; --no-system is the opt-out
+    _p = build_arg_parser("dummy.pt")
+    assert _p.parse_args(["--self-test"]).system == DEFAULT_SYSTEM_PROMPT
+    assert _p.parse_args(["--no-system"]).system is None
+    assert _p.parse_args(["--system", "custom identity"]).system == "custom identity"
 
     torch.manual_seed(0)
     cfg = PRESETS.get("tiny-smoke", ModelConfig(vocab_size=256, block_size=64, n_layer=2, n_head=2, n_embd=32, attn_type="selective_linear"))
