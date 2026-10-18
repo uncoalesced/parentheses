@@ -403,7 +403,8 @@ FAKE_COMPOUNDS = [
     "solithine", "praxite", "kadmirite", "orvanium", "dunvale salt",
     "veltorium", "quenlite", "tharmide", "ostrinite", "dravonite",
     "belmarite", "ithuvine", "kadmerol", "praxoride", "solverine",
-    "tarnovite", "uldemite",
+    "tarnovite", "uldemite", "velkanium", "thurnium", "praxanium",
+    "ostranium", "kadmerium", "dravanium",
 ]
 
 FAKE_PRODUCTS = [
@@ -412,6 +413,7 @@ FAKE_PRODUCTS = [
     "Silthara Cam-5", "Dunvale Book reader", "Tharovia Note-9",
     "Kadmiros Drone-4", "Zorandel Tab-9", "Kadvenna Watch-4",
     "Thalvoria Note-6", "Wendrake Pad-2", "Oskandrel Cam-8", "Valtunna Pod-5",
+    "NX-3700", "VQ-9800", "XR-2500", "TB-6600", "KM-8800", "HD-4500",
 ]
 
 _FAKE_POOLS = {
@@ -1643,7 +1645,7 @@ def main():
     eng_think_cap = 200 if args.dry_run else 8000
     eng_chat_cap = 250 if args.dry_run else 10000
     intelli_abst = 150 if args.dry_run else 4000
-    unknown_drills = 400 if args.dry_run else 8000
+    unknown_drills = 600 if args.dry_run else 12000
     aya_cap = 100 if args.dry_run else 5000
     indic_abst = 20 if args.dry_run else 100
     oasst_cap = 150 if args.dry_run else 8000
@@ -1730,8 +1732,9 @@ def main():
             # Low-resource languages: 2x
             if lang in ("tcy", "kff", "kxv", "nit"):
                 train_recs.append((cat, lang, toks, msk))
-            # Unknown-entity honesty drills: 2x
+            # Unknown-entity honesty drills: 3x
             elif cat == "honesty_unknown":
+                train_recs.append((cat, lang, toks, msk))
                 train_recs.append((cat, lang, toks, msk))
             # Modern encyclopedic English FreeThink: 2x
             elif cat in ("eng_freethink_struct", "eng_freethink_cont"):
