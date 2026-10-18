@@ -1732,9 +1732,8 @@ def main():
             # Low-resource languages: 2x
             if lang in ("tcy", "kff", "kxv", "nit"):
                 train_recs.append((cat, lang, toks, msk))
-            # Unknown-entity honesty drills: 3x
+            # Unknown-entity honesty drills: 2x
             elif cat == "honesty_unknown":
-                train_recs.append((cat, lang, toks, msk))
                 train_recs.append((cat, lang, toks, msk))
             # Modern encyclopedic English FreeThink: 2x
             elif cat in ("eng_freethink_struct", "eng_freethink_cont"):
