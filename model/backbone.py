@@ -299,10 +299,41 @@ class Parentheses(nn.Module):
                     for i in range(0, h.size(0), rows))
         return total / (t != -1).sum().clamp_min(1)
 
+    @staticmethod
+    def _apply_sampling_penalties(
+        logits: torch.Tensor,
+        recent_tokens: list[list[int]],
+        repetition_penalty: float,
+        no_repeat_ngram_size: int,
+    ) -> None:
+        for b, seq in enumerate(recent_tokens):
+            if repetition_penalty > 1.0 and seq:
+                counts: dict[int, int] = {}
+                for tid in seq:
+                    counts[tid] = counts.get(tid, 0) + 1
+                repeated = [(tid, cnt) for tid, cnt in counts.items() if cnt >= 2]
+                if repeated:
+                    tids = torch.tensor([tid for tid, _ in repeated], dtype=torch.long, device=logits.device)
+                    pens = torch.tensor(
+                        [repetition_penalty ** min(cnt - 1, 3) for _, cnt in repeated],
+                        dtype=logits.dtype,
+                        device=logits.device,
+                    )
+                    vals = logits[b, tids]
+                    logits[b, tids] = torch.where(vals > 0, vals / pens, vals * pens)
+            if no_repeat_ngram_size >= 2:
+                n = no_repeat_ngram_size
+                if len(seq) >= n:
+                    prefix = seq[-(n - 1):]
+                    for j in range(len(seq) - n + 1):
+                        if seq[j:j + n - 1] == prefix:
+                            logits[b, seq[j + n - 1]] = -float("inf")
+
     @torch.no_grad()
     def stream(self, idx: torch.Tensor, max_new_tokens: int | None = None,
                temperature: float = 1.0, top_k: int | None = None,
-               min_p: float | None = None, sink_tokens: int = 0):
+               min_p: float | None = None, sink_tokens: int = 0,
+               repetition_penalty: float = 1.0, no_repeat_ngram_size: int = 0):
         """Yield sampled token ids (B, 1) one at a time, KV-cached.
 
         max_new_tokens=None streams until the consumer stops iterating -- that's
@@ -310,6 +341,9 @@ class Parentheses(nn.Module):
 
         min_p: dynamic confidence-based truncation floor (typically 0.05-0.10).
         Truncates candidate tokens whose probability is below min_p * p_max.
+
+        repetition_penalty / no_repeat_ngram_size: constant-memory O(1) penalties
+        computed over a fixed sliding window of the last 64 tokens.
 
         Context handling: the window is the last block_size tokens, same as the
         uncached loop's idx[:, -block_size:], and output matches that loop exactly
@@ -328,6 +362,9 @@ class Parentheses(nn.Module):
         recurrent state is a fixed-size matrix, so there is no window to slide
         past and nothing to pin. Callers pass it unconditionally.
         """
+        use_penalties = (repetition_penalty > 1.0 or no_repeat_ngram_size >= 2)
+        recent_tokens = [[] for _ in range(idx.size(0))] if use_penalties else None
+
         if self.cfg.attn_type == "selective_linear":
             states = self.empty_states(idx.size(0), device=idx.device,
                                        dtype=self.tok_emb.weight.dtype)
@@ -337,6 +374,8 @@ class Parentheses(nn.Module):
             steps = itertools.count() if max_new_tokens is None else range(max_new_tokens)
             for _ in steps:
                 logits, states = self.step(curr, states)  # already (B, vocab_size)
+                if use_penalties:
+                    self._apply_sampling_penalties(logits, recent_tokens, repetition_penalty, no_repeat_ngram_size)
                 logits = logits / max(temperature, 1e-5)
                 if top_k is not None:
                     v, _ = torch.topk(logits, min(top_k, logits.size(-1)))
@@ -348,6 +387,11 @@ class Parentheses(nn.Module):
                     probs = torch.where(probs >= p_threshold, probs, torch.zeros_like(probs))
                     probs = probs / probs.sum(dim=-1, keepdim=True).clamp_min(1e-9)
                 next_id = torch.multinomial(probs, num_samples=1)
+                if use_penalties:
+                    for b in range(next_id.size(0)):
+                        recent_tokens[b].append(int(next_id[b, 0]))
+                        if len(recent_tokens[b]) > 64:
+                            del recent_tokens[b][:-64]
                 yield next_id
                 curr = next_id
             return
@@ -360,7 +404,10 @@ class Parentheses(nn.Module):
         for _ in steps:
             step_in = idx[:, -1:] if cache[0] else idx[:, -self.cfg.block_size:]
             logits, _ = self(step_in, cache=cache)
-            logits = logits[:, -1, :] / max(temperature, 1e-5)
+            logits = logits[:, -1, :]
+            if use_penalties:
+                self._apply_sampling_penalties(logits, recent_tokens, repetition_penalty, no_repeat_ngram_size)
+            logits = logits / max(temperature, 1e-5)
             if top_k is not None:
                 v, _ = torch.topk(logits, min(top_k, logits.size(-1)))
                 logits[logits < v[:, [-1]]] = -float("inf")
@@ -371,6 +418,11 @@ class Parentheses(nn.Module):
                 probs = torch.where(probs >= p_threshold, probs, torch.zeros_like(probs))
                 probs = probs / probs.sum(dim=-1, keepdim=True).clamp_min(1e-9)
             next_id = torch.multinomial(probs, num_samples=1)
+            if use_penalties:
+                for b in range(next_id.size(0)):
+                    recent_tokens[b].append(int(next_id[b, 0]))
+                    if len(recent_tokens[b]) > 64:
+                        del recent_tokens[b][:-64]
             # only the last block_size tokens are ever read back, so don't let an
             # open-ended session grow idx forever
             idx = torch.cat([idx, next_id], dim=1)[:, -self.cfg.block_size:]
@@ -394,8 +446,11 @@ class Parentheses(nn.Module):
 
     @torch.no_grad()
     def generate(self, idx: torch.Tensor, max_new_tokens: int, temperature: float = 1.0,
-                 top_k: int | None = None, min_p: float | None = None):
-        for next_id in self.stream(idx, max_new_tokens, temperature, top_k, min_p=min_p):
+                 top_k: int | None = None, min_p: float | None = None,
+                 repetition_penalty: float = 1.0, no_repeat_ngram_size: int = 0):
+        for next_id in self.stream(idx, max_new_tokens, temperature, top_k, min_p=min_p,
+                                   repetition_penalty=repetition_penalty,
+                                   no_repeat_ngram_size=no_repeat_ngram_size):
             idx = torch.cat([idx, next_id], dim=1)
         return idx
 

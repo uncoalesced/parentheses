@@ -27,6 +27,7 @@ A callback API isn't provided on purpose: start() is a generator, so a UI wants
 import argparse
 import codecs
 import json
+import re
 import statistics
 import time
 from pathlib import Path
@@ -41,10 +42,152 @@ from model import Parentheses
 # mistaken into writing somewhere else on disk. See handoff-conversation-memory.md.
 EXPORT_DIR = Path(__file__).resolve().parent.parent / "exports"
 
+# Internal slash commands and XML reasoning tags. These are strictly internal
+# engine directives and must NEVER be fed as literal text or leaked in output.
+INTERNAL_COMMANDS = (
+    "/think",
+    "/freethink",
+    "/free-think",
+    "/nothink",
+    "/no-think",
+    "/chat",
+    "/base",
+)
+INTERNAL_TAGS = (
+    "<think>",
+    "</think>",
+    "<freethink>",
+    "</freethink>",
+)
+
+_CMD_RE = re.compile(
+    r"(?<!\w)/(?:freethink|free-think|nothink|no-think|think|chat|base)(?!\w)",
+    re.IGNORECASE,
+)
+_TAG_RE = re.compile(
+    r"</?(?:freethink|free-think|think)>|<\|(?:user|assistant|system|endoftext|pad)\|>|<esg>|</?tool_call>",
+    re.IGNORECASE,
+)
+
+
+def parse_internal_command(prompt: str, default_mode: str | None = None) -> tuple[str, str | None]:
+    """Extract and hide internal slash commands (/think, /freethink, /nothink, /chat, /base)
+    and raw <think>/<freethink> tags from `prompt`, returning `(cleaned_prompt, resolved_mode)`.
+    """
+    if not prompt:
+        return "", default_mode
+
+    detected_cmd: str | None = None
+    lower = prompt.lower()
+    if any(tok in lower for tok in ("/freethink", "/free-think", "<freethink>", "</freethink>")):
+        detected_cmd = "freethink"
+    elif any(tok in lower for tok in ("/nothink", "/no-think")):
+        detected_cmd = "nothink"
+    elif any(tok in lower for tok in ("/think", "<think>", "</think>")):
+        detected_cmd = "think"
+    elif "/chat" in lower:
+        detected_cmd = "chat"
+    elif "/base" in lower:
+        detected_cmd = "base"
+
+    cleaned = _TAG_RE.sub(" ", prompt)
+    cleaned = _CMD_RE.sub(" ", cleaned)
+    cleaned = re.sub(r"[ \t]{2,}", " ", cleaned).strip()
+
+    if detected_cmd is None:
+        return cleaned, default_mode
+
+    if default_mode in ("think", "chat", "freethink", "base"):
+        if detected_cmd == "freethink":
+            return cleaned, "freethink"
+        if detected_cmd == "think":
+            return cleaned, "think"
+        if detected_cmd in ("nothink", "chat"):
+            return cleaned, "chat"
+        if detected_cmd == "base":
+            return cleaned, "base"
+
+    # FreeThinkSession mode space ('continuation' | 'structured')
+    if detected_cmd == "think":
+        return cleaned, "structured"
+    if detected_cmd == "freethink":
+        return cleaned, ("structured" if default_mode in (None, "structured") else "continuation")
+    if detected_cmd in ("nothink", "chat", "base"):
+        return cleaned, "continuation"
+    return cleaned, default_mode
+
+
+LEGACY_ARTIFACT_PHRASES: tuple[str, ...] = (
+    "Examining the key principles behind this statement,",
+    "Examining the key principles behind this statement.",
+    "Examining the key principles behind this statement:",
+    "Examining the key principles behind this statement",
+    "ಇದರ ಪ್ರಮುಖ ಅಂಶಗಳನ್ನು ವಿಶ್ಲೇಷಿಸುವುದಾದರೆ,",
+    "ಇದರ ಪ್ರಮುಖ ಅಂಶಗಳನ್ನು ವಿಶ್ಲೇಷಿಸುವುದಾದರೆ.",
+    "ಇದರ ಪ್ರಮುಖ ಅಂಶಗಳನ್ನು ವಿಶ್ಲೇಷಿಸುವುದಾದರೆ",
+    "இதன் முக்கியக் கூறுகளை ஆராய்ந்தால்,",
+    "இதன் முக்கியக் கூறுகளை ஆராய்ந்தால்.",
+    "இதன் முக்கியக் கூறுகளை ஆராய்ந்தால்",
+    "దీనిలోని ముఖ్య అంశాలను విశ్లేషిస్తే,",
+    "దీనిలోని ముఖ్య అంశాలను విశ్లేషిస్తే.",
+    "దీనిలోని ముఖ్య అంశాలను విశ్లేషిస్తే",
+    "ഇതിലെ പ്രധാന വസ്തുതകൾ വിശകലനം ചെയ്താൽ,",
+    "ഇതിലെ പ്രധാന വസ്തുതകൾ വിശകലനം ചെയ്താൽ.",
+    "ഇതിലെ പ്രധാന വസ്തുതകൾ വിശകലനം ചെയ്താൽ",
+    "ಇಂದೆತ ಬಗ್ಗೆ ದುಂಬು ಪನ್ಪಿನಂಚಿನವು ಪಂಡ,",
+    "ಇಂದೆತ ಬಗ್ಗೆ ದುಂಬು ಪನ್ಪಿನಂಚಿನವು ಪಂಡ.",
+    "ಇಂದೆತ ಬಗ್ಗೆ ದುಂಬು ಪನ್ಪಿನಂಚಿನವು ಪಂಡ",
+    "ଇଦିନ୍ ପେର୍କେ ଆରି କେତୁତାନ୍ ମେଣ୍ଡେ,",
+    "ଇଦିନ୍ ପେର୍କେ ଆରି କେତୁତାନ୍ ମେଣ୍ଡେ.",
+    "ଇଦିନ୍ ପେର୍କେ ଆରି କେତୁତାନ୍ ମେଣ୍ଡେ",
+    "ଏ଼ଦାଆଁତାକି ଅ଼ଡ଼େ ମେହ୍‌ଦୁ,",
+    "ଏ଼ଦାଆଁତାକି ଅ଼ଡ଼େ ମେହ୍‌ଦୁ.",
+    "ଏ଼ଦାଆଁତାକି ଅ଼ଡ଼େ ମେହ୍‌ଦୁ",
+    "ఇదా ఎన్నె అని మరి,",
+    "ఇదా ఎన్నె అని మరి.",
+    "ఇదా ఎన్నె అని మరి",
+)
+
+
+def strip_internal_tags(text: str) -> str:
+    """Remove any internal <think>, </think>, <freethink>, </freethink>, or /think commands from visible text,
+    and strip legacy synthetic artifact phrases if they appear at the start."""
+    if not text:
+        return ""
+    out = _TAG_RE.sub("", text)
+    out = _CMD_RE.sub("", out)
+    stripped = out.lstrip(" \t\r\n")
+    for phrase in LEGACY_ARTIFACT_PHRASES:
+        if stripped.startswith(phrase):
+            return stripped[len(phrase):].lstrip(" \t\r\n,.:;")
+    return out
+
+
 # Tunable without touching code below. The model is byte-level and trained on
 # plain Wikipedia/Gutenberg prose, so this is a text-continuation cue, not a
 # system prompt it was instruction-tuned to obey.
 PRIMING = "{prompt}\n\nThinking about this: "
+
+# Per-language native-script continuation cues for BPE checkpoints so non-English
+# Free Think prompts stay 100% in their target script rather than switching to Latin.
+# IMPORTANT: Do NOT end BPE priming strings with a trailing space ' ' -- in ByteLevel
+# BPE (v3_32k), a trailing space encodes as an isolated 'Ġ' token, whereas real words
+# carry their own leading 'Ġ' (so an isolated 'Ġ' forces the next token to be a digit).
+LANG_PRIMING = {
+    "eng": "{prompt}\n\nThinking about this further,",
+    "kan": "{prompt}\n\nಇದರ ಬಗ್ಗೆ ಮತ್ತಷ್ಟು ವಿವರಿಸುವುದಾದರೆ,",
+    "tam": "{prompt}\n\nஇதைப் பற்றி மேலும் விரிவாகக் கூறினால்,",
+    "tel": "{prompt}\n\nదీని గురించి మరింత వివరంగా చెప్పాలంటే,",
+    "mal": "{prompt}\n\nഇതിനെക്കുറിച്ച് കൂടുതൽ വിശദമായി പറഞ്ഞാൽ,",
+    "tcy": "{prompt}\n\nಇಂದೆತ ಬಗ್ಗೆ ದುಂಬು ಪನ್ಪಿನಂಚಿನವು ಪಂಡ",
+    "kff": "{prompt}\n\nଇଦିନ୍ ପେର୍କେ ଆରି କେତୁତାନ୍ ମେଣ୍ଡେ",
+    "kxv": "{prompt}\n\nଏ଼ଦାଆଁତାକି ଅ଼ଡ଼େ ମେହ୍‌ଦୁ",
+    "nit": "{prompt}\n\nఇదా ఎన్నె అని మరి",
+}
+
+# Canned analytical anchors are PURGED from runtime generation:
+# Parentheses 0.9-120M must never have synthetic prefix anchors prefilled into its prompt.
+STRUCTURED_THINK_ANCHOR: dict[str, str] = {}
 
 # Cheap heuristic rather than the "small classifier head" the design sketch
 # offered as an alternative -- Free Think only has to catch the obvious
@@ -54,17 +197,40 @@ _QUESTION_STARTS = (
     "who", "what", "when", "where", "why", "how", "which", "whose", "whom",
     "is", "are", "was", "were", "am", "do", "does", "did", "can", "could",
     "will", "would", "should", "shall", "may", "might", "has", "have", "had",
+    # Dravidian interrogative starters (kan, tam, tel, mal)
+    "ಏಕೆ", "ಹೇಗೆ", "ಏನು", "ಯಾರು", "ಎಲ್ಲಿ", "ಯಾವ", "ಎಷ್ಟು",
+    "ஏன்", "எப்படி", "என்ன", "யார்", "எங்கே", "எந்த", "எவ்வளவு",
+    "ఎందుకు", "ఎలా", "ఏమిటి", "ఎవరు", "ఎక్కడ", "ఏది", "ఎంత",
+    "എന്തുകൊണ്ട്", "എങ്ങനെ", "എന്ത്", "ആര്", "എവിടെ", "ഏത്", "എത്ര",
+    # Low-resource Dravidian interrogatives (tcy, kff, kxv, nit)
+    "ದಾಯೆ", "ಎಂಚ", "ದಾದ", "ಏರ್", "ಓಡೆ", "ಏತ್",
+    "ବାତା", "ବେନୋ", "ଇଞ୍ଚୋ", "ନାତା",
+    "ଇନାକା", "ଇମ୍ବାଣା", "ଇନେସି", "ଇମ୍ବାୟା",
+    "తాని", "ఎంద్క్", "బోన్", "ఎంద్కు",
 )
 
 
 def is_question(prompt: str) -> bool:
     """True if `prompt` looks like a question -- Free Think Mode is for statements."""
-    text = prompt.strip()
+    clean_text, _ = parse_internal_command(prompt)
+    text = clean_text.strip()
     if not text:
         return False
-    if text.endswith("?"):
+    clean_tail = text.rstrip("\"'”’) \t\r\n")
+    if clean_tail.endswith("?") or clean_tail.endswith("\uff1f"):
         return True
-    return text.split()[0].strip("\"'(").lower() in _QUESTION_STARTS
+    first_word = text.split()[0].strip("\"'“‘(").lower()
+    return first_word in _QUESTION_STARTS
+
+
+def format_primed(prompt: str, lang: str = "eng", mode: str = "continuation") -> str:
+    """Build the primed prompt string for `lang` and `mode` ('continuation' or 'structured')."""
+    clean, _ = parse_internal_command(prompt, default_mode=mode)
+    clean = clean.strip()
+    if mode == "structured":
+        return clean
+    template = LANG_PRIMING.get(lang, PRIMING)
+    return template.format(prompt=clean)
 
 
 # The two helpers below are the parts features/modular_free_think.py reuses: it
@@ -86,15 +252,20 @@ def load_bpe_tokenizer(ckpt: dict):
     if not meta:
         return None
     from tokenizers import Tokenizer
-    tok = Tokenizer.from_file(str(Path(meta["path"]) / "tokenizer.json"))
+    tok_path = Path(meta["path"]) / "tokenizer.json"
+    if not tok_path.exists():
+        tok_path = Path(__file__).resolve().parent.parent / meta["path"] / "tokenizer.json"
+    tok = Tokenizer.from_file(str(tok_path))
     tok.encode_special_tokens = True  # tags typed in the prompt stay text; specials go in by id
     return tok
 
 
 def _stream_bpe(model: Parentheses, tok, primed: str, lang: str, max_tokens: int | None,
-                temperature: float, top_k: int, timings: list[float] | None = None):
-    """BPE twin of _stream_text: <lang> + primed text in, decoded text out. Stops at a
-    turn/document end token or once the output loops (same detector as eval_queries)."""
+                temperature: float, top_k: int, timings: list[float] | None = None,
+                mode: str = "continuation", min_tokens: int = 0):
+    """BPE twin of _stream_text: <lang> + primed text in (or <|user|><lang> prompt<|assistant|><think>
+    + native analytical cue when mode='structured'), decoded text out. All internal <think>, </think>,
+    <freethink>, and </freethink> tags are kept strictly internal and never emitted into visible text."""
     import sys
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
     from eval_queries import STOP_TOKENS, looping
@@ -103,33 +274,166 @@ def _stream_bpe(model: Parentheses, tok, primed: str, lang: str, max_tokens: int
     tag = tok.token_to_id(f"<{lang}>")
     if tag is None:
         raise ValueError(f"tokenizer has no <{lang}> tag")
-    ids = [tag] + tok.encode(primed).ids
-    idx = torch.tensor([ids], dtype=torch.long, device=device)
-    sink_tokens = min(idx.size(1), model.cfg.block_size // 4)
-    stops = {tok.token_to_id(s) for s in STOP_TOKENS} - {None}
+
+    clean_primed = strip_internal_tags(primed).strip()
+    if mode == "structured":
+        user_id = tok.token_to_id("<|user|>")
+        asst_id = tok.token_to_id("<|assistant|>")
+        think_id = tok.token_to_id("<think>")
+        body_ids = tok.encode(clean_primed, add_special_tokens=False).ids
+        nl_ids = tok.encode("\n", add_special_tokens=False).ids
+        ids = [user_id, tag] + body_ids + [asst_id, think_id] + nl_ids
+    else:
+        ids = [tag] + tok.encode(clean_primed.rstrip(" "), add_special_tokens=False).ids
+
+    # Never allow role/control tags to leak into visible FreeThink prose.
+    # Note: <think> and </think> are handled internally below (not as stop tokens!)
+    # so structured mode streams both the <think> reasoning trace and the post-</think>
+    # structured answer without cutting off at </think>.
+    extra_stops = ("<|assistant|>", "<|pad|>", "<esg>", "<tool_call>", "</tool_call>")
+    stops = {tok.token_to_id(s) for s in STOP_TOKENS + extra_stops} - {None}
+    think_open_id = tok.token_to_id("<think>")
+    think_close_id = tok.token_to_id("</think>")
+    para_ids = tok.encode("\n\n", add_special_tokens=False).ids
+
     out, pending = [], []
-    stream = model.stream(idx, max_tokens, temperature, top_k, sink_tokens=sink_tokens)
-    while True:
-        started = time.perf_counter()
-        try:
-            t = int(next(stream))
-        except StopIteration:
+    restarts = 0
+    max_restarts = 3
+    first_chunk_emitted = False
+    last_ended_nl = False
+    just_closed_think = False
+    filter_artifact = True
+    strip_leading_punct = False
+    artifact_buf = ""
+
+    def _prepare_chunk(text: str) -> str:
+        nonlocal first_chunk_emitted, last_ended_nl, just_closed_think, filter_artifact, strip_leading_punct, artifact_buf
+        clean = strip_internal_tags(text)
+        if not clean:
+            return ""
+        if filter_artifact:
+            artifact_buf += clean
+            s = artifact_buf.lstrip(" \t\r\n")
+            if any(p.startswith(s) and len(p) > len(s) for p in LEGACY_ARTIFACT_PHRASES):
+                return ""
+            matched_phrase = False
+            for p in LEGACY_ARTIFACT_PHRASES:
+                if s.startswith(p):
+                    artifact_buf = s[len(p):].lstrip(" \t\r\n,.:;")
+                    matched_phrase = True
+                    break
+            if matched_phrase:
+                filter_artifact = False
+                strip_leading_punct = True
+                clean = artifact_buf
+                artifact_buf = ""
+            elif any(p.startswith(s) for p in LEGACY_ARTIFACT_PHRASES):
+                return ""
+            else:
+                filter_artifact = False
+                clean = artifact_buf
+                artifact_buf = ""
+
+        if strip_leading_punct and clean:
+            clean = clean.lstrip(" \t\r\n,.:;")
+            if clean:
+                strip_leading_punct = False
+
+        if not clean:
+            return ""
+        if not first_chunk_emitted:
+            if not clean.strip():
+                return ""
+            clean = clean.lstrip()
+            if clean and "a" <= clean[0] <= "z":
+                clean = clean[0].upper() + clean[1:]
+            first_chunk_emitted = True
+        elif just_closed_think:
+            if not clean.strip("\n\r "):
+                return ""
+            clean = clean.lstrip("\n\r ")
+            if clean and "a" <= clean[0] <= "z":
+                clean = clean[0].upper() + clean[1:]
+            just_closed_think = False
+        last_ended_nl = clean.endswith("\n")
+        return clean
+
+    while max_tokens is None or len(out) < max_tokens:
+        rem = None if max_tokens is None else (max_tokens - len(out))
+        cur_ids = ids + out
+        idx = torch.tensor([cur_ids[-model.cfg.block_size:]], dtype=torch.long, device=device)
+        sink_tokens = min(idx.size(1), model.cfg.block_size // 4)
+        stream = model.stream(
+            idx,
+            rem,
+            temperature,
+            top_k,
+            min_p=0.06,
+            sink_tokens=sink_tokens,
+            repetition_penalty=1.12,
+            no_repeat_ngram_size=4,
+        )
+        hit_early_stop = False
+        while True:
+            started = time.perf_counter()
+            try:
+                t = int(next(stream))
+            except StopIteration:
+                break
+            if timings is not None:
+                timings.append(time.perf_counter() - started)
+            if t == think_open_id:
+                out.append(t)
+                continue
+            if t == think_close_id:
+                out.append(t)
+                if pending:
+                    flushed = _prepare_chunk(tok.decode(pending, skip_special_tokens=False))
+                    pending = []
+                    if flushed:
+                        yield flushed
+                if first_chunk_emitted and not last_ended_nl:
+                    yield "\n\n"
+                    last_ended_nl = True
+                just_closed_think = True
+                continue
+            if t in stops:
+                if len(out) < min_tokens and restarts < max_restarts and para_ids:
+                    restarts += 1
+                    hit_early_stop = True
+                    out.extend(para_ids)
+                    pending.extend(para_ids)
+                break
+            out.append(t)
+            pending.append(t)
+            # byte-level BPE can split a character across tokens: hold them until it decodes whole
+            chunk = tok.decode(pending, skip_special_tokens=False)
+            if chunk and not chunk.endswith("\ufffd"):
+                pending = []
+                clean_chunk = _prepare_chunk(chunk)
+                if clean_chunk:
+                    yield clean_chunk
+            if looping(out):
+                hit_early_stop = False
+                break
+        if not hit_early_stop:
             break
-        if timings is not None:
-            timings.append(time.perf_counter() - started)
-        if t in stops:
-            break
-        out.append(t)
-        pending.append(t)
-        # byte-level BPE can split a character across tokens: hold them until it decodes whole
-        chunk = tok.decode(pending, skip_special_tokens=False)
-        if chunk and not chunk.endswith("�"):
-            pending = []
-            yield chunk
-        if looping(out):
-            break
+    if filter_artifact and artifact_buf:
+        s = artifact_buf.lstrip(" \t\r\n")
+        for p in LEGACY_ARTIFACT_PHRASES:
+            if s.startswith(p):
+                artifact_buf = s[len(p):].lstrip(" \t\r\n,.:;")
+                break
+        if artifact_buf:
+            clean_chunk = _prepare_chunk(artifact_buf)
+            if clean_chunk:
+                yield clean_chunk
+        artifact_buf = ""
     if pending:  # stream ended mid-character: emit what's left rather than drop it
-        yield tok.decode(pending, skip_special_tokens=False)
+        clean_chunk = _prepare_chunk(tok.decode(pending, skip_special_tokens=False))
+        if clean_chunk:
+            yield clean_chunk
+        pending = []
 
 
 def _stream_text(model: Parentheses, primed: str, max_tokens: int | None,
@@ -173,7 +477,9 @@ def _stream_text(model: Parentheses, primed: str, max_tokens: int | None,
             timings.append(time.perf_counter() - started)
         chunk = decoder.decode(bytes([byte]))
         if chunk:
-            yield chunk
+            clean_chunk = strip_internal_tags(chunk)
+            if clean_chunk:
+                yield clean_chunk
 
 
 def resolve_inside(base_dir: Path | str, path: str) -> Path:
@@ -221,42 +527,80 @@ def timing_summary(timings: list[float], window: int = 100) -> str:
 
 
 class FreeThinkSession:
-    """A live, exportable stream of open-ended "thinking" about a statement."""
+    """A live, exportable stream of open-ended "thinking" about a statement.
 
-    def __init__(self, model: Parentheses, temperature: float = 0.9, top_k: int = 40,
-                 tokenizer=None, lang: str = "eng"):
+    All `/think`, `/freethink`, `<think>`, `</think>`, `<freethink>`, and `</freethink>`
+    commands and tags are handled strictly internally (`self.internal_open_tag = "<freethink>"`,
+    `self.internal_close_tag = "</freethink>"`, `self.closed_freethink = True`) and never leaked
+    into the user-visible output stream.
+    """
+
+    def __init__(self, model: Parentheses, temperature: float = 0.75, top_k: int = 35,
+                 tokenizer=None, lang: str = "eng", mode: str = "continuation",
+                 min_tokens: int = 0):
         if model.cfg.vocab_size > 256 and tokenizer is None:
             raise ValueError(
                 f"vocab_size={model.cfg.vocab_size} is a BPE model: pass its tokenizer "
                 "(load_bpe_tokenizer(ckpt)); without one output is decoded as raw UTF-8 bytes."
             )
+        if mode not in ("continuation", "structured"):
+            raise ValueError(f"mode must be 'continuation' or 'structured', got {mode!r}")
         self.model = model
         self.temperature = temperature
         self.top_k = top_k
         self.tokenizer = tokenizer
         self.lang = lang
+        self.mode = mode
+        self.min_tokens = min_tokens
         self.prompt: str | None = None
         self.history: list[str] = []
+        self.internal_open_tag: str = "<freethink>"
+        self.internal_close_tag: str = "</freethink>"
+        self.closed_freethink: bool = False
+        self.internal_transcript: str = ""
+
+    @property
+    def closed_think(self) -> bool:
+        """Backward-compatible alias for `closed_freethink`."""
+        return self.closed_freethink
 
     def start(self, prompt: str, max_tokens: int | None = None, force: bool = False,
-              timings: list[float] | None = None):
+              timings: list[float] | None = None, mode: str | None = None,
+              min_tokens: int | None = None):
         """Yield decoded text as the model thinks, appending it to self.history.
 
-        max_tokens=None keeps thinking until the consumer stops iterating.
-        `timings` is passed straight through to _stream_text() -- see there.
+        Automatically hides and strips any leading/inline `/think` or `/freethink`
+        commands and closes the internal state with `</freethink>` without emitting
+        raw tag strings to the caller.
         """
-        _reject_questions(prompt, force)
-        self.prompt = prompt
+        clean_prompt, parsed_mode = parse_internal_command(prompt, default_mode=mode or self.mode)
+        if not clean_prompt and prompt.strip():
+            clean_prompt = prompt.strip()
+        _reject_questions(clean_prompt, force)
+        self.prompt = clean_prompt
         self.history = []
-        primed = PRIMING.format(prompt=prompt.strip())
+        self.closed_freethink = False
+        self.internal_transcript = ""
+        active_mode = parsed_mode or mode or self.mode
+        active_min = self.min_tokens if min_tokens is None else min_tokens
         if self.tokenizer is not None:
+            primed = format_primed(clean_prompt, self.lang, active_mode)
             chunks = _stream_bpe(self.model, self.tokenizer, primed, self.lang, max_tokens,
-                                 self.temperature, self.top_k, timings)
+                                 self.temperature, self.top_k, timings,
+                                 mode=active_mode, min_tokens=active_min)
         else:
+            primed = PRIMING.format(prompt=clean_prompt.strip())
             chunks = _stream_text(self.model, primed, max_tokens, self.temperature, self.top_k, timings)
-        for chunk in chunks:
-            self.history.append(chunk)
-            yield chunk
+        try:
+            for chunk in chunks:
+                clean_chunk = strip_internal_tags(chunk)
+                if clean_chunk:
+                    self.history.append(clean_chunk)
+                    yield clean_chunk
+        finally:
+            self.closed_freethink = True
+            body = "".join(self.history).strip()
+            self.internal_transcript = f"{self.internal_open_tag}\n{body}\n{self.internal_close_tag}"
 
     def run(self, prompt: str, max_tokens: int = 400, **kwargs) -> str:
         """Non-streaming convenience: consume start() and return the whole text."""
@@ -271,10 +615,19 @@ class FreeThinkSession:
         can't be used to write outside the sandboxed export directory.
         """
         target = resolve_inside(base_dir, path)
-        text = "".join(self.history)
+        text = strip_internal_tags("".join(self.history))
         with open(target, "w", encoding="utf-8") as f:
             if target.suffix == ".json":
-                json.dump({"prompt": self.prompt, "thinking": text}, f, indent=2)
+                json.dump(
+                    {
+                        "prompt": self.prompt,
+                        "thinking": text,
+                        "internal_tag": self.internal_close_tag,
+                        "closed_freethink": self.closed_freethink,
+                    },
+                    f,
+                    indent=2,
+                )
             else:
                 f.write(f"{self.prompt}\n\n{text}\n")
         return target
@@ -282,10 +635,13 @@ class FreeThinkSession:
 
 def main():
     p = argparse.ArgumentParser(description="Free Think Mode: open-ended thinking about a statement.")
-    p.add_argument("--checkpoint", default="checkpoints/step_161000.pt")
+    p.add_argument("--checkpoint", default="checkpoints/parentheses-0.9-120M/step_9536_final.pt")
     p.add_argument("--prompt", default="The ocean is very deep.")
     p.add_argument("--max-tokens", type=int, default=400, help="0 = think until Ctrl-C")
-    p.add_argument("--temperature", type=float, default=0.9)
+    p.add_argument("--min-tokens", type=int, default=64, help="minimum thinking tokens before allowing stop")
+    p.add_argument("--mode", choices=["continuation", "structured"], default="continuation",
+                   help="'continuation' (<lang> + native priming) or 'structured' (<|user|><lang>...<|assistant|><think>)")
+    p.add_argument("--temperature", type=float, default=0.7)
     p.add_argument("--top-k", type=int, default=40)
     p.add_argument("--export", default=None,
                    help=f"filename to write inside {EXPORT_DIR} (.json, .txt, .md -- "
@@ -311,8 +667,9 @@ def main():
     model.eval()
 
     session = FreeThinkSession(model, args.temperature, args.top_k,
-                               tokenizer=load_bpe_tokenizer(ckpt), lang=args.lang)
-    print(f"[free-think] {args.checkpoint} (step {ckpt['step']}) on {args.device}")
+                               tokenizer=load_bpe_tokenizer(ckpt), lang=args.lang,
+                               mode=args.mode, min_tokens=args.min_tokens)
+    print(f"[free-think] {args.checkpoint} (step {ckpt['step']}, mode={args.mode}, lang={args.lang}) on {args.device}")
     print(f"[free-think] prompt: {args.prompt}\n")
     timings = [] if args.timing else None
     try:
@@ -340,8 +697,15 @@ def _self_test():
     assert is_question("Why is the sky blue?")
     assert is_question("is this a question")
     assert is_question('"Would you look at that')
+    assert is_question("ಏಕೆ ಆಕಾಶ ನೀಲಿಯಾಗಿದೆ")
     assert not is_question("The sky is blue.")
+    assert not is_question("ಬೆಂಗಳೂರು ಒಂದು ನಗರ.")
     assert not is_question("")
+
+    # Native per-language priming checks
+    assert "Thinking about this" in format_primed("The sky is blue.", "eng", "continuation")
+    assert "ಇದರ ಬಗ್ಗೆ" in format_primed("ಬೆಂಗಳೂರು ಒಂದು ನಗರ.", "kan", "continuation")
+    assert format_primed("ಬೆಂಗಳೂರು ಒಂದು ನಗರ.", "kan", "structured") == "ಬೆಂಗಳೂರು ಒಂದು ನಗರ."
 
     # smallest *byte-level* preset: tiny-smoke's vocab_size=64 can't even
     # embed an ASCII prompt, and Free Think feeds raw UTF-8 bytes in
@@ -410,8 +774,17 @@ def _self_test():
     s = FreeThinkSession(bpe, tokenizer=tok, lang="kan")
     timings = []
     text = s.run("ಬೆಂಗಳೂರು ಒಂದು ನಗರ.", max_tokens=30, timings=timings)
-    assert text == "".join(s.history) and "�" not in text[-1:], repr(text[-5:])
+    assert text == "".join(s.history) and "\ufffd" not in text[-1:], repr(text[-5:])
     assert 1 <= len(timings) <= 30, len(timings)
+
+    # Structured FreeThink mode on BPE (internal </freethink> closure + hidden commands)
+    s_struct = FreeThinkSession(bpe, tokenizer=tok, lang="kan", mode="structured", min_tokens=5)
+    t_struct = s_struct.run("/think ಬೆಂಗಳೂರು ಒಂದು ನಗರ.", max_tokens=15)
+    assert t_struct == "".join(s_struct.history) and len(t_struct) > 0
+    assert s_struct.prompt == "ಬೆಂಗಳೂರು ಒಂದು ನಗರ.", s_struct.prompt
+    assert s_struct.closed_freethink and s_struct.internal_close_tag == "</freethink>"
+    assert s_struct.internal_transcript.endswith("</freethink>")
+    assert all(tag not in t_struct for tag in INTERNAL_TAGS + INTERNAL_COMMANDS), repr(t_struct)
     print("[self-test] free_think ok")
 
 

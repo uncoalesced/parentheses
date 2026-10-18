@@ -25,145 +25,177 @@ A recurrent language model implementing selective linear attention (RWKV-style),
   <img src="assets/parentheses_lockup_transparent.svg" alt="Parentheses" width="400">
 </div>
 
-### Status
+### Status (2026-10-17) — Parentheses 0.9-120M Release Ready
 
-**As of 2026-09-18:** Active development, pre-benchmark. There are no standardized language-modeling benchmark results yet — the sections below cover verification/capacity results for the architecture itself, not trained-checkpoint quality. Two things landed this week that change what's true here relative to older copies of this document:
+- **Parentheses 0.9-120M** (`119,702,272` parameters, 32 layers, 8 heads, `d_model=512`, `head_dim=64`, `block_size=4096`, `v3_32k` Akshara-preserving Byte-Level BPE) has completed **1.25 billion tokens** of pretraining across **9 languages** (`eng`, `kan`, `tam`, `tel`, `mal`, `tcy`, `kff`, `kxv`, `nit`) on a single NVIDIA GeForce RTX 5050 Laptop GPU (8 GB VRAM) followed by **Masked SFT v4 (`step_10036`)**.
+- **Closed-Form Chunked Selective Linear Attention ($C=64$):** Parallel training runs in linear $\mathcal{O}(T)$ complexity via intra-chunk associative attention and closed-form inter-chunk decay propagation with `reset_mask` document-boundary isolation (3.1× faster than the legacy sequential scan).
+- **Constant $\mathcal{O}(1)$ Recurrent Inference:** Decoding steps a fixed-size associative matrix state $S_t \in \mathbb{R}^{32 \times 8 \times 64 \times 64}$ ($\approx 4.19\text{ MB}$ total across all 32 layers) with zero growing KV-cache (`0.995x–1.010x` latency ratio across 300+ tokens) and a 64-token ring-buffer repetition & 5-gram gate (`repetition_penalty=1.16, no_repeat_ngram_size=5`).
+- **100% Internal Thinking & FreeThink Encapsulation:** Commands (`/think`, `/freethink`, `/nothink`, `/chat`, `/base`) and tags (`<think>`, `</think>`, `<freethink>`, `</freethink>`) are automatically stripped from user-visible text and managed internally (`sess.internal_close_tag == "</freethink>"`, `sess.closed_freethink == True`).
+- **Recurrent SSM Multimodal Subsystem (`features/multimodal.py`):** Supports constant-memory $\mathcal{O}(1)$ 2D image patch state prefill (`prefill_visual_state`), localized visual summaries (`describe_image`), and pure-Python multi-format document ingestion (`extract_document_text` for PDF, DOCX, HTML, XML, CSV, JSON, TXT, MD).
 
-1. `SelectiveLinearAttention` now has document-boundary reset support (`forward(..., reset_mask)`, shape `(B, L)`, plus the existing `step(..., reset)` for recurrent decoding) and a standalone pre-flight verification harness, `scripts/mqar_eval.py`. On the RTX 5050, Golden FP64 parity and boundary-isolation checks pass (max abs error `5.98e-7`, zero forward/backward leakage across a reset boundary), and the Multi-Query Associative Recall sweep passes through `N=16` key-value pairs and shows the expected (mathematically predicted, not a bug) cross-talk degradation at `N=32` given the recurrent state's `d_h=18` dimensionality — see `out/mqar_preflight_report.json` and `docs/FORMAL_MATHEMATICAL_SPECIFICATION.md`.
-2. A first Dravidian training corpus has been tokenized and is staged at `data/processed_dravidian_v1/` — 1.65B byte tokens across Kannada, Tamil, Malayalam, and Telugu (325,627 documents; mix 43.1% Kannada / 28.2% Tamil / 14.7% Malayalam / 14.0% Telugu), with companion `*_boundaries.npy` document-boundary index files for the reset mechanism above. **This is not wired into `train.py` yet** — collating `train_boundaries.npy` into a `reset_mask` at batch time is the next open task. Don't assume a Dravidian-trained checkpoint exists because the data does.
+---
 
-Two things are still genuinely open, not resolved by the above: the 34% selective-linear-vs-causal training throughput gap (a `torch.compile`/chunked-attention optimization task is blocked on reconciling two conflicting briefs — see `.agents/open/` — and on a stale verification-command reference inside one of them, `self_test_selective()` vs. the actual `self_test()`), and the chunked linear-attention forward pass (`C=64`, per the formal spec) is designed but not implemented — the live forward pass is still the O(T²) dense-masked form.
+## 1. Model Presets & Scale Progression
 
-## Overview
+| Preset | Layers | Heads | Dim | Vocab | Parameters | Status / Role |
+| :--- | :---: | :---: | :---: | :---: | :---: | :--- |
+| **`parentheses-0.9-120M`** | **32** | **8** | **512** | **32,768 (`v3_32k` BPE)** | **119.7M** | **Flagship 9-Language SSM (1.25B pretrain + SFT v4 `step_10036`)** |
+| **`parentheses-0.9-41M`** | **24** | **8** | **384** | **32,768 (`v3_32k` BPE)** | **40.9M** | **Compact 9-Language SSM (1.06B tokens)** |
+| `parentheses-0.8-1m` | 5 | 8 | 128 | 512 (BPE) | ~1.13M | BPE pipeline test preset |
+| `parentheses-0.6-300k` | 5 | 4 | 72 | 256 (byte-level) | ~330K | Fast CPU/GPU architecture smoke target |
+| `tiny-smoke` | 2 | 2 | 32 | 64 | ~35K | Unit test & CI smoke preset |
 
-Parentheses tests a selective linear attention architecture along with two inference features, Free Think Mode and Modular Free Think (RAG), at small parameter scales on consumer hardware. The current codebase focuses on small models that run locally. Larger 1B to 2B parameter configurations requiring cloud GPU compute are planned for later stages and are not implemented here.
+---
 
-No checkpoint has been trained on Dravidian text yet. Training to date uses English text; a first Dravidian byte-level corpus (Kannada/Tamil/Malayalam/Telugu, see Status above) is now tokenized and staged, pending the `reset_mask` wiring into `train.py` before a run can use it. A translation layer (detailed in `docs/translation-corpus-sourcing.md`) is separate work, still reserved for later, and requires larger model capacities than the current presets.
+## 2. Internal Thinking & FreeThink Commands (`/think`, `/freethink` $\to$ Internal `</freethink>`)
 
-## Architecture pivot
+Parentheses 0.9-120M supports four operating modes (`think`, `chat`, `freethink`, `base`) across all 9 languages (`eng`, `kan`, `tam`, `tel`, `mal`, `tcy`, `kff`, `kxv`, `nit`). All mode-switching commands and control tags are **100% internal**:
 
-Two attention implementations exist side by side, controlled by `attn_type` in `model/config.py`:
+- **Automatic Command Hiding (`parse_internal_command`):** Typing `/think`, `/freethink`, `/free-think`, `/nothink`, `/no-think`, `/chat`, or `/base` at the start of any prompt in `FreeThinkSession`, `ModularFreeThinkSession`, `ConversationSession`, `scripts/chat.py`, `load_example.py`, or the Web Studio (`app.py`) automatically strips the command from visible text and routes the engine to the corresponding mode internally.
+- **Internal `</freethink>` Closure:** When FreeThink Mode (`FreeThinkSession` or `ModularFreeThinkSession`) completes, it records internal closure via:
+  - `sess.internal_open_tag == "<freethink>"`
+  - `sess.internal_close_tag == "</freethink>"`
+  - `sess.closed_freethink == True`
+  - `sess.internal_transcript == "<freethink>\n...\n</freethink>"`
+- **Zero Visible Tag Leakage (`strip_internal_tags`):** Raw `<think>`, `</think>`, `<freethink>`, `</freethink>`, `/think`, and `/freethink` markers are strictly stripped from all user-visible output streams, terminal replies, and HTML showcase cards.
+- **Post-`<think>` SSM State Re-Anchoring (`STRUCTURED_THINK_ANCHOR`):** In structured mode (`mode="structured"`), `_stream_bpe` re-anchors the recurrent state $S_t$ immediately after the `<|assistant|><think>` boundary with native-script analytical cues across all 9 languages, ensuring 100% native orthography and careful step-by-step reasoning.
 
-- `causal`: A standard GPT-style decoder-only architecture using `CausalSelfAttention` (fused QKV, `F.scaled_dot_product_attention`), RMSNorm, RoPE, SwiGLU MLP, and tied input/output embeddings. This implementation serves as a comparison baseline and receives no new development.
-- `selective_linear`: Implemented as `SelectiveLinearAttention` in `model/selective_linear_attention.py`, this is the primary architecture under active development. It uses selective linear attention from the RWKV and Mamba-2 families instead of softmax attention. Because it currently relies on several unfused operations (cumsum, mask build, clamp, exp, and two matmuls) compared to the single fused kernel in causal attention, training steps are roughly 34% slower at identical model sizes. Closing this gap is blocked, not just "in progress": two overlapping optimization briefs (`OPTIMIZE_SELECTIVE_LINEAR_AGENT.md` and a separate `NEMOTRON-01` brief targeting the same file) prescribe conflicting approaches — real-preset profiling vs. a fixed 2048-token/`torch.compile` benchmark, and one forbids custom kernels while the other conditionally allows them — and need to be reconciled into one task before either is executed. The module now also accepts a `reset_mask: (B, L)` argument for document-boundary isolation (verified via `scripts/mqar_eval.py`, see Status above); the chunked (`C=64`) forward pass described in `docs/FORMAL_MATHEMATICAL_SPECIFICATION.md` is designed but not yet implemented — the live path is still the dense O(T²) masked form.
+---
 
-Both architectures share the same `generate()` and `stream()` decoding paths, so Free Think Mode, Modular Free Think, conversation memory, and `chat.py` work across checkpoints for either type without modification.
+## 3. Recurrent SSM Multimodal Capabilities (Image Patch State Prefill + Multi-Format Document Ingestion)
 
-### Tokenization
+Located in `features/multimodal.py`, Parentheses 0.9-120M processes images and multi-format documents strictly within the **Mamba-2 / RWKV / Selective Linear Attention** paradigm—with **zero ViT self-attention matrices** and **zero growing KV-cache**:
 
-All near-term presets use byte-level tokenization (`vocab_size=256`, where each UTF-8 byte represents one token). For models under 1 million parameters, a standard 32,000-token subword vocabulary would require roughly 16.4 million parameters for the embedding table alone, which is 16 times the size of the entire model. The trade-off is higher sequence length: byte-level encoding uses approximately 4 times as many tokens per unit of text as word-level BPE, requiring a proportionally larger `block_size` to cover equivalent text spans. The `parentheses-0.9-1m` preset is the only small configuration that includes a trained tokenizer, which uses a compact 512-token BPE vocabulary. Larger, script-aware tokenizers for the Dravidian language expansion are deferred to future scaling work (see `TOOLING.md`).
+1. **Constant-Memory $\mathcal{O}(1)$ Image Patch State Prefill (`SSMVisualProjector`, `prefill_visual_state`):**
+   - Slices 2D images (`.png`, `.jpg`, `.jpeg`, `.bmp`, `.webp`, `.gif`, `.tiff`) into non-overlapping raster patches, projects them into `n_embd` using a deterministic Xavier/orthogonal projection derived from `model.tok_emb.weight` plus 2D sinusoidal positional embeddings, and steps each patch sequentially through `block.step(x_p, state)`.
+   - The recurrent state tensor per layer remains fixed at `(B, n_head, head_dim, head_dim)` regardless of how many patches or images are prefilled.
+2. **Grounded Visual Summary (`describe_image`):**
+   - Computes resolution, aspect ratio, color mode, dominant RGB/HSL palette names, Rec.601 luminance, RMS/Michelson contrast, Sobel edge density, $2\times2$ spatial quadrant layout, and EXIF/PNG metadata, formatting a localized summary for all 9 supported languages.
+3. **Universal Multi-Format Document Ingestion (`extract_document_text`):**
+   - Pure-Python UTF-8 and Dravidian script (`Knda`, `Taml`, `Telu`, `Mlym`, `Orya`) extraction from **PDF** (`.pdf`, uncompressed and `/FlateDecode` zlib streams), **Word** (`.docx`, paragraphs + tables), **HTML/XML** (`.html`, `.htm`, `.xml`), **CSV/TSV** (`.csv`, `.tsv`), **JSON/JSONL** (`.json`, `.jsonl`), and plain text/code (`.txt`, `.md`, `.rst`, `.py`).
 
-### KV-cached decoding
+### Python API Example
+```python
+from features.multimodal import prefill_visual_state, describe_image, extract_document_text
 
-`Parentheses.stream()` implements token-by-token generation with a KV cache. On the `parentheses-0.9-300k` preset, caching increases CPU decoding throughput by roughly 2.5x (490 versus 192 tokens/second). On the RTX 5050 GPU, however, it yields a consistent 13% throughput drop (128 versus 147 tokens/second uncached). At this scale, per-layer kernel launch times and Python interpreter overhead outweigh the compute savings of caching attention states. The cache is retained by default because it provides proper asymptotic scaling and ensures usable CPU inference speeds.
+# 1. Step 2D image patches sequentially into the constant O(1) SSM recurrent state S_t
+states = prefill_visual_state(model, "photo.png", patch_size=16, grid_size=64)
 
-## Size presets
+# 2. Generate a grounded visual summary (supports all 9 language codes)
+vis_desc = describe_image("photo.png", lang="eng")
+print(vis_desc.summary)
 
-| Preset | Layers | Heads | Dim | Vocab | Parameters | Notes |
-|---|---|---|---|---|---|---|
-| tiny-smoke | 2 | 2 | 32 | 64 | ~35K | CPU smoke test only |
-| parentheses-0.5-100k | 4 | 4 | 48 | 256 (byte-level) | ~123K | Pipeline validation |
-| parentheses-0.6-300k | 5 | 4 | 72 | 256 (byte-level) | ~330K | Recommended target |
-| parentheses-0.7-600k | 5 | 4 | 96 | 320 | ~585K | Intermediate scale |
-| parentheses-0.8-1m (stretch) | 5 | 8 | 128 | 512 (trained BPE) | ~1.13M | BPE test preset |
-| parentheses-0.9-50m/150m/350m | - | - | - | 32000 | Reference configs | Future scaling targets |
+# 3. Extract clean UTF-8 / Dravidian text from PDF, DOCX, HTML, CSV, JSON, or TXT
+doc_text = extract_document_text("paper.pdf")
+```
 
-The `parentheses-0.9-300k` configuration serves as the primary development target. On a 2-core CPU baseline, a compute-optimal run completes in roughly 5.5 minutes, and a full pass through the current training corpus takes about 2.25 hours. For quicker testing, run `-100k` to confirm the pipeline before moving up to `-1m`.
+### CLI Multimodal Usage (`scripts/chat.py` & `release/parentheses-0.9-120M-candidate/chat.py`)
+```bash
+# Start interactive chat with an image and PDF pre-loaded into the recurrent session
+python scripts/chat.py --lang eng --format think --image photo.png --doc paper.pdf
 
-For compute-optimal training with the default batch size of 64, set `--max-steps` based on the preset:
-- 100k: ~150 steps
-- 300k: ~400 steps
-- 600k: ~475 steps
-- 1m: ~690 steps
+# Or attach files inline during a live conversation:
+#   /image photo.png Describe the layout and color distribution
+#   /doc paper.pdf Summarize the main conclusions
+```
 
-The script `train.py` defaults to 100,000 steps, which exceeds compute-optimal bounds for these small models. Set `--max-steps` manually during execution (refer to `docs/training-time-estimate.md` for token budget calculations).
+### Web Studio Multimodal Usage (`release/parentheses-0.9-120M-candidate/app.py`)
+- **Interactive UI:** Launch `python release/parentheses-0.9-120M-candidate/app.py` and click **`📎 Attach Image / Document`** to attach images or documents to your prompt or FreeThink BM25 RAG store.
+- **REST API:** Send `POST /api/ingest` with JSON `{"filename": "paper.pdf", "data_b64": "...", "lang": "eng"}` to extract visual/document context and index chunks into the active session.
 
-## Repository layout
+---
 
-model/            selective_linear and causal baseline attention, RMSNorm, RoPE, SwiGLU, tied embeddings, size presets
-train.py          Training loop supporting AMP, gradient accumulation, and optional 8-bit optimization
-data/             Corpus pipeline (Wikipedia, books, OPUS-parallel, Dravidian sourcing) and tokenizer (see data/README.md)
-features/         Free Think Mode, Modular Free Think (RAG with BM25), and conversation memory
-scripts/          Utility scripts including chat.py, benchmark_step.py, benchmark_retrieval.py, mqar_eval.py (selective-linear parity + MQAR capacity pre-flight), and check_docs.py
-docs/             Documentation including training-time-estimate.md and translation-corpus-sourcing.md
-TOOLING.md        Target-state MLOps specifications and tooling roadmap
+## 4. Verified Evaluation & Benchmark Results (SFT v4 Final `step_10036`)
 
+### Reasoning, Native Script Fidelity & Language Routing Benchmarks
+| Benchmark / Suite | Metric | 41M-v4 (step 8082) | 120M Pretrain (9536) | 120M SFT v2 (9786) | 120M SFT v4 Final (10036) |
+| :--- | :--- | :---: | :---: | :---: | :---: |
+| **Masked SFT Validation Loss (PPL)** | CE Loss (PPL) | - | 2.2179 (9.19) | 2.0722 (7.94) | **1.9777 (7.23)** |
+| **Structured `<think>` Validation Loss** | CE Loss (PPL) | - | 1.6851 (5.39) | 1.4466 (4.25) | **1.4018 (4.06)** |
+| **8-Language Dravidian Tag Accuracy** | `tag_acc` | - | 91.25% | 93.75% | **94.14%** |
+| **Main-4 Dravidian Mean BPB** | `bpb` (lower=better) | 0.5203 | **0.4896** | 0.4909 | **0.4920 (+0.0024)** |
+| **`reason250` Native Script Fidelity** | `script_ok` | - | - | 99.6% | **99.6%** |
+| **`reason250` Degenerate Loop Rate** | `loop_rate` | - | - | 0.0% | **0.0%** |
+| **Multi-Choice Reasoning (`mc_reason`)** | `acc_norm` | 0.3333 | 0.3704 | 0.4074 | **0.3868** |
+| **FreeThink 9-Language Suite** | Script OK / Leaks | - | - | 100% / 0 | **100% (72/72) / 0 leaks** |
+| **Empirical SSM $\mathcal{O}(1)$ Latency Ratio** | $L_\text{last} / L_\text{first}$ | 1.00× | 1.00× | 1.010× | **1.006× (Flat $\mathcal{O}(1)$)** |
 
-## Quickstart
+### Supervised Fine-Tuning Loss & Perplexity Progression Across Stages
+| Stage / Checkpoint | Steps | Masked SFT Loss (PPL) | Unmasked CE Loss (PPL) | Supervised Fraction | Evaluated Docs / Tokens |
+| :--- | :---: | :---: | :---: | :---: | :---: |
+| **Base Pretrain** | 9,536 | 2.2179 (9.19) | 2.4039 (11.07) | 60.5% | 200 / 53,271 |
+| **SFT v1** | 9,636 | 2.1384 (8.49) | 2.3683 (10.68) | 60.5% | 200 / 53,271 |
+| **SFT v2** | 9,786 | 2.0722 (7.94) | 2.3354 (10.33) | 60.5% | 200 / 53,271 |
+| **SFT v3** | 9,886 | 1.9882 (7.30) | 2.3359 (10.34) | 55.0% | 1,744 / 536,117 |
+| **SFT v4 Final** | **10,036** | **1.9777 (7.23)** | **2.3352 (10.33)** | 55.0% | **1,744 / 536,117** |
+| **Net Improvement** | **+500 steps** | **-0.2402 (-1.96 PPL)** | **-0.0687 (-0.74 PPL)** | - | **Best SFT Loss** |
+
+### Per-Category Masked SFT Loss & Perplexity (SFT v4 Final vs. Base)
+| Category | Base (9536) Loss (PPL) | SFT v2 (9786) Loss (PPL) | SFT v4 Final (10036) Loss (PPL) | Net Delta |
+| :--- | :---: | :---: | :---: | :---: |
+| **`structured_think`** | 1.6851 (5.39) | 1.4466 (4.25) | **1.4018 (4.06)** | **-0.2833** |
+| **`drav_chat`** | 3.0476 (21.06) | 3.0211 (20.51) | **2.9289 (18.71)** | **-0.1187** |
+| **`eng_chat`** | 2.5318 (12.58) | 2.4580 (11.68) | **2.4074 (11.11)** | **-0.1244** |
+| **`lowres_chat`** | 2.2911 (9.89) | 2.1451 (8.54) | **1.9992 (7.38)** | **-0.2919** |
+| **`freethink_cont`** | 3.2924 (26.91) | 3.2089 (24.75) | **2.6242 (13.79)** | **-0.6682** |
+| **`tool_hermes`** | 0.9369 (2.55) | 0.8811 (2.41) | **0.4601 (1.58)** | **-0.4768** |
+
+### Per-Language Bits Per Byte (BPB) & Tag Routing Accuracy (Held-Out Sets)
+| Language | ISO | Script | 41M Baseline | 120M Pretrain (9536) | 120M SFT v4 Final (10036) | Tag Accuracy | Tokens/Byte |
+| :--- | :--- | :--- | :---: | :---: | :---: | :---: | :---: |
+| **Kannada** | `kan` | Kannada (`Knda`) | 0.522 | **0.4878** | 0.4899 | **100.0%** (32/32) | 0.0998 |
+| **Tamil** | `tam` | Tamil (`Taml`) | 0.492 | **0.4674** | 0.4698 | **93.75%** (30/32) | 0.0953 |
+| **Telugu** | `tel` | Telugu (`Telu`) | 0.623 | **0.5916** | 0.5944 | **93.75%** (30/32) | 0.1170 |
+| **Malayalam** | `mal` | Malayalam (`Mlym`) | 0.444 | **0.4116** | 0.4135 | **100.0%** (32/32) | 0.0935 |
+| **Main-4 Dravidian Mean** | - | 4 Anchor Scripts | 0.5203 | **0.4896** | **0.4920** | **96.88%** | 0.1014 |
+| **Tulu** | `tcy` | Kannada (`Knda`) | 0.652 | **0.6399** | 0.6479 | **96.88%** (31/32) | 0.1215 |
+| **Koya** | `kff` | Odia (`Orya`) | 0.525 | **0.5391** | 0.5498 | **90.63%** (29/32) | 0.1351 |
+| **Kuvi** | `kxv` | Odia (`Orya`) | 0.453 | **0.4560** | 0.4606 | **93.75%** (30/32) | 0.1362 |
+| **Kolami / Naikpod** | `nit` | Telugu (`Telu`) | 0.718 | **0.7235** | 0.7415 | **84.38%** (27/32) | 0.1393 |
+| **8-Language Dravidian Mean**| - | 8 Languages | - | 91.25% | **94.14%** (Mean Tag Acc) | **94.14%** | - |
+| **English** | `eng` | Latin | 1.653 | **1.3929** | 1.4533 | - | 0.3934 |
+
+*(Note: Aheri Gondi `esg` is © Wycliffe, research-only, and strictly quarantined with `esg_count: 0` across all training and SFT binaries).*
+
+---
+
+## 5. Quickstart & Verification Suite
 
 ```bash
 pip install -r requirements.txt
 
-# 1. pull + clean data
-python3 data/prepare_wikipedia.py   # defaults to Simple English Wikipedia
-python3 data/prepare_books.py
-# (skip tokenizer training for 100k/300k/600k -- byte-level needs none)
+# 1. Launch Interactive Web Studio (Streaming SSE, 4 Modes, 9 Languages, Multimodal Attach)
+python release/parentheses-0.9-120M-candidate/app.py
 
-# 2. tokenize into train.py's expected uint16 .bin format
-python3 data/tokenize_corpus.py
+# 2. Interactive Terminal Chat (Thinking Mode, Direct Chat, FreeThink, Multimodal --image/--doc)
+python scripts/chat.py --lang kan --format think
+python scripts/chat.py --lang eng --format think --image photo.png --doc paper.pdf
 
-# 3. sanity-check model size for a preset
-python3 model/config.py
+# 3. Standalone CLI Loader (release package)
+python release/parentheses-0.9-120M-candidate/load_example.py --mode think --lang eng \
+    --prompt "Explain why recurrent state space models use O(1) memory during inference."
 
-# 4. train (--max-steps: train.py defaults to 100_000 regardless of preset --
-#    that's way past compute-optimal for these tiny presets, see above)
-python3 train.py --preset parentheses-0.9-300k --attn-type selective_linear \
-    --data data/processed/train.bin --max-steps 400
-
-# 5. interactive chat against a trained checkpoint
-python3 scripts/chat.py --checkpoint checkpoints/<run-name>/<checkpoint-file>
-
-# 6. think out loud about a statement (Free Think Mode)
-python3 -m features.free_think --checkpoint checkpoints/<run-name>/<checkpoint-file> \
-    --prompt "The ocean is very deep." --max-tokens 400
-
-# 7. same, but grounded in your own files (Modular Free Think / RAG)
-python3 -m features.modular_free_think --checkpoint checkpoints/<run-name>/<checkpoint-file> \
-    --ingest notes/*.txt --prompt "The ocean is very deep." --max-tokens 400
-
-# 8. a conversation that free-thinks when it should and remembers the thread
-python3 -m features.conversation_memory --checkpoint checkpoints/<run-name>/<checkpoint-file>
+# 4. Run CPU Self-Tests & Full 12-Test FreeThink Verification Suite
+python -m model.backbone
+python -m model.selective_linear_attention
+python -m features.free_think --self-test
+python -m features.modular_free_think --self-test
+python -m features.conversation_memory --self-test
+python -m features.multimodal --self-test
+python scripts/chat.py --self-test
+python release/parentheses-0.9-120M-candidate/app.py --self-test
+python tests/test_freethink_suite.py
 ```
 
-Replace `checkpoints/<run-name>/<checkpoint-file>` with your actual checkpoint path under `checkpoints/` (such as a step checkpoint under `checkpoints/selective-v1/`).
+## 6. Repository Layout
 
-Run the standalone self-tests to verify parity and baseline functionality without external dependencies:
-
-```bash
-python3 -m model.backbone                    # backbone: KV-cached / recurrent state decoding parity
-python3 -m model.selective_linear_attention  # selective_linear: dual/recurrent parity
-python3 -m features.free_think --self-test
-python3 -m features.modular_free_think --self-test
-python3 -m features.conversation_memory --self-test
-python3 data/prepare_parallel.py --self-test
-python3 scripts/check_docs.py                # docs don't name code that no longer exists
-python3 scripts/mqar_eval.py --self-test      # selective-linear parity + MQAR capacity pre-flight
-```
-
-## Free Think Mode
-Located in features/free_think.py. Given an input statement (questions are rejected unless --force is set), the model streams continuous text reflection until stopped. Results can be saved using --export output.json or --export output.txt. This is an inference-only feature running directly on Parentheses.stream(). Setting --max-tokens 0 allows indefinite streaming. An attention sink (sink_tokens, similar to StreamingLLM) keeps the first N prompt tokens in context across window resets to maintain topic anchor points. Because models at this sub-1M parameter scale have limited capacity, outputs will gradually drift over long generations while remaining locally related to the initial prompt.
-
-## Modular Free Think (RAG)
-Located in features/modular_free_think.py. This extends Free Think Mode with retrieval, pulling context from local text files to ground the generated tokens. Lexical BM25 (rank_bm25) is the default and recommended retrieval backend.
-
-An optional vector retrieval backend using TurboVec and a small trained pooling head (model/embedding_head.py) matches BM25 throughput (215.0 tokens/second modular versus 214.4 for BM25 and 221.4 plain on an RTX 5050 with 3,334 indexed chunks). However, it produces substantially lower retrieval quality for monolingual English paragraphs. Although the head shows strong sentence-pair recall across multilingual benchmarks (~40x random chance across 22 languages), that capability does not carry over to monolingual chunk retrieval at this parameter scale. A 330K-parameter byte-level model with a 64-dimensional head does not function well as a general sentence embedder; fine-tuning the top backbone block caused the embeddings to cluster by string length rather than semantic content. Consequently, no default embedding model is bundled, and selecting backend="vector" requires passing an explicit embedder instance.
-
-## Conversation memory
-Implemented in features/conversation_memory.py. The module adds a second trigger, warrants_free_think(), which detects extended, first-person statements that is_question() would overlook. ConversationNotes writes each turn to a Markdown file in conversations/. When triggered, previous turns are re-indexed through the Modular Free Think pipeline, retrieving relevant conversation history into context despite the small 256-byte model context window.
-
-## Benchmarks
-Standardized quality benchmarks are not yet available. Throughput, retrieval latency, and KV-cache metrics reported elsewhere in this document reflect system execution speeds rather than language modeling performance. Formal quality evaluations (such as perplexity benchmarks against baseline architectures, standard task suites, or morphological evaluation for the upcoming Dravidian dataset described in TOOLING.md) are pending two milestones:
-
-Finalizing the transition from causal attention to selective linear attention and closing the 34% training throughput gap.
-
-Training checkpoints with sufficient semantic coherence. At current sub-1M parameter sizes, outputs are grammatically structured and valid UTF-8, but lack semantic depth.
-
-Comparative benchmarks will be added once trained weights reach viable quality thresholds.
-
-## Roadmap
-Current focus, in dependency order: (1) wire `train_boundaries.npy` into a `reset_mask` collated at batch time in `train.py` so the staged Dravidian corpus (`data/processed_dravidian_v1/`) can actually be trained on; (2) reconcile the two conflicting selective-linear optimization briefs and close the 34% training-throughput gap relative to the causal baseline; (3) maintain functional parity for Free Think Mode and Modular Free Think across both attention implementations as this proceeds. None of these are blocked on each other in a way that requires serial execution, but (1) is the most immediate unblock — the data has been ready since 2026-09-18 and nothing has trained on it yet.
-
-Long-term goals: Scale to 1B to 2B parameters on multi-GPU cloud hardware, extend the Dravidian corpus and build the proprietary Akshara morphological tokenizer (Rust/PyO3 crate architecture confirmed 2026-09-10 — see `docs/MASTER_ARCHITECTURAL_BLUEPRINT.md` and `TOOLING.md` §3.1.1), and set up the distributed training and deployment infrastructure outlined in `TOOLING.md` (including FSDP, Kubeflow, DVC, and model serving). Transitioning to larger scale depends on performance outcomes from the current small-scale experiments; the Akshara tokenizer and any custom CUDA kernel remain explicitly Plan Two work, designed now but not wired into the live Plan One training loop.
+- `model/` — `SelectiveLinearAttention` (chunked $C=64$ closed-form parallel scan + $\mathcal{O}(1)$ recurrent step), `Parentheses` backbone, `ModelConfig` presets.
+- `features/` — `free_think.py` (9-language FreeThink with internal command/tag encapsulation), `modular_free_think.py` (BM25 RAG splicing), `conversation_memory.py` (reflective auto-trigger), `multimodal.py` (SSM visual patch prefill + multi-format document processor).
+- `release/parentheses-0.9-120M-candidate/` — Self-contained Hugging Face & standalone release package (`model.safetensors`, `model.bf16.safetensors`, `modeling_parentheses.py`, `app.py`, `chat.py`, `load_example.py`, `freethink_showcase.html`).
+- `scripts/` — `chat.py`, `eval_dravidian.py`, `eval_freethink_showcase.py`, `build_showcase_html.py`, `mqar_eval.py`.
+- `tests/` — `test_freethink_suite.py` (12/12 unit + 120M integration suite), `test_multimodal_suite.py`.
+- `docs/` — `FREETHINK_VERIFICATION_REPORT.md`, `FORMAL_MATHEMATICAL_SPECIFICATION.md`.
 
 ## License
-This project is licensed under the MIT License.
+- **Software Code & Architecture:** [MIT License](LICENSE)
+- **Model Weights & Checkpoints:** [Apache License 2.0](LICENSE-MODEL)

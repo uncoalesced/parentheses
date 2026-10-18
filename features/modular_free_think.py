@@ -45,7 +45,23 @@ from rank_bm25 import BM25Okapi
 
 from model import Parentheses
 
-from .free_think import PRIMING, FreeThinkSession, _reject_questions, _stream_text
+from .free_think import (
+    PRIMING,
+    FreeThinkSession,
+    _reject_questions,
+    _stream_bpe,
+    _stream_text,
+    format_primed,
+    load_bpe_tokenizer,
+)
+from .multimodal import (
+    IMAGE_EXTENSIONS,
+    MULTIMODAL_EXTENSIONS,
+    VisualDescription,
+    describe_image,
+    extract_document_text,
+    prefill_visual_state,
+)
 
 # A retrieved chunk has to *fit* next to the prompt in a block_size window
 # (256 bytes on every current byte-level preset), so chunks are capped at
@@ -53,11 +69,11 @@ from .free_think import PRIMING, FreeThinkSession, _reject_questions, _stream_te
 # by evicting the prompt it's supposed to be informing.
 CHUNK_BYTES = 128
 
-_WORD = re.compile(r"[a-z0-9]+")
+_WORD = re.compile(r"[a-z0-9]+|[\w\u0B00-\u0D7F\u200c\u200d]+")
 
 
 def _tokens(text: str) -> list[str]:
-    """BM25's unit of matching: lowercased alphanumeric runs."""
+    """BM25's unit of matching: lowercased alphanumeric or Indic-script runs."""
     return _WORD.findall(text.lower())
 
 
@@ -125,11 +141,7 @@ class IngestedStore:
         self._index = None
         self._vectors = None
 
-    def ingest(self, paths: list[Path]):
-        """Read, chunk and index `paths`. Repeated calls add to the store."""
-        for path in paths:
-            text = Path(path).read_text(encoding="utf-8", errors="replace")
-            self.documents.extend(_chunk(text))
+    def _rebuild_index(self):
         if self.backend == "vector":
             self._build_vector_index()
             return
@@ -137,6 +149,29 @@ class IngestedStore:
         # index is rebuilt over everything rather than appended to.
         self._doc_tokens = [_tokens(c) for c in self.documents]
         self._bm25 = BM25Okapi(self._doc_tokens) if self.documents else None
+
+    def ingest_text(self, text: str):
+        """Chunk and index raw `text` directly into the store."""
+        self.documents.extend(_chunk(text))
+        self._rebuild_index()
+
+    def ingest_image(self, image, lang: str = "eng") -> VisualDescription:
+        """Describe `image` and index its visual summary + metadata into the store."""
+        desc = describe_image(image, lang=lang)
+        self.ingest_text(desc.summary)
+        return desc
+
+    def ingest(self, paths: list[Path]):
+        """Read, chunk and index `paths` (supporting .txt, .pdf, .docx, .html, .csv, .json, and images)."""
+        for path in paths:
+            p = Path(path)
+            ext = p.suffix.lower()
+            if ext in MULTIMODAL_EXTENSIONS and ext not in (".txt", ".md", ".rst", ".py"):
+                text = extract_document_text(p)
+            else:
+                text = p.read_text(encoding="utf-8", errors="replace")
+            self.documents.extend(_chunk(text))
+        self._rebuild_index()
 
     def _build_vector_index(self):
         """Embed every chunk and (re)build the TurboVec index.
@@ -263,36 +298,53 @@ class WebSearchStore:
             f"{self.base_url}/search?{params}",
             headers={"User-Agent": "ParenthesesBot/1.0"},
         )
+        chunks = []
         try:
             with urllib.request.urlopen(req, timeout=self.timeout) as resp:
                 payload = json.loads(resp.read().decode("utf-8"))
+            for item in payload.get("results", [])[:top_k]:
+                title = item.get("title", "").strip()
+                content = item.get("content", "").strip()
+                if not content:
+                    continue
+                text = f"{title}: {content}" if title else content
+                chunks.extend(_chunk(text))
         except Exception:
-            # network boundary: DNS failure, connection refused, timeout,
-            # non-JSON body -- all of it means "no results", never a crash.
-            return []
+            pass
 
-        chunks = []
-        for item in payload.get("results", [])[:top_k]:
-            title = item.get("title", "").strip()
-            content = item.get("content", "").strip()
-            if not content:
-                continue
-            text = f"{title}: {content}" if title else content
-            chunks.extend(_chunk(text))  # same CHUNK_BYTES cap as file-ingested chunks
+        # If SearXNG returned nothing (e.g. no local daemon running), fall back to pure-Python web search
+        if not chunks:
+            try:
+                from .web_tools import search_web
+                web_hits = search_web(_search_keywords(query), max_results=top_k)
+                for item in web_hits:
+                    title = item.get("title", "").strip()
+                    snippet = item.get("snippet", "").strip()
+                    if snippet:
+                        text = f"{title}: {snippet}" if title else snippet
+                        chunks.extend(_chunk(text))
+            except Exception:
+                pass
+
         return chunks[:top_k]
 
 
 class ModularFreeThinkSession:
-    """Same as FreeThinkSession, plus a retrieval hook. See features/free_think.py."""
+    """Same as FreeThinkSession, plus a retrieval hook and SSM image state support. See features/free_think.py."""
 
     def __init__(self, model: Parentheses, store: IngestedStore, splice_every: int = 64,
-                 retrieve_k: int = 3, temperature: float = 0.9, top_k: int = 40):
+                 retrieve_k: int = 3, temperature: float = 0.9, top_k: int = 40,
+                 tokenizer=None, lang: str = "eng", mode: str = "continuation",
+                 images: list | None = None):
         # Composed, not subclassed: the inner session owns prompt/history/
         # export (so the export format can't drift from Free Think's) and the
         # byte-level vocab_size guard.
-        self.session = FreeThinkSession(model, temperature, top_k)
+        inner_mode = "structured" if mode in ("structured", "freethink") else "continuation"
+        self.session = FreeThinkSession(model, temperature, top_k,
+                                        tokenizer=tokenizer, lang=lang, mode=inner_mode)
         self.model = model
         self.store = store
+        self.mode = mode
         # splice_every: tokens decoded per retrieval. Every step would re-run
         # BM25 and re-prefill the whole window per token -- i.e. throw the KV
         # cache away, the one thing making decoding cheap. 64 is a quarter of
@@ -307,6 +359,11 @@ class ModularFreeThinkSession:
         # block_size bytes, so the chunk text is what degrades first.
         self.retrieval_bytes = model.cfg.block_size // 2
         self.tail_bytes = model.cfg.block_size // 4
+        self.image_states: list | None = None
+        self.image_descriptions: list[VisualDescription] = []
+        if images:
+            for img in images:
+                self.ingest_image(img)
 
     @property
     def history(self) -> list[str]:
@@ -315,6 +372,19 @@ class ModularFreeThinkSession:
     @property
     def prompt(self) -> str | None:
         return self.session.prompt
+
+    def ingest_image(self, image, patch_size: int = 16, grid_size: int = 64) -> VisualDescription:
+        """Ingest `image` into both the store (visual summary) and SSM recurrent `image_states`."""
+        desc = describe_image(image, lang=self.session.lang)
+        self.image_descriptions.append(desc)
+        if hasattr(self.store, "ingest_text"):
+            self.store.ingest_text(desc.summary)
+        if all(b.is_selective for b in self.model.blocks):
+            self.image_states = prefill_visual_state(
+                self.model, image, states=self.image_states,
+                patch_size=patch_size, grid_size=grid_size,
+            )
+        return desc
 
     def export(self, path: str, **kwargs):
         """Write the session to `path` -- same format and sandboxing as FreeThinkSession."""
@@ -330,30 +400,88 @@ class ModularFreeThinkSession:
                 break  # ranked best-first, so stop rather than skip-and-continue
             chunks.append(chunk)
             used += width
+        if not chunks and self.image_descriptions:
+            # Ensure visual context is grounded even when query terms don't overlap
+            for vchunk in _chunk(self.image_descriptions[-1].summary):
+                width = len(vchunk.encode("utf-8")) + 2
+                if used + width > self.retrieval_bytes:
+                    break
+                chunks.append(vchunk)
+                used += width
         context = "\n\n".join(chunks + [prompt.strip()])
+        if self.session.tokenizer is not None:
+            return format_primed(context, self.session.lang, "continuation") + tail
         return PRIMING.format(prompt=context) + tail
 
-    def start(self, prompt: str, max_tokens: int | None = None, force: bool = False):
+    @property
+    def closed_freethink(self) -> bool:
+        return self.session.closed_freethink
+
+    @property
+    def internal_close_tag(self) -> str:
+        return self.session.internal_close_tag
+
+    @property
+    def internal_transcript(self) -> str:
+        return self.session.internal_transcript
+
+    def start(self, prompt: str, max_tokens: int | None = None, force: bool = False,
+              mode: str | None = None):
         """Yield decoded text as the model thinks, re-retrieving every splice_every tokens.
 
         max_tokens=None keeps thinking until the consumer stops iterating.
+        All `/think`, `/freethink`, `<think>`, `</think>`, `<freethink>`, `</freethink>`
+        commands and tags are kept strictly internal (`closed_freethink=True`,
+        `internal_close_tag='</freethink>'`) and never emitted as raw text.
         """
-        _reject_questions(prompt, force)
-        self.session.prompt = prompt
+        from .free_think import parse_internal_command, strip_internal_tags
+
+        clean_prompt, parsed_mode = parse_internal_command(prompt, default_mode=mode or self.mode)
+        if not clean_prompt and prompt.strip():
+            clean_prompt = prompt.strip()
+        _reject_questions(clean_prompt, force)
+        self.session.prompt = clean_prompt
         self.session.history = []
+        self.session.closed_freethink = False
+        self.session.internal_transcript = ""
+        active_mode = parsed_mode or mode or self.mode
+        if active_mode == "freethink":
+            active_mode = "structured"
         remaining = max_tokens
-        while remaining is None or remaining > 0:
-            step = self.splice_every if remaining is None else min(self.splice_every, remaining)
-            # Each splice restarts stream(), which re-prefills the window and
-            # re-pins its own attention sink -- now the head of the retrieved
-            # text, so a long run stays anchored to the store, not just to its
-            # own opening.
-            for chunk in _stream_text(self.model, self._primed(prompt), step,
-                                      self.session.temperature, self.session.top_k):
-                self.session.history.append(chunk)
-                yield chunk
-            if remaining is not None:
-                remaining -= step
+        try:
+            while remaining is None or remaining > 0:
+                step = self.splice_every if remaining is None else min(self.splice_every, remaining)
+                # Each splice restarts stream(), which re-prefills the window and
+                # re-pins its own attention sink -- now the head of the retrieved
+                # text, so a long run stays anchored to the store, not just to its
+                # own opening.
+                primed = self._primed(clean_prompt)
+                if self.session.tokenizer is not None:
+                    stream = _stream_bpe(self.model, self.session.tokenizer, primed,
+                                         self.session.lang, step,
+                                         self.session.temperature, self.session.top_k,
+                                         mode=active_mode if active_mode in ("continuation", "structured") else "continuation",
+                                         min_tokens=step)
+                else:
+                    stream = _stream_text(self.model, primed, step,
+                                          self.session.temperature, self.session.top_k)
+                emitted = False
+                for chunk in stream:
+                    clean_chunk = strip_internal_tags(chunk)
+                    if clean_chunk:
+                        emitted = True
+                        self.session.history.append(clean_chunk)
+                        yield clean_chunk
+                if not emitted:
+                    break
+                if remaining is not None:
+                    remaining -= step
+        finally:
+            self.session.closed_freethink = True
+            body = "".join(self.session.history).strip()
+            self.session.internal_transcript = (
+                f"{self.session.internal_open_tag}\n{body}\n{self.session.internal_close_tag}"
+            )
 
     def run(self, prompt: str, max_tokens: int = 400, **kwargs) -> str:
         """Non-streaming convenience: consume start() and return the whole text."""
@@ -362,11 +490,14 @@ class ModularFreeThinkSession:
 
 def main():
     p = argparse.ArgumentParser(description="Modular Free Think: free thinking over an ingested store.")
-    p.add_argument("--checkpoint", default="checkpoints/step_161000.pt")
-    p.add_argument("--ingest", nargs="*", default=[], help="text files to chunk + index")
+    p.add_argument("--checkpoint", default="checkpoints/parentheses-0.9-120M/step_9536_final.pt")
+    p.add_argument("--ingest", nargs="*", default=[], help="files (.txt, .pdf, .docx, .html, .csv, .json, images) to chunk + index")
+    p.add_argument("--image", nargs="*", default=[], help="images to prefill into SSM visual state and index into store")
     p.add_argument("--web-search", default=None, metavar="SEARXNG_URL",
                    help="use live web search instead of --ingest, e.g. http://localhost:8080")
     p.add_argument("--prompt", default="The ocean is very deep.")
+    p.add_argument("--lang", default="eng", help="language tag for BPE checkpoints (kan, tam, tel, mal, ...)")
+    p.add_argument("--mode", choices=["continuation", "structured", "freethink"], default="continuation")
     p.add_argument("--max-tokens", type=int, default=400, help="0 = think until Ctrl-C")
     p.add_argument("--splice-every", type=int, default=64, help="tokens decoded per retrieval")
     p.add_argument("--retrieve-k", type=int, default=3, help="chunks retrieved per splice")
@@ -409,12 +540,14 @@ def main():
         store = IngestedStore()
         store.ingest([Path(f) for f in args.ingest])
     session = ModularFreeThinkSession(model, store, args.splice_every, args.retrieve_k,
-                                      args.temperature, args.top_k)
-    print(f"[modular] {args.checkpoint} (step {ckpt['step']}) on {args.device}")
+                                      args.temperature, args.top_k,
+                                      tokenizer=load_bpe_tokenizer(ckpt), lang=args.lang,
+                                      mode=args.mode, images=[Path(img) for img in args.image])
+    print(f"[modular] {args.checkpoint} (step {ckpt['step']}, lang={args.lang}) on {args.device}")
     if args.web_search:
         print(f"[modular] store: live web search via {args.web_search}")
     else:
-        print(f"[modular] store: {len(store.documents)} chunks from {len(args.ingest)} file(s)")
+        print(f"[modular] store: {len(store.documents)} chunks from {len(args.ingest)} file(s), {len(args.image)} image(s)")
     print(f"[modular] prompt: {args.prompt}\n")
     try:
         for chunk in session.start(args.prompt, args.max_tokens or None, force=args.force):
@@ -624,6 +757,46 @@ def _self_test():
         assert got["prompt"] == want["prompt"] == "A third statement."
         assert got["thinking"] == "".join(session.history)
         assert "A third statement." in open(txt, encoding="utf-8").read()
+
+    # --- BPE + Dravidian BM25 store & ModularFreeThinkSession ----------------
+    from model.config import ModelConfig
+    tok_dir = Path(__file__).resolve().parent.parent / "data" / "tokenizer" / "v3_32k"
+    tok = load_bpe_tokenizer({"tokenizer": {"path": str(tok_dir)}})
+    bpe = Parentheses(ModelConfig(vocab_size=32768, block_size=512, n_layer=2, n_head=2, n_embd=32,
+                                  attn_type="selective_linear")).eval()
+    kan_store = IngestedStore()
+    with tempfile.TemporaryDirectory() as ktmp:
+        kp = Path(ktmp) / "kan.txt"
+        kp.write_text("ಬೆಂಗಳೂರು ಕರ್ನಾಟಕದ ರಾಜಧಾನಿ.\n\nಕಾವೇರಿ ನದಿ ಕೊಡಗಿನಲ್ಲಿ ಹುಟ್ಟುತ್ತದೆ.", encoding="utf-8")
+        kan_store.ingest([kp])
+    kan_hits = kan_store.retrieve("ಬೆಂಗಳೂರು ರಾಜಧಾನಿ")
+    assert kan_hits and "ಬೆಂಗಳೂರು" in kan_hits[0], kan_hits
+    bpe_mod = ModularFreeThinkSession(bpe, kan_store, splice_every=6, tokenizer=tok, lang="kan")
+    bpe_primed = bpe_mod._primed("ಬೆಂಗಳೂರು ಒಂದು ದೊಡ್ಡ ನಗರ.")
+    assert "ಬೆಂಗಳೂರು ಕರ್ನಾಟಕದ ರಾಜಧಾನಿ." in bpe_primed and "ಇದರ ಬಗ್ಗೆ" in bpe_primed
+    bpe_out = bpe_mod.run("ಬೆಂಗಳೂರು ಒಂದು ದೊಡ್ಡ ನಗರ.", max_tokens=12)
+    assert bpe_out == "".join(bpe_mod.history) and len(bpe_out) > 0
+
+    # --- Multimodal PDF/DOCX/Image store & SSM visual state prefill ----------
+    from PIL import Image
+    from .multimodal import create_docx_bytes, create_pdf_bytes, state_shapes
+    mm_store = IngestedStore()
+    with tempfile.TemporaryDirectory() as mtmp:
+        mp = Path(mtmp)
+        pdf_file = mp / "doc.pdf"
+        pdf_file.write_bytes(create_pdf_bytes(["Abyssal hydrothermal vents support chemosynthetic life."]))
+        docx_file = mp / "notes.docx"
+        docx_file.write_bytes(create_docx_bytes(["ಮೈಸೂರು ಕರ್ನಾಟಕದ ಸಾಂಸ್ಕೃತಿಕ ನಗರ."]))
+        img_file = mp / "blue_ocean.png"
+        Image.new("RGB", (64, 64), color=(10, 40, 220)).save(img_file)
+        mm_store.ingest([pdf_file, docx_file, img_file])
+        assert mm_store.retrieve("chemosynthetic")[0].startswith("Abyssal hydrothermal")
+        assert "ಮೈಸೂರು" in mm_store.retrieve("ಸಾಂಸ್ಕೃತಿಕ")[0]
+        assert "blue" in mm_store.retrieve("blue")[0].lower()
+        img_desc = bpe_mod.ingest_image(img_file)
+        assert bpe_mod.image_states is not None
+        assert state_shapes(bpe_mod.image_states) == [(1, 2, 16, 16), (1, 2, 16, 16)]
+        assert "blue" in img_desc["dominant_colors"]
     print("[self-test] modular_free_think ok")
 
 

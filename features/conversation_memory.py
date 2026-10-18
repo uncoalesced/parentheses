@@ -33,7 +33,7 @@ import torch
 
 from model import Parentheses
 
-from .free_think import is_question, resolve_inside
+from .free_think import is_question, load_bpe_tokenizer, resolve_inside
 from .modular_free_think import IngestedStore, ModularFreeThinkSession, _tokens
 
 # Where conversation notes are allowed to live -- the same kind of boundary
@@ -47,7 +47,19 @@ NOTES_DIR = Path(__file__).resolve().parent.parent / "conversations"
 # word list that misses everything not on it, or a sentiment model, which is a
 # second trained thing bolted onto a project whose whole point is one small
 # model. Shape is cheap and doesn't pretend to read emotion.
-FIRST_PERSON = frozenset(("i", "me", "my", "myself", "mine", "we", "us", "our"))
+FIRST_PERSON = frozenset((
+    "i", "me", "my", "myself", "mine", "we", "us", "our",
+    # Dravidian first-person forms (kan, tam, tel, mal, tcy)
+    "ನಾನು", "ನನ್ನ", "ನನಗೆ", "ನಾವು", "ನಮ್ಮ",
+    "நான்", "என்", "எனக்கு", "நாம்", "நாங்கள்", "எங்கள்",
+    "నేను", "నా", "నాకు", "మేము", "మన", "మా",
+    "ഞാൻ", "എന്റെ", "എനിക്ക്", "ഞങ്ങൾ", "നമ്മൾ", "നമ്മുടെ",
+    "ಯಾನ್", "ಎನ್ನ", "ಎಂಕಲ್",
+    # Low-resource Dravidian first-person forms (kff, kxv, nit)
+    "ନାନ୍ନା", "ନାନ୍", "ମାକୋ", "ମାଟ୍",
+    "ନା଼ନୁ", "ନା଼ನು", "ମା଼ରୋ", "ମା଼ମ୍",
+    "ఆన్", "అమ్",
+))
 MIN_WORDS = 12
 
 
@@ -85,13 +97,21 @@ class ConversationSession:
 
     def __init__(self, model: Parentheses, notes: ConversationNotes | None = None,
                  splice_every: int = 64, retrieve_k: int = 3,
-                 temperature: float = 0.9, top_k: int = 40):
+                 temperature: float = 0.9, top_k: int = 40,
+                 tokenizer=None, lang: str = "eng"):
+        if model.cfg.vocab_size > 256 and tokenizer is None:
+            raise ValueError(
+                f"vocab_size={model.cfg.vocab_size} is a BPE model: pass its tokenizer "
+                "(load_bpe_tokenizer(ckpt)); without one output is decoded as raw UTF-8 bytes."
+            )
         self.model = model
         self.notes = notes or ConversationNotes()
         self.splice_every = splice_every
         self.retrieve_k = retrieve_k
         self.temperature = temperature
         self.top_k = top_k
+        self.tokenizer = tokenizer
+        self.lang = lang
 
     def turn(self, user_text: str, max_tokens: int = 400, force: bool = False):
         """Record `user_text`; return an iterator of thinking text.
@@ -101,15 +121,20 @@ class ConversationSession:
         not on first iteration, so a caller that ignores the return value
         doesn't silently lose the turn.
         """
-        triggered = force or warrants_free_think(user_text)
+        from .free_think import parse_internal_command
+
+        clean_text, cmd_mode = parse_internal_command(user_text)
+        if not clean_text and user_text.strip():
+            clean_text = user_text.strip()
+        triggered = force or (cmd_mode == "structured") or warrants_free_think(clean_text)
         # Built from the notes as they stand *before* this turn is appended:
         # the current text is already in the prompt, so retrieving it back
         # would spend window on a copy of it.
         store = self._store() if triggered else None
-        self.notes.append("user", user_text)
+        self.notes.append("user", clean_text)
         if not triggered:
             return iter(())
-        return self._think(user_text, store, max_tokens)
+        return self._think(clean_text, store, max_tokens)
 
     def _store(self) -> IngestedStore:
         """A fresh index over the notes so far.
@@ -126,7 +151,8 @@ class ConversationSession:
 
     def _think(self, user_text: str, store: IngestedStore, max_tokens: int):
         session = ModularFreeThinkSession(self.model, store, self.splice_every,
-                                          self.retrieve_k, self.temperature, self.top_k)
+                                          self.retrieve_k, self.temperature, self.top_k,
+                                          tokenizer=self.tokenizer, lang=self.lang)
         # force=True: warrants_free_think() already ran the question check and
         # decided, so the inner is_question() gate would just re-litigate it.
         parts = []
@@ -139,9 +165,10 @@ class ConversationSession:
 def main():
     p = argparse.ArgumentParser(
         description="Conversation memory: Free Think that triggers itself and remembers the thread.")
-    p.add_argument("--checkpoint", default="checkpoints/step_161000.pt")
+    p.add_argument("--checkpoint", default="checkpoints/parentheses-0.9-120M/step_9536_final.pt")
     p.add_argument("--notes", default="session.md",
                    help=f"notes filename inside {NOTES_DIR} (can't escape that directory)")
+    p.add_argument("--lang", default="eng", help="language tag for BPE checkpoints (kan, tam, tel, mal, ...)")
     p.add_argument("--max-tokens", type=int, default=400)
     p.add_argument("--splice-every", type=int, default=64, help="tokens decoded per retrieval")
     p.add_argument("--retrieve-k", type=int, default=3, help="chunks retrieved per splice")
@@ -166,8 +193,9 @@ def main():
 
     notes = ConversationNotes(args.notes)
     session = ConversationSession(model, notes, args.splice_every, args.retrieve_k,
-                                  args.temperature, args.top_k)
-    print(f"[conversation] {args.checkpoint} (step {ckpt['step']}) on {args.device}")
+                                  args.temperature, args.top_k,
+                                  tokenizer=load_bpe_tokenizer(ckpt), lang=args.lang)
+    print(f"[conversation] {args.checkpoint} (step {ckpt['step']}, lang={args.lang}) on {args.device}")
     print(f"[conversation] notes: {notes.path}")
     print("[conversation] type a turn, empty line or Ctrl-C to stop\n")
     try:
@@ -200,6 +228,11 @@ def _self_test():
     assert not warrants_free_think(                                   # no first person
         "The ocean is very deep and it stays cold all the way down to the floor of it")
     assert not warrants_free_think("")
+
+    # Dravidian first-person trigger
+    heavy_kan = ("ನಾನು ಕಳೆದ ಹಲವು ತಿಂಗಳುಗಳಿಂದ ಈ ದೊಡ್ಡ ಜವಾಬ್ದಾರಿಯನ್ನು ಒಬ್ಬನೇ ಹೊತ್ತುಕೊಂಡು "
+                 "ಬಂದಿದ್ದೇನೆ ಮತ್ತು ಈಗ ನನ್ನ ಮನಸ್ಸಿಗೆ ತುಂಬಾ ಆಯಾಸವಾಗಿದೆ")
+    assert warrants_free_think(heavy_kan)
 
     with tempfile.TemporaryDirectory() as tmp:
         notes = ConversationNotes("s.md", base_dir=tmp)
@@ -234,6 +267,17 @@ def _self_test():
 
         # forced: a turn that wouldn't trigger on its own still thinks
         assert "".join(session.turn("Fine.", max_tokens=10, force=True))
+
+        # BPE path
+        from model.config import ModelConfig
+        tok_dir = Path(__file__).resolve().parent.parent / "data" / "tokenizer" / "v3_32k"
+        tok = load_bpe_tokenizer({"tokenizer": {"path": str(tok_dir)}})
+        bpe = Parentheses(ModelConfig(vocab_size=32768, block_size=512, n_layer=2, n_head=2, n_embd=32,
+                                      attn_type="selective_linear")).eval()
+        bpe_notes = ConversationNotes("bpe.md", base_dir=tmp)
+        bpe_sess = ConversationSession(bpe, bpe_notes, splice_every=6, tokenizer=tok, lang="kan")
+        bpe_text = "".join(bpe_sess.turn(heavy_kan, max_tokens=12))
+        assert bpe_text and "## thinking" in bpe_notes.read()
 
     print("[self-test] conversation_memory ok")
 
