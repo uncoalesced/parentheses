@@ -57,6 +57,8 @@ def main() -> int:
     p.add_argument("--boundaries", required=True, help="int64 doc-start offsets .npy")
     p.add_argument("--tokenizer", default=str(REPO / "data" / "tokenizer" / "v3_32k"))
     p.add_argument("--docs", type=int, default=100, help="how many documents to decode (0 = all)")
+    p.add_argument("--extra", action="append", default=[], help="extra phrase to grep (repeatable, case-insensitive, fails)")
+    p.add_argument("--diag", action="append", default=[], help="extra phrase to count only (repeatable, does not fail)")
     args = p.parse_args()
 
     tok = Tokenizer.from_file(str(Path(args.tokenizer) / "tokenizer.json"))
@@ -70,17 +72,24 @@ def main() -> int:
 
     hits = 0
     cue_docs = 0
+    diag_counts = {phrase: 0 for phrase in args.diag}
     for i in range(n):
         s = int(bnd[i])
         e = int(bnd[i + 1]) if i + 1 < len(bnd) else len(data)
         text = _norm(tok.decode(data[s:e].tolist(), skip_special_tokens=False))
         low = text.lower()
-        for phrase in legacy + list(EXTRA_PATTERNS):
+        for phrase in legacy + list(EXTRA_PATTERNS) + args.extra:
             if phrase.lower() in low:
                 hits += 1
                 print(f"[hit] doc {i}: {phrase[:60]!r}")
         if any(cue in low for cue in cue_patterns):
             cue_docs += 1
+        for phrase in args.diag:
+            if phrase.lower() in low:
+                diag_counts[phrase] += 1
+
+    for phrase, cnt in diag_counts.items():
+        print(f"[check_sft_anchor] diag: {cnt:,} docs contain {phrase[:60]!r}")
 
     print(f"[check_sft_anchor] decoded {n:,} of {len(bnd):,} docs from {args.bin}: {hits} anchor hits")
     print(f"[check_sft_anchor] {cue_docs:,} docs contain a designed LANG_PRIMING continuation cue (expected in low-resource freethink docs)")
