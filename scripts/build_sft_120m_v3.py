@@ -332,10 +332,22 @@ UNKNOWN_QUESTION_TEMPLATES = {
         ("What did the Conclave of {name} decide?", "place"),
         ("What is the tallest mountain in {name}?", "place"),
         ("How long is the {name} River?", "place"),
+        ("What is the capital of the Republic of {name}?", "place"),
+        ("What is the capital of the Kingdom of {name}?", "place"),
+        ("Which city is the capital of the State of {name}?", "place"),
+        ("Who is the current king of the Sovereign State of {name}?", "place"),
+        ("What is the population of the village of {name}?", "place"),
+        ("What is the population of the town of {name}?", "place"),
+        ("What is the population of the province of {name}?", "place"),
+        ("What is the tallest mountain in the country of {name}?", "place"),
+        ("What is the longest river in the country of {name}?", "place"),
+        ("Who is the current prime minister of {name}?", "place"),
         ("Who invented the {name}?", "thing"),
         ("In what year was the {name} invented?", "thing"),
         ("What is the melting point of {name}?", "compound"),
         ("What is the chemical formula of {name}?", "compound"),
+        ("What is the boiling point of the mineral {name}?", "compound"),
+        ("What is the melting point of the mineral {name}?", "compound"),
         ("Which company released the {name}?", "product"),
         ("In what year did the {name} go on sale?", "product"),
     ],
@@ -367,6 +379,14 @@ FAKE_PLACES = [
     "Ithuvia", "Belmaran", "Corvath", "Dralvia", "Erethia", "Faldora",
     "Gwynmar", "Halveth", "Iskaria", "Jorvane", "Kelthara", "Lyrinth",
     "Morvani", "Nethara", "Ostvald", "Ravenmoor",
+    "Zorandel", "Kadvenna", "Thalvoria", "Mirethia", "Oskandrel", "Valtunna",
+    "Irendale", "Praxoria", "Quenlara", "Sovelmar", "Tarnovia", "Uldemar",
+    "Veskaria", "Wendrake", "Xanthera", "Yorvane", "Zelthara", "Ambravia",
+    "Briovar", "Cindral", "Dorvane", "Elthara", "Gorvane", "Hespiria",
+    "Isveria", "Jandrel", "Korvath", "Lunvaria",
+    "Velmar-Zenta", "Orvan-Kadmi", "Tharo-Belmar", "Quelbri-Ithu",
+    "Soly-Dralvia", "Mirkan-Erethi", "Praxa-Vernal", "Kestra-Halveth",
+    "Cindral-Zorva", "Dunmar-Thalv", "Ostvald-Mirka", "Lyrinth-Corva",
 ]
 
 FAKE_THINGS = [
@@ -374,18 +394,24 @@ FAKE_THINGS = [
     "veldrine capacitor", "solithine reactor", "praxite lens", "mirkanite alloy",
     "dunlight lantern", "orvane compass", "tharovian clock", "kadmir gear",
     "velmaran telescope", "quellbrim battery", "faldoran pump", "ithuvian valve",
+    "veldrite compass", "quenlarite dynamo", "thalvorite pump", "mirvanite bearing",
+    "ostrandel coil", "praxorite lens",
 ]
 
 FAKE_COMPOUNDS = [
     "zorvium", "quelline", "tharbium", "veldrone", "mirkanite",
     "solithine", "praxite", "kadmirite", "orvanium", "dunvale salt",
+    "veltorium", "quenlite", "tharmide", "ostrinite", "dravonite",
+    "belmarite", "ithuvine", "kadmerol", "praxoride", "solverine",
+    "tarnovite", "uldemite",
 ]
 
 FAKE_PRODUCTS = [
     "Kestrel-7 handheld", "Vantry-2 watch", "Halveth X1 console",
     "Mirkanth Tab-3", "Orvane Air speaker", "Quelbrim Mini radio",
     "Silthara Cam-5", "Dunvale Book reader", "Tharovia Note-9",
-    "Kadmiros Drone-4",
+    "Kadmiros Drone-4", "Zorandel Tab-9", "Kadvenna Watch-4",
+    "Thalvoria Note-6", "Wendrake Pad-2", "Oskandrel Cam-8", "Valtunna Pod-5",
 ]
 
 _FAKE_POOLS = {
@@ -1617,7 +1643,7 @@ def main():
     eng_think_cap = 200 if args.dry_run else 8000
     eng_chat_cap = 250 if args.dry_run else 10000
     intelli_abst = 150 if args.dry_run else 4000
-    unknown_drills = 150 if args.dry_run else 3000
+    unknown_drills = 400 if args.dry_run else 8000
     aya_cap = 100 if args.dry_run else 5000
     indic_abst = 20 if args.dry_run else 100
     oasst_cap = 150 if args.dry_run else 8000
