@@ -384,6 +384,7 @@ FAKE_PLACES = [
     "Veskaria", "Wendrake", "Xanthera", "Yorvane", "Zelthara", "Ambravia",
     "Briovar", "Cindral", "Dorvane", "Elthara", "Gorvane", "Hespiria",
     "Isveria", "Jandrel", "Korvath", "Lunvaria",
+    "Zarovia", "Kavonia", "Morania", "Pelmara", "Rovinia", "Tavland",
     "Velmar-Zenta", "Orvan-Kadmi", "Tharo-Belmar", "Quelbri-Ithu",
     "Soly-Dralvia", "Mirkan-Erethi", "Praxa-Vernal", "Kestra-Halveth",
     "Cindral-Zorva", "Dunmar-Thalv", "Ostvald-Mirka", "Lyrinth-Corva",
@@ -414,6 +415,8 @@ FAKE_PRODUCTS = [
     "Kadmiros Drone-4", "Zorandel Tab-9", "Kadvenna Watch-4",
     "Thalvoria Note-6", "Wendrake Pad-2", "Oskandrel Cam-8", "Valtunna Pod-5",
     "NX-3700", "VQ-9800", "XR-2500", "TB-6600", "KM-8800", "HD-4500",
+    "AZ-1200", "WB-490", "KQ-7700", "JM-3300", "PU-5600", "RX-8100",
+    "FT-2900", "CV-6400", "LY-7800", "SN-1500",
 ]
 
 _FAKE_POOLS = {
@@ -446,7 +449,10 @@ def collect_unknown_drills(tok: Tokenizer, rng: np.random.Generator, max_docs: i
         name = pool[int(rng.integers(0, len(pool)))]
         question = tpl.format(name=name)
         abst_list = UNKNOWN_ABSTENTION[lang]
-        answer = abst_list[int(rng.integers(0, len(abst_list)))]
+        if lang == "eng" and float(rng.random()) < 0.5:
+            answer = abst_list[int(rng.integers(0, 5))]
+        else:
+            answer = abst_list[int(rng.integers(0, len(abst_list)))]
         tokens, mask = encode_chat_doc(tok, lang, question, answer)
         if len(tokens) <= 1024:
             emitted += 1
@@ -1645,7 +1651,7 @@ def main():
     eng_think_cap = 200 if args.dry_run else 8000
     eng_chat_cap = 250 if args.dry_run else 10000
     intelli_abst = 150 if args.dry_run else 4000
-    unknown_drills = 600 if args.dry_run else 12000
+    unknown_drills = 800 if args.dry_run else 16000
     aya_cap = 100 if args.dry_run else 5000
     indic_abst = 20 if args.dry_run else 100
     oasst_cap = 150 if args.dry_run else 8000
