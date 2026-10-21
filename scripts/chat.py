@@ -166,7 +166,7 @@ _URL_CMD_RE = _mm_re.compile(
 # --no-system is the opt-out.
 DEFAULT_SYSTEM_PROMPT = (
     "You are Parentheses 0.9, an efficient Dravidian and English recurrent language model "
-    "developed by Joel Anthony. You answer questions directly, concisely, and accurately. "
+    "developed by uncoalesced. You answer questions directly, concisely, and accurately. "
     "If you do not know the answer to a factual question, say \"I don't know\" instead of "
     "inventing details."
 )
@@ -535,6 +535,7 @@ def reply(
 
     all_imgs = list(images or []) + inline_imgs
     all_docs = list(docs or []) + inline_docs
+    user_prompt = clean_prompt or prompt
 
     # Execute web search / URL fetch if requested
     web_blocks: list[str] = []
@@ -702,9 +703,6 @@ def reply(
     pending: list[int] = []
 
     in_think = (fmt == "think")
-    filter_artifact = in_think
-    strip_leading_punct = False
-    artifact_buf = ""
 
     if stream:
         sys.stdout.write(STYLE_THINK if in_think else STYLE_ANSWER)
@@ -729,8 +727,6 @@ def reply(
 
         if t == think_id:
             in_think = True
-            filter_artifact = True
-            strip_leading_punct = False
             if stream:
                 sys.stdout.write(STYLE_THINK)
                 sys.stdout.flush()
@@ -738,20 +734,6 @@ def reply(
 
         if t == think_end_id:
             if in_think:
-                if filter_artifact and artifact_buf:
-                    s = artifact_buf.lstrip(" \t\r\n")
-                    for p in LEGACY_ARTIFACT_PHRASES:
-                        if s.startswith(p):
-                            artifact_buf = s[len(p):].lstrip(" \t\r\n,.:;")
-                            break
-                    if artifact_buf:
-                        collected.append(artifact_buf)
-                        if stream:
-                            sys.stdout.write(artifact_buf)
-                    artifact_buf = ""
-                filter_artifact = False
-                strip_leading_punct = False
-
                 if pending:
                     chunk = strip_internal_tags(tok.decode(pending, skip_special_tokens=False))
                     if chunk:
@@ -772,37 +754,6 @@ def reply(
         if chunk and not chunk.endswith("\ufffd"):
             pending = []
             clean_c = strip_internal_tags(chunk)
-            if not clean_c:
-                continue
-
-            if filter_artifact:
-                artifact_buf += clean_c
-                s = artifact_buf.lstrip(" \t\r\n")
-                if any(p.startswith(s) and len(p) > len(s) for p in LEGACY_ARTIFACT_PHRASES):
-                    continue
-                matched_phrase = False
-                for p in LEGACY_ARTIFACT_PHRASES:
-                    if s.startswith(p):
-                        artifact_buf = s[len(p):].lstrip(" \t\r\n,.:;")
-                        matched_phrase = True
-                        break
-                if matched_phrase:
-                    filter_artifact = False
-                    strip_leading_punct = True
-                    clean_c = artifact_buf
-                    artifact_buf = ""
-                elif any(p.startswith(s) for p in LEGACY_ARTIFACT_PHRASES):
-                    continue
-                else:
-                    filter_artifact = False
-                    clean_c = artifact_buf
-                    artifact_buf = ""
-
-            if strip_leading_punct and clean_c:
-                clean_c = clean_c.lstrip(" \t\r\n,.:;")
-                if clean_c:
-                    strip_leading_punct = False
-
             if clean_c:
                 collected.append(clean_c)
                 if stream:
@@ -811,18 +762,6 @@ def reply(
 
         if looping(out_tokens):
             break
-
-    if filter_artifact and artifact_buf:
-        s = artifact_buf.lstrip(" \t\r\n")
-        for p in LEGACY_ARTIFACT_PHRASES:
-            if s.startswith(p):
-                artifact_buf = s[len(p):].lstrip(" \t\r\n,.:;")
-                break
-        if artifact_buf:
-            collected.append(artifact_buf)
-            if stream:
-                sys.stdout.write(artifact_buf)
-        artifact_buf = ""
 
     if pending:
         clean_c = strip_internal_tags(tok.decode(pending, skip_special_tokens=False))
@@ -935,8 +874,10 @@ def build_arg_parser(default_ckpt: str) -> argparse.ArgumentParser:
 
 
 def main():
-    default_ckpt = "checkpoints/parentheses-0.9-120M-sft-v4/step_10036_final.pt"
+    default_ckpt = "checkpoints/parentheses-0.9-120M-sft-real-v1/step_12035_final.pt"
     if not Path(default_ckpt).exists():
+        if Path("checkpoints/parentheses-0.9-120M-sft-v4/step_10036_final.pt").exists():
+            default_ckpt = "checkpoints/parentheses-0.9-120M-sft-v4/step_10036_final.pt"
         if Path("checkpoints/parentheses-0.9-120M-sft/step_9636_final.pt").exists():
             default_ckpt = "checkpoints/parentheses-0.9-120M-sft/step_9636_final.pt"
         elif (SCRIPT_DIR / "model.safetensors").exists():
