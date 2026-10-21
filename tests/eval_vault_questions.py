@@ -124,7 +124,7 @@ EXPECTATIONS: dict[str, dict] = {
     "what is the native language of mangalore?": {"kind": "any", "value": ["tulu", "kannada"]},
     "is a tomato a fruit or a vegetable? explain the distinction.": {"kind": "contains", "value": "fruit"},
     "what is the opposite of the word \"scarce\"?": {"kind": "any", "value": ["abundant", "plentiful"]},
-    "കേരളത്തിലെ പ്രകൃതിഭംഗിയെക്കുറിച്ച് പറയൂ.": {"kind": "script", "value": "mal"},
+    "കേരളത്തിലെ പ്രകൃതിഭംഗിയെക്കുറിച്ച് പറയൂ.": {"kind": "script", "value": "Mlym"},
 }
 
 DYNAMIC_PREFIXES = (
