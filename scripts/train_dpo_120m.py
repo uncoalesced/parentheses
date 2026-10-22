@@ -34,6 +34,7 @@ import torch.nn.functional as F
 from tokenizers import Tokenizer
 
 from model import Parentheses
+from train import build_optimizer
 
 EOT, ENG, USER, ASSISTANT = 0, 10, 13, 14
 
@@ -100,13 +101,7 @@ def response_logps(model: Parentheses, x: torch.Tensor, mask: torch.Tensor,
 
 
 def make_optimizer(model: torch.nn.Module, lr: float, wd: float):
-    decay, no_decay = [], []
-    for n, p in model.named_parameters():
-        if not p.requires_grad:
-            continue
-        (no_decay if p.dim() < 2 or n.endswith("bias") else decay).append(p)
-    groups = [{"params": decay, "weight_decay": wd}, {"params": no_decay, "weight_decay": 0.0}]
-    return torch.optim.AdamW(groups, lr=lr, betas=(0.9, 0.95))
+    return build_optimizer(model, lr=lr, weight_decay=wd)
 
 
 def save_ckpt(path: Path, model, optimizer, cfg, step: int, tok_meta: dict):
@@ -117,10 +112,10 @@ def save_ckpt(path: Path, model, optimizer, cfg, step: int, tok_meta: dict):
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--policy", required=True)
+    ap.add_argument("--policy", default=None)
     ap.add_argument("--ref", default=None, help="reference checkpoint (default: same as policy)")
-    ap.add_argument("--pairs", required=True)
-    ap.add_argument("--out-dir", required=True)
+    ap.add_argument("--pairs", default=None)
+    ap.add_argument("--out-dir", default=None)
     ap.add_argument("--tokenizer", default="data/tokenizer/v3_32k")
     ap.add_argument("--steps", type=int, default=150)
     ap.add_argument("--batch-size", type=int, default=4)
@@ -140,6 +135,9 @@ def main() -> int:
 
     if args.self_test:
         return self_test()
+
+    if not args.policy or not args.pairs or not args.out_dir:
+        ap.error("--policy, --pairs, and --out-dir are required unless --self-test is set")
 
     torch.manual_seed(args.seed)
     random.seed(args.seed)
@@ -242,7 +240,7 @@ def self_test() -> int:
     lp.mean().backward()
     assert any(p.grad is not None for p in model.parameters())
     opt = make_optimizer(model, 1e-4, 0.0)
-    assert len(opt.param_groups) == 2
+    assert len(opt.param_groups) >= 2
     lp2 = response_logps(model, x, mask, "cpu", needs_grad=False)
     assert lp2.shape == (2,) and torch.isfinite(lp2).all()
     print("[dpo] self-test OK")

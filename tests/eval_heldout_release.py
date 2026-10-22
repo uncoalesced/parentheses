@@ -30,6 +30,7 @@ CHECKPOINTS = {
     "sft_v12": "checkpoints/parentheses-0.9-120M-sft-v12/step_9835_final.pt",
     "sft_real_v1": "checkpoints/parentheses-0.9-120M-sft-real-v1/step_12035_final.pt",
     "sft_v4": "checkpoints/parentheses-0.9-120M-sft-v4/step_10036_final.pt",
+    "dpo_v1": "checkpoints/parentheses-0.9-120M-dpo-v1/step_0200_final.pt",
 }
 KB_FILES = [ROOT / "out/distill_v2/parsed/facts.jsonl", ROOT / "out/distill_v2/parsed/prose.jsonl"]
 SPEC_DIR = ROOT / "out/distill_v2/specs"
