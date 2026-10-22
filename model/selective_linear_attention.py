@@ -322,7 +322,14 @@ class SelectiveLinearAttention(nn.Module):
         # where() before exp: masked (j >= c) entries are -inf -> exactly 0 with zero grad,
         # never exp(+large) * 0 = nan in backward
         W = torch.exp(torch.where(valid, expo, torch.full_like(expo, float("-inf"))))
-        S_in = torch.einsum("bhcj,bhjde->bhcde", W.to(dS.dtype), dS)
+        # CRITICAL FIX: Upcast decay weights and chunk state increments to FP32 (or FP64 for parity tests).
+        # In BF16, 7-8 mantissa bits truncate small exponential weights (e^-10 to e^-30)
+        # across 64 chunks, zeroing out early historical context.
+        acc_dtype = torch.float64 if x.dtype == torch.float64 else torch.float32
+        W_acc = W.to(acc_dtype)
+        dS_acc = dS.to(acc_dtype)
+        S_in_acc = torch.einsum("bhcj,bhjde->bhcde", W_acc, dS_acc)
+        S_in = S_in_acc.to(q_c.dtype)
         o_inter = torch.matmul(q_c, S_in) * torch.exp(Lambda_c).unsqueeze(-1)
         if can_see is not None:
             o_inter = o_inter * can_see.to(o_inter.dtype)

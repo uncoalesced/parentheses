@@ -94,6 +94,12 @@ PRESETS = {
     "parentheses-0.9-120M": ModelConfig(vocab_size=32768, block_size=4096, n_layer=32, n_head=8, n_embd=512,
                                         attn_type="selective_linear"),
 
+    # Re-engineered aspect ratio: 16 layers, 768 dim, 12 heads (rank 768 per layer, +50%).
+    # Halves recurrent depth (32->16) and enforces slab_v2 (k=4 conv, L2 norm, head-wise RMSNorm, SiLU gate).
+    "parentheses-0.9-130M-v2": ModelConfig(vocab_size=32768, block_size=4096, n_layer=16, n_head=12, n_embd=768,
+                                           attn_type="selective_linear", slab_v2=True, tie_embeddings=True,
+                                           bias=False, dropout=0.0),
+
     # Long-term / Plan Two territory -- kept for reference, not a near-term
     # target on the RTX 5050 laptop. See docs/training-time-estimate.md.
     "parentheses-0.9-50m": ModelConfig(vocab_size=32000, block_size=1024, n_layer=8, n_head=8, n_embd=512, tie_embeddings=False),
