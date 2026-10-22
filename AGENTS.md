@@ -14,41 +14,38 @@ source of truth: edit this file, not copies.
 >   - **Inference / Decoding (Recurrent Form):** Constant $O(1)$ recurrent memory state updates: $S_t = \alpha_t S_{t-1} + (k_t \otimes v_t)$ and $y_t = q_t S_t$. Fixed state size, zero growing KV-cache, zero sequence Softmax.
 > Any agent proposing optimizations, exports (ONNX/Vitis AI/DirectML), quantization, evals, NPU offloads, or multimodal integrations **MUST** strictly operate under this linear-recurrent/SSM paradigm, not Transformers.
 
-Parentheses 0.9: a from-scratch recurrent LM (selective linear attention, RWKV/Mamba-2 family) trained
-on one RTX 5050 Laptop (8 GB) for Dravidian languages + English. Owner: Joel ("uncoalesced").
+Parentheses 0.9 (Project Tanzinite): a from-scratch recurrent LM (selective linear attention, RWKV/Mamba-2 family) trained
+on one RTX 5050 Laptop (8 GB) for Dravidian languages + English. Engineered by uncoalesced.
 
 **Read before any non-trivial change:**
 1. this file;
 2. the **last entry** of `.agents/documentation.md` (session journal; the newest state);
-3. `.agents/CLAUDE.md` (map of where things are) and `.agents/ARCHITECTURE.md` /
-   `.agents/CODING_STANDARDS.md` for depth;
-4. your brief or handoff, if you were given one. Handoffs live in the Heafod vault's
+3. `.agents/ARCHITECTURE.md` (comprehensive model topology, slab_v3, FP32 scan, and gradient invariants);
+4. `.agents/TOOLING.md` (validation suites, segregated optimizer, and RTX 5050 hardware envelope);
+5. your brief or handoff, if you were given one. Handoffs live in the Heafod vault's
    `Parentheses\parentheses-0.9-handoffs\` (see Vault Handoff below); older briefs are in `.agents/open/`. Open work lives there; finished briefs
    move to `.agents/done/`.
 
-**README.md's "Status" section is stale (2026-09-18).** When it disagrees with the newest
-documentation.md entry, the journal wins.
-
-## Current state (2026-10-13)
-- **Main line: Parentheses 0.9-120M** (preset `parentheses-0.9-120M`).
-  - 119,702,272 params: d512, 32 layers, 8 heads x 64, vocab 32,768, tied embeddings, T=4096.
-  - The state_dict holds 136.5M floats because the tied matrix is stored twice.
-  - Grown from the 41M by `scripts/grow_model.py`.
-  - Trained in 5 step-gated sessions of 1,908 steps on `data/processed_v5`. LR 1e-4 constant; decay from step 7632; session 5 mixes the SFT tail.
-- **Sessions:**
-  - Session 2 ended at `checkpoints/parentheses-0.9-120M/step_3815_final.pt`.
-  - Session 3 (3816→5723) is launched by `out/launch_120M_session3.ps1` (armed for 2026-10-14 00:00); post chain `out/session3_post_chain.ps1`.
-  - Per-session gates live in the Heafod vault's `Parentheses\Gates\session<N>.md` (not in the repo).
-- **Previous release candidate:** `checkpoints/parentheses-0.9-41M/step_8082_final.pt` (40.9M, 1.06B tokens of v3).
-- **Distillation lives on F:** (script in F:\Lingual_Data\scripts, work dir `F:\Lingual_Data\distillation`, README there).
-  - Hosted teachers on NVIDIA NIM.
-  - Every row is verified (MBPP asserts / GSM8K gold, refusal filter), judged by Antigravity, and audited by Claude.
-  - **All rows are research-only** under the NVIDIA API trial terms. Gates: vault `Parentheses\Gates\distill.md`.
-- **Disk:** `DATA_LEDGER.md` accounts for every top-level folder on E:\Parentheses and F:\Lingual_Data, with a KEEP / DELETE / ASK category for each (2026-10-13 cleanup).
-- **Goals that shape all future data:**
-  - honesty: never fabricate, say "I don't know", never refuse; brief in the vault `Briefs/BRIEF_HONESTY_NO_FABRICATION.md`;
-  - uncensored: no refusal or moralising text in training rows.
-- **Newest handoff:** the Heafod vault's `parentheses-0.9-handoffs/`, indexed by the vault's `HANDOFF.md`.
+## Current state (2026-10-22)
+- **Active Pre-Training Target: Parentheses 0.9-130M-v3 (`slab_v3` / Project Tanzinite)**:
+  - 148.38M params: 16 layers, 12 heads x 64, d_model=768 (recurrent rank 768 per layer), vocab 32,768, tied embeddings, block_size 4096.
+  - Re-engineered wide-and-shallow topology resolving the deep-and-narrow 32-layer collapse of the 120M run.
+  - **FP32 Recurrence Fix:** Inter-chunk scan strictly upcasts decay accumulation to single precision, preventing BF16 mantissa truncation across 64+ chunks.
+  - **slab_v3 Mechanics:** Token-Shift (mu-mix), beta-gated selective write strength, and Layer-0 V0 value residual highway (compresses Layer 0 to 15 gradient slope ratio to 16.3x).
+  - Validated on RTX 5050: forward/backward loss 10.54, post-step peak VRAM 2.30 GB (leaves 5.70 GB free). Details in `tests/validate_130m_v3.py`.
+- **Historical Milestone Checkpoints:**
+  - `parentheses-0.9-41M`: `checkpoints/parentheses-0.9-41M/step_8082_final.pt` (40.9M, 1.06B tokens of Corpus v3).
+  - `parentheses-0.9-120M`: Base `step_9536_final.pt` (1.25B pretraining tokens) and SFT Real-v1 `step_12035_final.pt` (92.37M tokens, zero regex cheating, 0.0% refusal rate).
+- **Universal Segregated Optimizer:** `train.py` partitions parameters into `recurrent_decay` (0.0 weight decay, 0.1x LR), `matrix_weights` (0.1 weight decay, 1.0x LR), and `biases_and_norms` (0.0 weight decay, 1.0x LR) with auto-detected CUDA `fused=True`.
+- **Distillation & Multimodal Pipelines on F: and I:**:
+  - Streaming conversational intelligence on `F:\Lingual_Data\distillation\conversational_intelligence` (> 3.9M tokens distilled, 0.0% refusal rate).
+  - Expansion volume `I:\parentheses` (428 GB free) armed for large-scale multimodal audio and 240M pretraining mixes.
+- **Reference Documentation:**
+  - Architecture: refer [`.agents/ARCHITECTURE.md`](file:///E:/Parentheses/parentheses-0.9/.agents/ARCHITECTURE.md).
+  - Tooling & Verification: refer [`.agents/TOOLING.md`](file:///E:/Parentheses/parentheses-0.9/.agents/TOOLING.md).
+  - Session Work Journal: refer [`.agents/documentation.md`](file:///E:/Parentheses/parentheses-0.9/.agents/documentation.md).
+  - Cross-Vault Status Handoff: refer [`c:\Users\Joel Anthony\Documents\Phile\Heafod\Heafod\Parentheses\HANDOFF.md`](file:///c:/Users/Joel%20Anthony/Documents/Phile/Heafod/Heafod/Parentheses/HANDOFF.md).
+  - Lingual Data Live Journal: refer [`F:\Lingual_Data\Agents-Brain\journal.md`](file:///F:/Lingual_Data/Agents-Brain/journal.md).
 
 ## Commands
 - Torch Python: `.venv\Scripts\python.exe` (torch dev cu128, tokenizers, onnxruntime-directml).

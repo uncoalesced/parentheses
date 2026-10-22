@@ -99,7 +99,7 @@ class SelectiveLinearAttention(nn.Module):
                 self.beta_proj.weight.zero_()
                 self.beta_proj.bias.zero_()
             if self.layer_idx > 0:
-                self.v_residual_lamb = nn.Parameter(torch.full((1, self.n_head, 1, 1), 2.0))
+                self.v_residual_lamb = nn.Parameter(torch.full((1, self.n_head, 1, 1), 0.0))
         if self.slab_v2:
             self.conv_k = 4
             self.conv_w = nn.Parameter(torch.zeros(3 * cfg.n_embd, self.conv_k))

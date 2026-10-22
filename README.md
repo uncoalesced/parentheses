@@ -110,6 +110,7 @@ python release/parentheses-0.9-120M-candidate/app.py
 - **Conversational Intelligence Scaling:** Generating and tokenizing high-fidelity conversational dialogue and pragmatic turn-taking datasets (including Karya conversational data and synthetic distillation) towards a 1B+ token conversational backbone.
 - **DPO & Honesty Alignment:** Tuning abstention calibrations so the model cleanly states what it does not know rather than fabricating facts.
 - **Preparing Public Release:** Packaging standalone Hugging Face candidates with `AutoModelForCausalLM` remote-code support, GGUF/NPU export exploration, and open weights.
+- **Technical Documentation:** For comprehensive architectural specifications, refer to [`.agents/ARCHITECTURE.md`](.agents/ARCHITECTURE.md). For training tooling, segregated AdamW optimizer, and hardware profiles, refer to [`.agents/TOOLING.md`](.agents/TOOLING.md). For chronological engineering logs, refer to [`.agents/documentation.md`](.agents/documentation.md).
 
 ---
 
