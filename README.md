@@ -76,7 +76,8 @@ Implemented in `features/multimodal.py`, the engine processes visual inputs and 
 | :--- | :---: | :---: | :---: | :--- | :--- |
 | **`parentheses-0.9-41M`** | 40.9M | 4,096 | ~2.3 MB | Trained (1.06B tokens) | Architecture & tokenizer validation |
 | **`parentheses-0.9-120M`** | 119.7M | 4,096 | ~4.2 MB | Baseline (32L/512D) | Baseline deep-narrow configuration |
-| **`parentheses-0.9-130M-v2`** | **148.2M** | **4,096** | **~1.57 MB** | **Validated & Ready** | **Re-Engineered Wide (16L/768D/12H, rank 768, slab_v2)** |
+| **`parentheses-0.9-130M-v2`** | 148.2M | 4,096 | ~1.57 MB | Validated Baseline | Wide (16L/768D/12H, rank 768, slab_v2) |
+| **`parentheses-0.9-130M-v3`** | **148.4M** | **4,096** | **~1.60 MB** | **Validated & Ready** | **slab_v3: Token-Shift, Beta Write Gate, V0 Residual Highway** |
 | **`parentheses-1.0-240M`** | ~240M | 8,192 | ~8.4 MB | **Coming Soon** | Full conversational scale, audio/speech grounding |
 
 ---

@@ -197,8 +197,8 @@ def build_differential_adamw(
     bias_norm_params = []
 
     decay_lr = lr * recurrent_lr_ratio
-    recurrent_keywords = ("alpha", "delta", "decay")
-    no_decay_keywords = ("bias", "ln", "norm", "conv", "y_norm", "head_norm")
+    recurrent_keywords = ("alpha", "delta", "decay", "beta", "v_residual")
+    no_decay_keywords = ("bias", "ln", "norm", "conv", "y_norm", "head_norm", "mu", "token_shift")
 
     for name, p in model.named_parameters():
         if not p.requires_grad:

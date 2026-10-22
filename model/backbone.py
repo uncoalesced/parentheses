@@ -114,13 +114,14 @@ class SwiGLU(nn.Module):
 
 
 class Block(nn.Module):
-    def __init__(self, cfg: ModelConfig):
+    def __init__(self, cfg: ModelConfig, layer_idx: int = 0):
         super().__init__()
+        self.layer_idx = layer_idx
         self.ln1 = RMSNorm(cfg.n_embd)
         if cfg.attn_type == "causal":
             self.attn = CausalSelfAttention(cfg)
         elif cfg.attn_type == "selective_linear":
-            self.attn = SelectiveLinearAttention(cfg)
+            self.attn = SelectiveLinearAttention(cfg, layer_idx=layer_idx)
         else:
             raise ValueError(
                 f"unknown attn_type {cfg.attn_type!r} -- expected 'causal' or 'selective_linear'")
@@ -132,38 +133,44 @@ class Block(nn.Module):
         return isinstance(self.attn, SelectiveLinearAttention)
 
     def forward(self, x: torch.Tensor, cache: list | None = None,
-                reset_mask: torch.Tensor | None = None) -> torch.Tensor:
+                reset_mask: torch.Tensor | None = None,
+                v0: torch.Tensor | None = None):
         if self.is_selective:
-            # No KV cache exists for this path -- its incremental form is
-            # step()/Parentheses.step(), carrying a fixed-size matrix state.
-            # Silently ignoring a cache would let stream()/generate() run and
-            # return plausible-looking garbage with no state carried at all.
             assert cache is None, "selective_linear attention has no KV cache -- use Parentheses.step()"
-            x = x + self.attn(self.ln1(x), reset_mask=reset_mask)
+            if getattr(self.attn, "slab_v3", False):
+                attn_out, v0_out = self.attn(self.ln1(x), reset_mask=reset_mask, v0=v0)
+            else:
+                attn_out = self.attn(self.ln1(x), reset_mask=reset_mask)
+                v0_out = None
+            x = x + attn_out
         else:
-            # Same "loud on the wrong path" rule as the cache assert above:
-            # CausalSelfAttention has no recurrent state to reset, so a
-            # reset_mask reaching here would be silently dropped and a
-            # document-packed run would train with cross-document leakage
-            # while looking like it was isolating boundaries.
             assert reset_mask is None, (
                 "reset_mask is selective_linear-only -- causal attention carries no "
                 "recurrent state across a document boundary; use a --preset with "
                 "attn_type='selective_linear'")
             x = x + self.attn(self.ln1(x), cache)
+            v0_out = None
         x = x + self.mlp(self.ln2(x))
+        if getattr(self.attn, "slab_v3", False):
+            return x, v0_out
         return x
 
-    def step(self, x: torch.Tensor, state):
-        """One token through the block, recurrent form. x: (B, C) -> ((B, C), new_state)."""
+    def step(self, x: torch.Tensor, state, v0=None):
+        """One token through the block, recurrent form."""
         if not self.is_selective:
             raise RuntimeError(
                 "Block.step() requires attn_type='selective_linear'; this block uses causal "
                 "attention, whose incremental path is forward(x, cache) with empty_cache().")
-        attn_out, new_state = self.attn.step(self.ln1(x), state)
-        x = x + attn_out
-        x = x + self.mlp(self.ln2(x))
-        return x, new_state
+        if getattr(self.attn, "slab_v3", False):
+            attn_out, new_state, v0_out = self.attn.step(self.ln1(x), state, v0=v0)
+            x = x + attn_out
+            x = x + self.mlp(self.ln2(x))
+            return (x, new_state), v0_out
+        else:
+            attn_out, new_state = self.attn.step(self.ln1(x), state)
+            x = x + attn_out
+            x = x + self.mlp(self.ln2(x))
+            return x, new_state
 
     def compile_projections(self, backend: str = "inductor", mode: str | None = None):
         """Opt-in compilation of attention projection/output paths."""
@@ -177,7 +184,7 @@ class Parentheses(nn.Module):
         self.cfg = cfg
         self.tok_emb = nn.Embedding(cfg.vocab_size, cfg.n_embd)
         self.drop = nn.Dropout(cfg.dropout)
-        self.blocks = nn.ModuleList([Block(cfg) for _ in range(cfg.n_layer)])
+        self.blocks = nn.ModuleList([Block(cfg, layer_idx=i) for i in range(cfg.n_layer)])
         self.ln_f = RMSNorm(cfg.n_embd)
         self.head = nn.Linear(cfg.n_embd, cfg.vocab_size, bias=False)
         self.apply(self._init_weights)
@@ -242,11 +249,7 @@ class Parentheses(nn.Module):
                 f"attention -- use empty_cache() / forward(idx, cache=...) instead.")
 
     def step(self, idx: torch.Tensor, states: list | None = None):
-        """One token per sequence through the recurrent path. selective_linear only.
-
-        idx: (B,) or (B, 1) token ids. states: the list from empty_states(), or
-        None for a fresh (zero) state. Returns (logits (B, vocab_size), states).
-        """
+        """One token per sequence through the recurrent path. selective_linear only."""
         self._require_selective("step()")
         if idx.dim() == 2:
             assert idx.size(1) == 1, f"step() takes one token per sequence, got {tuple(idx.shape)}"
@@ -255,29 +258,32 @@ class Parentheses(nn.Module):
             states = [None] * len(self.blocks)
         x = self.drop(self.tok_emb(idx))  # (B, C)
         new_states = []
+        v0 = None
         for block, state in zip(self.blocks, states):
-            x, state = block.step(x, state)
+            if getattr(self.cfg, "slab_v3", False):
+                (x, state), v0 = block.step(x, state, v0=v0)
+            else:
+                x, state = block.step(x, state)
             new_states.append(state)
         return self.head(self.ln_f(x)), new_states
 
     def hidden(self, idx: torch.Tensor, cache: list | None = None,
                reset_mask: torch.Tensor | None = None) -> torch.Tensor:
-        """Final-layer hidden states (B, T, n_embd), post-ln_f, pre-LM-head.
-
-        Split out of forward() so model/embedding_head.py can mean-pool these
-        without re-implementing the block walk or paying for a vocab-sized
-        projection it would only throw away. forward() calls it, so there is
-        still exactly one definition of the stack.
-        """
+        """Final-layer hidden states (B, T, n_embd), post-ln_f, pre-LM-head."""
         x = self.drop(self.tok_emb(idx))
-        # Activation checkpointing (train.py --grad-checkpointing): keep only each block's input,
-        # recompute the rest in backward. 120M at T=4096 OOMs at batch 1 on 8 GB without it.
         ckpt = getattr(self, "grad_checkpointing", False) and cache is None and torch.is_grad_enabled()
+        v0 = None
         for i, block in enumerate(self.blocks):
-            if ckpt:
-                x = checkpoint(block, x, None, reset_mask, use_reentrant=False)
+            if getattr(self.cfg, "slab_v3", False):
+                if ckpt:
+                    x, v0 = checkpoint(block, x, None, reset_mask, v0, use_reentrant=False)
+                else:
+                    x, v0 = block(x, None if cache is None else cache[i], reset_mask, v0=v0)
             else:
-                x = block(x, None if cache is None else cache[i], reset_mask)
+                if ckpt:
+                    x = checkpoint(block, x, None, reset_mask, use_reentrant=False)
+                else:
+                    x = block(x, None if cache is None else cache[i], reset_mask)
         return self.ln_f(x)
 
     def forward(self, idx: torch.Tensor, targets: torch.Tensor | None = None,

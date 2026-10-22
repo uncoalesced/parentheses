@@ -41,38 +41,65 @@ def _up(t: torch.Tensor) -> torch.Tensor:
     return t.float() if t.element_size() < 4 else t
 
 
+class TokenShift(nn.Module):
+    """
+    O(1) Temporal Token-Shift (Time-Mix).
+    Blends x_t with x_{t-1} via learnable channel-wise interpolation so 
+    alpha_proj, beta_proj, and gate_proj have instant bi-gram transition awareness.
+    """
+    def __init__(self, n_embd: int):
+        super().__init__()
+        self.mu = nn.Parameter(torch.ones(1, 1, n_embd) * 0.5)
+
+    def forward(
+        self,
+        x: torch.Tensor,
+        shift_state: torch.Tensor | None = None,
+        reset_mask: torch.Tensor | None = None,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        B, T, D = x.shape
+        if T == 1 and shift_state is not None:
+            x_prev = shift_state.unsqueeze(1) if shift_state.dim() == 2 else shift_state
+            next_state = x.squeeze(1) if x.dim() == 3 else x
+        else:
+            pad = torch.zeros((B, 1, D), dtype=x.dtype, device=x.device) if shift_state is None else (
+                shift_state.unsqueeze(1) if shift_state.dim() == 2 else shift_state
+            )
+            x_prev = torch.cat([pad, x[:, :-1, :]], dim=1)
+            if reset_mask is not None:
+                rm = reset_mask.view(B, T, 1)
+                x_prev = x_prev * rm.to(x.dtype)
+            next_state = x[:, -1, :]
+
+        x_shifted = self.mu * x + (1.0 - self.mu) * x_prev
+        return x_shifted, next_state
+
+
 class SelectiveLinearAttention(nn.Module):
-    def __init__(self, cfg: ModelConfig):
+    def __init__(self, cfg: ModelConfig, layer_idx: int = 0):
         super().__init__()
         assert cfg.n_embd % cfg.n_head == 0
         self.n_head = cfg.n_head
         self.head_dim = cfg.n_embd // cfg.n_head
         self.scale = 1.0 / math.sqrt(self.head_dim)
+        self.layer_idx = layer_idx
         self.qkv = nn.Linear(cfg.n_embd, 3 * cfg.n_embd, bias=cfg.bias)
-        # H outputs only (one decay scalar per head) -- negligible param cost
-        # (n_embd * n_head + n_head, e.g. 72*4+4=292 at the -300k preset;
-        # ModelConfig.approx_params does not count these, see its docstring).
-        # bias=True on purpose, NOT cfg.bias -- the one deliberate exception to
-        # this project's "bias follows cfg.bias" convention. cfg.bias is False on
-        # every real preset, and with no bias the gate starts at
-        # softplus(0)=0.693 -> alpha~0.5, i.e. state half-gone every byte and
-        # essentially wiped every ~5 bytes. A fresh model would have to climb out
-        # of total amnesia before it could learn anything. See init_decay_bias().
         self.alpha_proj = nn.Linear(cfg.n_embd, cfg.n_head, bias=True)
         self.alpha_proj._preserve_bias = True  # Guard against backbone._init_weights zeroing log-spaced bias
         self.proj = nn.Linear(cfg.n_embd, cfg.n_embd, bias=cfg.bias)
-        # ponytail: no dropout on attention weights here (every real preset
-        # trains with cfg.dropout=0.0 anyway) -- add if a preset ever sets
-        # dropout > 0 and this block is actually in use.
         self._causal_bias_cache: torch.Tensor | None = None
-        # slab_v2 (GLA / Mamba-2 / GatedDeltaNet practice). Created only when on, so
-        # a slab_v2=False model has exactly the old state_dict.
-        #  - depthwise causal conv k=4 on q/k/v (+silu): cheap local mixing, and it is
-        #    reset-masked so packed documents still never see each other;
-        #  - L2-normalized q/k: bounded scores, no per-head scale drift;
-        #  - per-head RMSNorm on y, then y * silu(W_g x): y sums ~1/(1-alpha) terms
-        #    and is otherwise unbounded at long horizons.
         self.slab_v2 = getattr(cfg, "slab_v2", False)
+        self.slab_v3 = getattr(cfg, "slab_v3", False)
+        if self.slab_v3:
+            self.slab_v2 = True  # slab_v3 inherits slab_v2 foundations
+            self.token_shift = TokenShift(cfg.n_embd)
+            self.beta_proj = nn.Linear(cfg.n_embd, cfg.n_head, bias=True)
+            self.beta_proj._preserve_bias = True
+            with torch.no_grad():
+                self.beta_proj.weight.zero_()
+                self.beta_proj.bias.zero_()
+            if self.layer_idx > 0:
+                self.v_residual_lamb = nn.Parameter(torch.full((1, self.n_head, 1, 1), 2.0))
         if self.slab_v2:
             self.conv_k = 4
             self.conv_w = nn.Parameter(torch.zeros(3 * cfg.n_embd, self.conv_k))
@@ -147,13 +174,19 @@ class SelectiveLinearAttention(nn.Module):
 
     def empty_state(self, batch_size: int, device=None, dtype=None):
         """Zero initial state: (B, H, head_dim, head_dim), one matrix per head.
-        slab_v2: (that matrix, conv history (B, 3C, k-1))."""
+        slab_v2: (matrix, conv history (B, 3C, k-1)).
+        slab_v3: (matrix, conv history, token_shift state (B, C))."""
         S = torch.zeros(batch_size, self.n_head, self.head_dim, self.head_dim,
                         device=device, dtype=dtype)
         if not self.slab_v2:
             return S
-        return S, torch.zeros(batch_size, 3 * self.n_head * self.head_dim, self.conv_k - 1,
-                              device=device, dtype=dtype)
+        conv_hist = torch.zeros(batch_size, 3 * self.n_head * self.head_dim, self.conv_k - 1,
+                                device=device, dtype=dtype)
+        if not self.slab_v3:
+            return S, conv_hist
+        shift_state = torch.zeros(batch_size, self.n_head * self.head_dim,
+                                  device=device, dtype=dtype)
+        return S, conv_hist, shift_state
 
     def _conv(self, u: torch.Tensor, reset_mask: torch.Tensor | None) -> torch.Tensor:
         """Causal depthwise conv over time, u: (B, T, 3C). A tap reaching back
@@ -192,10 +225,15 @@ class SelectiveLinearAttention(nn.Module):
         reset_mask._slab_taps = (reset_mask._version, taps)
         return taps
 
-    def _project(self, x: torch.Tensor, reset_mask: torch.Tensor | None = None):
-        """q, k, v (B, H, T, Dh) and log_alpha (B, T, H) for the whole sequence."""
+    def _project(self, x: torch.Tensor, reset_mask: torch.Tensor | None = None, v0: torch.Tensor | None = None):
+        """q, k, v (B, H, T, Dh), log_alpha (B, T, H), v0_out, and x_ctrl for the whole sequence."""
         B, T, C = x.shape
         H, Dh = self.n_head, self.head_dim
+        if self.slab_v3:
+            x_ctrl, _ = self.token_shift(x, reset_mask=reset_mask)
+        else:
+            x_ctrl = x
+
         u = self.qkv(x)
         if self.slab_v2:
             u = self._conv(u, reset_mask)
@@ -203,7 +241,16 @@ class SelectiveLinearAttention(nn.Module):
         q, k, v = qkv[0], qkv[1], qkv[2]
         if self.slab_v2:   # norms in >= fp32, result back in the activation dtype
             q, k = F.normalize(_up(q), dim=-1).to(q.dtype), F.normalize(_up(k), dim=-1).to(k.dtype)
-        return q, k, v, -F.softplus(self.alpha_proj(x))
+
+        v0_out = v if self.layer_idx == 0 else v0
+        if self.slab_v3:
+            if self.layer_idx > 0 and v0 is not None:
+                mix = torch.sigmoid(self.v_residual_lamb).to(v.dtype)
+                v = mix * v + (1.0 - mix) * v0
+            beta = 2.0 * torch.sigmoid(self.beta_proj(x_ctrl)).transpose(1, 2).unsqueeze(-1)
+            v = v * beta.to(v.dtype)
+
+        return q, k, v, -F.softplus(self.alpha_proj(x_ctrl)), v0_out, x_ctrl
 
     def _output(self, y: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
         """y: (B, H, T, Dh) or (B, H, Dh) step form; x: the block input (B, T, C) / (B, C)."""
@@ -225,10 +272,10 @@ class SelectiveLinearAttention(nn.Module):
         self._project = torch.compile(self._project, **kwargs)
         self._output = torch.compile(self._output, **kwargs)
 
-    def _forward_dense(self, x: torch.Tensor, reset_mask: torch.Tensor | None = None) -> torch.Tensor:
+    def _forward_dense(self, x: torch.Tensor, reset_mask: torch.Tensor | None = None, v0: torch.Tensor | None = None):
         """Dense quadratic dual/parallel form O(T^2). Fallback for arbitrary/short sequence lengths."""
         B, T, C = x.shape
-        q, k, v, log_alpha = self._project(x, reset_mask)  # q/k/v (B, H, T, Dh); log_alpha (B, T, H) <= 0
+        q, k, v, log_alpha, v0_out, x_ctrl = self._project(x, reset_mask, v0=v0)
         Lambda = torch.cumsum(log_alpha, dim=1).transpose(1, 2)  # (B, H, T)
         log_M = Lambda.unsqueeze(-1) - Lambda.unsqueeze(-2)   # (B,H,T,T): [i,j] = Lam_i - Lam_j
         log_M = torch.clamp(log_M, min=-30.0)
@@ -243,15 +290,12 @@ class SelectiveLinearAttention(nn.Module):
 
         scores = torch.matmul(q * self.scale, k.transpose(-2, -1))  # (B,H,T,T)
         y = torch.matmul(scores * M, v)  # (B, H, T, Dh)
-        return self._output(y, x)
+        out = self._output(y, x_ctrl if self.slab_v3 else x)
+        return (out, v0_out) if self.slab_v3 else out
 
-    def forward(self, x: torch.Tensor, reset_mask: torch.Tensor | None = None) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, reset_mask: torch.Tensor | None = None, v0: torch.Tensor | None = None):
         """Dual/parallel form with chunked linear attention (C=64) per
         FORMAL_MATHEMATICAL_SPECIFICATION.md Section 10.
-
-        Closes the 34% training throughput gap against causal self-attention
-        while strictly preserving machine-precision FP64 parity (< 1e-9) and
-        zero document boundary leakage.
 
         reset_mask: optional (B, T) or (B, 1, T) tensor in {0, 1} where 0 indicates
         the start of a packed document boundary, resetting state to prevent
@@ -265,12 +309,12 @@ class SelectiveLinearAttention(nn.Module):
 
         # Fallback to dense if sequence length is not a positive multiple of chunk_size
         if T % chunk_size != 0 or T < chunk_size:
-            return self._forward_dense(x, reset_mask)
+            return self._forward_dense(x, reset_mask, v0=v0)
 
         H, Dh = self.n_head, self.head_dim
         n_chunks = T // chunk_size
 
-        q, k, v, log_alpha = self._project(x, reset_mask)  # each (B, H, T, Dh)
+        q, k, v, log_alpha, v0_out, x_ctrl = self._project(x, reset_mask, v0=v0)
         log_alpha = log_alpha.transpose(1, 2)  # (B, H, T)
 
         q_c = q.view(B, H, n_chunks, chunk_size, Dh)
@@ -335,27 +379,39 @@ class SelectiveLinearAttention(nn.Module):
         if can_see is not None:
             o_inter = o_inter * can_see.to(o_inter.dtype)
         o_all = (o_intra + o_inter).reshape(B, H, T, Dh)
-        return self._output(o_all, x)
+        out = self._output(o_all, x_ctrl if self.slab_v3 else x)
+        return (out, v0_out) if self.slab_v3 else out
 
-    def step(self, x: torch.Tensor, state: torch.Tensor | None, reset: torch.Tensor | None = None):
+    def step(self, x: torch.Tensor, state: torch.Tensor | None, reset: torch.Tensor | None = None, v0: torch.Tensor | None = None):
         """Recurrent form. x: (B, C) single-token input at this layer.
-
-        state: (B, H, head_dim, head_dim) from the previous step, or None for t=0
-        (zero state).
-        reset: optional (B,) tensor in {0, 1} where 0 clears memory state (document boundary).
-        Returns (y, new_state); y is (B, C).
-        """
+        Returns (y, new_state, v0_out) if slab_v3 else (y, new_state)."""
         B, C = x.shape
         H, Dh = self.n_head, self.head_dim
         if state is None:
             state = self.empty_state(B, device=x.device, dtype=x.dtype)
         elif reset is not None:
             r = reset.view(B, 1, 1).to(x.dtype)
-            state = (state[0] * r.unsqueeze(-1), state[1] * r) if self.slab_v2 else state * r.unsqueeze(-1)
+            r_1d = reset.view(B, 1).to(x.dtype)
+            if self.slab_v3:
+                state = (state[0] * r.unsqueeze(-1), state[1] * r, state[2] * r_1d)
+            elif self.slab_v2:
+                state = (state[0] * r.unsqueeze(-1), state[1] * r)
+            else:
+                state = state * r.unsqueeze(-1)
+
+        shift_st = None
+        if self.slab_v3:
+            state, hist, shift_st = state
+            x_ctrl, next_shift = self.token_shift(x.unsqueeze(1), shift_st, reset_mask=reset)
+            x_ctrl = x_ctrl.squeeze(1)
+        elif self.slab_v2:
+            state, hist = state
+            x_ctrl = x
+        else:
+            x_ctrl = x
 
         u = self.qkv(x)
         if self.slab_v2:
-            state, hist = state
             window = torch.cat([hist, u.unsqueeze(-1)], dim=-1)          # (B, 3C, k)
             u = F.silu((window * self.conv_w).sum(-1) + self.conv_b)
             hist = window[:, :, 1:]
@@ -364,14 +420,31 @@ class SelectiveLinearAttention(nn.Module):
         if self.slab_v2:
             q, k = F.normalize(q, dim=-1), F.normalize(k, dim=-1)
 
-        log_alpha = -F.softplus(self.alpha_proj(x))  # (B, H)
+        v0_out = v if self.layer_idx == 0 else v0
+        if self.slab_v3:
+            if self.layer_idx > 0 and v0 is not None:
+                mix = torch.sigmoid(self.v_residual_lamb).to(v.dtype).squeeze(-1)  # (1, H, 1) to broadcast with (B, H, Dh)
+                v = mix * v + (1.0 - mix) * v0
+            beta = 2.0 * torch.sigmoid(self.beta_proj(x_ctrl))  # (B, H)
+            v = v * beta.unsqueeze(-1)
+
+        log_alpha = -F.softplus(self.alpha_proj(x_ctrl))  # (B, H)
         alpha = torch.exp(log_alpha)
 
         kv_outer = torch.einsum("bhd,bhe->bhde", k, v) * self.scale  # (B,H,Dh,Dh)
         new_state = alpha.unsqueeze(-1).unsqueeze(-1) * state + kv_outer
         y = torch.einsum("bhd,bhde->bhe", q, new_state)
-        out = self._output(y, x)
-        return out, ((new_state, hist) if self.slab_v2 else new_state)
+        out = self._output(y, x_ctrl if self.slab_v3 else x)
+
+        if self.slab_v3:
+            ret_state = (new_state, hist, next_shift)
+            return out, ret_state, v0_out
+        elif self.slab_v2:
+            ret_state = (new_state, hist)
+            return out, ret_state
+        else:
+            ret_state = new_state
+            return out, ret_state
 
 
 class CausalDepthwiseConv1d(nn.Module):
