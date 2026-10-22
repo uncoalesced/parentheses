@@ -14,6 +14,7 @@ optional 8-bit optimizer.
 """
 
 import argparse
+import inspect
 import os
 import time
 
@@ -189,20 +190,23 @@ def build_differential_adamw(
     Partition parameters into:
     1. recurrent_decay (alpha, delta, decay): lr = lr * recurrent_lr_ratio, weight_decay = 0.0
     2. matrix_weights (2D+ matrices: projections, embeddings, MLP): lr = lr, weight_decay = weight_decay
-    3. biases_and_norms (1D biases, LayerNorm / RMSNorm weights): lr = lr, weight_decay = 0.0
+    3. biases_and_norms (1D biases, LayerNorm / RMSNorm weights, conv filters, y_norm): lr = lr, weight_decay = 0.0
     """
     decay_params = []
     matrix_params = []
     bias_norm_params = []
 
     decay_lr = lr * recurrent_lr_ratio
+    recurrent_keywords = ("alpha", "delta", "decay")
+    no_decay_keywords = ("bias", "ln", "norm", "conv", "y_norm", "head_norm")
 
     for name, p in model.named_parameters():
         if not p.requires_grad:
             continue
-        if any(term in name.lower() for term in ("alpha", "delta", "decay")):
+        name_lower = name.lower()
+        if any(term in name_lower for term in recurrent_keywords):
             decay_params.append(p)
-        elif p.ndim < 2:
+        elif p.ndim < 2 or any(k in name_lower for k in no_decay_keywords):
             bias_norm_params.append(p)
         else:
             matrix_params.append(p)
@@ -218,10 +222,15 @@ def build_differential_adamw(
     if use_8bit:
         try:
             import bitsandbytes as bnb
-            return bnb.optim.AdamW8bit(groups, betas=betas, eps=eps)
+            return bnb.optim.AdamW8bit(groups, lr=lr, betas=betas, eps=eps)
         except ImportError:
             print("[warn] bitsandbytes not installed, falling back to torch.optim.AdamW")
-    return torch.optim.AdamW(groups, betas=betas, eps=eps)
+
+    use_fused = (
+        torch.cuda.is_available()
+        and "fused" in inspect.signature(torch.optim.AdamW).parameters
+    )
+    return torch.optim.AdamW(groups, lr=lr, betas=betas, eps=eps, fused=use_fused)
 
 
 def build_optimizer(
@@ -229,24 +238,18 @@ def build_optimizer(
     lr: float,
     weight_decay: float,
     use_8bit: bool = False,
-    differential: bool = False,
+    differential: bool = True,  # Universal default: parameters are always segregated
     recurrent_lr_ratio: float = 0.1,
 ):
-    if differential:
-        return build_differential_adamw(
-            model,
-            lr=lr,
-            weight_decay=weight_decay,
-            recurrent_lr_ratio=recurrent_lr_ratio,
-            use_8bit=use_8bit,
-        )
-    if use_8bit:
-        try:
-            import bitsandbytes as bnb
-            return bnb.optim.AdamW8bit(model.parameters(), lr=lr, weight_decay=weight_decay)
-        except ImportError:
-            print("[warn] bitsandbytes not installed, falling back to torch.optim.AdamW")
-    return torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay, betas=(0.9, 0.95))
+    # Parameter segregation is now universal to prevent weight decay from destroying
+    # recurrent decay horizons, causal conv filters, biases, and RMSNorm weights.
+    return build_differential_adamw(
+        model,
+        lr=lr,
+        weight_decay=weight_decay,
+        recurrent_lr_ratio=recurrent_lr_ratio,
+        use_8bit=use_8bit,
+    )
 
 
 def main():

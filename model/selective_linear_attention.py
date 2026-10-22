@@ -59,6 +59,7 @@ class SelectiveLinearAttention(nn.Module):
         # essentially wiped every ~5 bytes. A fresh model would have to climb out
         # of total amnesia before it could learn anything. See init_decay_bias().
         self.alpha_proj = nn.Linear(cfg.n_embd, cfg.n_head, bias=True)
+        self.alpha_proj._preserve_bias = True  # Guard against backbone._init_weights zeroing log-spaced bias
         self.proj = nn.Linear(cfg.n_embd, cfg.n_embd, bias=cfg.bias)
         # ponytail: no dropout on attention weights here (every real preset
         # trains with cfg.dropout=0.0 anyway) -- add if a preset ever sets

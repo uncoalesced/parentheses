@@ -9,6 +9,7 @@ Kept in a single file so it's easy to read end to end.
 """
 
 import itertools
+import math
 from dataclasses import replace
 
 import torch
@@ -186,6 +187,15 @@ class Parentheses(nn.Module):
         for m in self.modules():
             if isinstance(m, SelectiveLinearAttention):
                 m.init_decay_bias()
+        # Residual depth scaling (1 / sqrt(2 * n_layer)) on output projections
+        # Equalizes residual stream variance across layers to eliminate gradient slope
+        residual_std = 0.02 / math.sqrt(2 * cfg.n_layer)
+        for block in self.blocks:
+            if hasattr(block.attn, "proj"):
+                nn.init.normal_(block.attn.proj.weight, mean=0.0, std=residual_std)
+            if hasattr(block.mlp, "w2"):
+                nn.init.normal_(block.mlp.w2.weight, mean=0.0, std=residual_std)
+
         if cfg.tie_embeddings:
             # At sub-1M-param scale the input+output embedding tables can be
             # most of the whole budget (see ModelConfig.approx_params /
@@ -197,7 +207,7 @@ class Parentheses(nn.Module):
     def _init_weights(self, module: nn.Module):
         if isinstance(module, nn.Linear):
             nn.init.normal_(module.weight, mean=0.0, std=0.02)
-            if module.bias is not None:
+            if module.bias is not None and not getattr(module, "_preserve_bias", False):
                 nn.init.zeros_(module.bias)
         elif isinstance(module, nn.Embedding):
             nn.init.normal_(module.weight, mean=0.0, std=0.02)
