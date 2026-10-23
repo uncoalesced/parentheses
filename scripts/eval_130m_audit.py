@@ -133,15 +133,12 @@ def audit_checkpoint(ckpt_path: Path, eval_loss: bool = False, batches: int = 5,
             n_tokens = len(data)
             losses = []
 
-            # Deterministic evaluation slices
-            torch.manual_seed(42)
-            np.random.seed(42)
+            # Deterministic, evenly-spaced strided evaluation slices across all 4 pillars of val.bin
+            max_start = n_tokens - (seq_len + 1)
+            offsets = np.linspace(0, max_start, batches, dtype=int)
             with torch.no_grad():
-                for b in range(batches):
-                    # Sample random offset from val data
-                    max_start = n_tokens - (seq_len + 1)
-                    idx = int(np.random.randint(0, max_start))
-                    chunk = torch.from_numpy(data[idx : idx + seq_len + 1].astype(np.int64))
+                for idx in offsets:
+                    chunk = torch.from_numpy(data[int(idx) : int(idx) + seq_len + 1].astype(np.int64))
                     x = chunk[:-1].unsqueeze(0)  # [1, seq_len]
                     y = chunk[1:].unsqueeze(0)   # [1, seq_len]
 
