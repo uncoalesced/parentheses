@@ -456,9 +456,12 @@ def main():
             # load_state_dict restores the saved per-group lr too, which would
             # silently override --lr on every resume; keep momentum, take this run's lr.
             fresh_lrs = [g["lr"] for g in optimizer.param_groups]
-            optimizer.load_state_dict(ckpt["optimizer"])
-            for g, lr in zip(optimizer.param_groups, fresh_lrs):
-                g["lr"] = lr
+            try:
+                optimizer.load_state_dict(ckpt["optimizer"])
+                for g, lr in zip(optimizer.param_groups, fresh_lrs):
+                    g["lr"] = lr
+            except ValueError as e:
+                print(f"[warn] saved optimizer state has different parameter groups ({e}) -- initializing fresh segregated optimizer moments")
         else:
             print(f"[warn] {args.resume_from} has no saved optimizer state (older checkpoint "
                   f"format) -- resuming with a fresh optimizer, momentum is lost")
@@ -532,7 +535,23 @@ def main():
 
         if step % args.log_every == 0:
             dt = time.time() - t0
-            print(f"step {step:6d} | loss {loss_accum:.4f} | lr {args.lr * mult:.2e} | {dt:.1f}s elapsed")
+            extra_telemetry = ""
+            if getattr(cfg, "slab_v3", False) and (step % 250 == 0 or step == start_step):
+                with torch.no_grad():
+                    v_res_vals = [
+                        torch.sigmoid(b.attn.v_residual_lamb).mean().item()
+                        for b in model.blocks if hasattr(b.attn, "v_residual_lamb")
+                    ]
+                    beta_biases = [
+                        (2.0 * torch.sigmoid(b.attn.beta_proj.bias)).mean().item()
+                        for b in model.blocks
+                        if hasattr(b.attn, "beta_proj") and b.attn.beta_proj is not None and b.attn.beta_proj.bias is not None
+                    ]
+                    if v_res_vals and beta_biases:
+                        v0_mix = sum(v_res_vals) / len(v_res_vals)
+                        beta_mean = sum(beta_biases) / len(beta_biases)
+                        extra_telemetry = f" | v0_mix {v0_mix:.4f} | beta_write {beta_mean:.4f}"
+            print(f"step {step:6d} | loss {loss_accum:.4f} | lr {args.lr * mult:.2e}{extra_telemetry} | {dt:.1f}s elapsed")
 
         if step > 0 and step % args.ckpt_every == 0:
             path = os.path.join(args.out_dir, f"step_{step}.pt")

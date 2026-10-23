@@ -1,4 +1,4 @@
-"""
+﻿"""
 NPU checkpoint eval: per-language val loss of a checkpoint on the AMD Phoenix NPU, so training
 progress can be tracked while the GPU trains (AGENTS.md: "small-model eval during training").
 
@@ -21,6 +21,9 @@ import sys
 import time
 from pathlib import Path
 
+# Strict GPU isolation: never touch NVIDIA CUDA device 0
+os.environ["CUDA_VISIBLE_DEVICES"] = ""
+
 import numpy as np
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -31,8 +34,14 @@ VAIP_CFG = Path(r"E:\Parentheses\NPU\ryzenai_sdk\PFiles64\RyzenAI\1.8.0\voe-4.0-
 def windows(T: int, n: int, seed: int = 1234) -> dict:
     rng = np.random.default_rng(seed)
     out = {}
+    val_dir = ROOT / "data/processed_130m_v1/val"
+    if not val_dir.exists():
+        val_dir = ROOT / "data/processed_v4/val"
     for lang in LANGS:
-        a = np.fromfile(ROOT / f"data/processed_v4/val/{lang}.bin", dtype=np.uint16)
+        bin_p = val_dir / f"{lang}.bin"
+        if not bin_p.exists():
+            continue
+        a = np.fromfile(bin_p, dtype=np.uint16)
         starts = rng.integers(0, len(a) - T - 1, n)
         out[lang] = np.stack([a[s:s + T + 1] for s in starts]).astype(np.int64)
     return out
