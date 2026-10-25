@@ -1,11 +1,11 @@
 # Parentheses 0.9-130M-v3 (Project Tanzinite) Post-Pretraining SFT Launch Script
 # Architecture: 148.38M params, 16 layers, d_model=768, 12 heads, block_size=4096
-# Dataset: data/processed_sft_stem_open_v1 (100k docs / 50.55M tokens: 45k STEM, 25k OpenData, 15k Dialogues, 15k Dravidian Replay)
-# Mask: data/processed_sft_stem_open_v1/train.mask.bin (85.9% supervised tokens, assistant + think tags only)
+# Dataset: data/processed_sft_stem_open_v2 (105.88k docs / 64.63M tokens: 45k STEM, 25k OpenData, 20.88k Distilled Dialogues with <think> traces, 15k Dravidian Replay)
+# Mask: data/processed_sft_stem_open_v2/train.mask.bin (87.2% supervised tokens, assistant + think tags only)
 
 param(
     [string]$ResumeFrom = "checkpoints/parentheses-0.9-130M-v3/step_22888_final.pt",
-    [string]$DataDir = "data/processed_sft_stem_open_v1",
+    [string]$DataDir = "data/processed_sft_stem_open_v2",
     [string]$OutDir = "checkpoints/parentheses-0.9-130M-v3-sft",
     [string]$ReplayData = "data/processed_130m_v1/train.bin",
     [double]$ReplayFrac = 0.2,
@@ -83,7 +83,7 @@ $trainArgs = @(
     'train.py',
     '--preset', 'parentheses-0.9-130M-v3',
     '--data', $trainBin,
-    '--mask', $maskBin,
+    '--sft-spans', $maskBin,
     '--boundaries', $boundariesNpy,
     '--resume-from', $ResumeFrom,
     '--out-dir', $OutDir,
@@ -96,6 +96,9 @@ $trainArgs = @(
     '--max-steps', $targetStep,
     '--differential-adamw',
     '--recurrent-lr-ratio', '0.1',
+    '--agc',
+    '--clip-factor', '0.05',
+    '--decay-clip-factor', '0.01',
     '--weight-decay', '0.05',
     '--grad-checkpointing',
     '--ckpt-every', '500',
