@@ -30,6 +30,19 @@ function Say($m) {
 
 Say "=== Initializing SFT Launch Sequence for parentheses-0.9-130M-v3 ==="
 
+# 0. Check for in-progress SFT checkpoints to auto-resume seamlessly
+$existingSftCkpts = Get-ChildItem "$OutDir\step_*.pt" -ErrorAction SilentlyContinue | Where-Object { $_.Name -notmatch "final" }
+if ($existingSftCkpts) {
+    $latestSft = $existingSftCkpts | Sort-Object { 
+        if ($_.BaseName -match "step_(\d+)") { [int]$matches[1] } else { 0 } 
+    } -Descending | Select-Object -First 1
+    
+    if ($latestSft) {
+        $ResumeFrom = $latestSft.FullName
+        Say "Auto-Resume Triggered: Found in-progress SFT checkpoint at: $ResumeFrom"
+    }
+}
+
 # 1. Resolve Resume Checkpoint (Prioritizing SWA-3 Model Soup)
 $candidates = @(
     $ResumeFrom,
@@ -65,28 +78,28 @@ $ResumeFrom = $resolvedPath
 $inspectCmd = "& '$py' -c `"import sys; sys.path.insert(0, '.'); import torch; ckpt = torch.load('$ResumeFrom', map_location='cpu', weights_only=False); print(ckpt.get('step', 0))`""
 $rawStep = [int](Invoke-Expression $inspectCmd)
 
-# If resuming from pretraining (rawStep >= 20000), auto-package clean SFT starting checkpoint with step=0
+# If resuming from pretraining (rawStep >= 20000), auto-package clean SFT starting checkpoint with step=-1
 if ($rawStep -ge 20000) {
     Say "Notice: Pretraining checkpoint detected at step $rawStep with unreset step index."
     $normalizedCkpt = "checkpoints/parentheses-0.9-130M-v3/step_22888_sft_normalized.pt"
-    Say "Packaging normalized SFT starting checkpoint (step=0, fresh AdamW moments) at: $normalizedCkpt..."
+    Say "Packaging normalized SFT starting checkpoint (step=-1, fresh AdamW moments) at: $normalizedCkpt..."
     $normCmd = "& '$py' -c `"import sys; sys.path.insert(0, '.'); import torch; c = torch.load('$ResumeFrom', map_location='cpu', weights_only=False); out = {'model': c['model'], 'cfg': c.get('cfg', c.get('config')), 'step': -1, 'tokenizer': c.get('tokenizer'), 'normalized_from_step': $rawStep}; torch.save(out, '$normalizedCkpt')`""
     Invoke-Expression $normCmd
     $ResumeFrom = (Resolve-Path $normalizedCkpt).Path
-    $rawStep = 0
+    $rawStep = -1
     Say "Clean SFT base checkpoint armed: $ResumeFrom"
 }
 
 if ($rawStep -le 0) {
-    Say "Initializing fresh SFT run from step 0."
+    Say "Initializing fresh SFT run from step 0 to target $Steps."
     $startStep = 0
     $targetStep = $Steps
     $decayStart = [int]($Steps * 0.75)
 } else {
-    Say "Resuming in-progress SFT run from step $rawStep."
+    Say "Resuming in-progress SFT run from step $rawStep toward target $Steps."
     $startStep = $rawStep
-    $targetStep = $startStep + $Steps
-    $decayStart = $startStep + [int]($Steps * 0.75)
+    $targetStep = $Steps
+    $decayStart = [int]($Steps * 0.75)
 }
 
 Say "Base Checkpoint: $ResumeFrom (Base Step: $rawStep -> SFT Start Step: $startStep)"

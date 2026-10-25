@@ -63,7 +63,7 @@ def encode_pair(tok: Tokenizer, prompt: str, response: str) -> tuple[list[int], 
 
 
 def collate_batch(batch: list[tuple[list[int], int]], device: str,
-                  max_len: int = 192) -> tuple[torch.Tensor, torch.Tensor]:
+                  max_len: int = 1024) -> tuple[torch.Tensor, torch.Tensor]:
     seqs = []
     resp_starts = []
     for ids, start in batch:
@@ -123,7 +123,7 @@ def main() -> int:
     ap.add_argument("--lr", type=float, default=5e-7)
     ap.add_argument("--beta", type=float, default=0.1)
     ap.add_argument("--weight-decay", type=float, default=0.0)
-    ap.add_argument("--max-len", type=int, default=256)
+    ap.add_argument("--max-len", type=int, default=1024)
     ap.add_argument("--max-grad-norm", type=float, default=1.0)
     ap.add_argument("--sft-coef", type=float, default=0.3,
                     help="CE regularization coefficient on chosen responses")
