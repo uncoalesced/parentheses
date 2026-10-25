@@ -4,7 +4,7 @@
 # Mask: data/processed_sft_stem_open_v2/train.mask.bin (87.2% supervised tokens, assistant + think tags only)
 
 param(
-    [string]$ResumeFrom = "checkpoints/parentheses-0.9-130M-v3/step_22888_final.pt",
+    [string]$ResumeFrom = "checkpoints/parentheses-0.9-130M-v3/step_22888_swa3_base.pt",
     [string]$DataDir = "data/processed_sft_stem_open_v2",
     [string]$OutDir = "checkpoints/parentheses-0.9-130M-v3-sft",
     [string]$ReplayData = "data/processed_130m_v1/train.bin",
@@ -30,27 +30,67 @@ function Say($m) {
 
 Say "=== Initializing SFT Launch Sequence for parentheses-0.9-130M-v3 ==="
 
-# 1. Resolve Resume Checkpoint
-if (-not (Test-Path $ResumeFrom)) {
-    # Check if a partial or earlier checkpoint exists
+# 1. Resolve Resume Checkpoint (Prioritizing SWA-3 Model Soup)
+$candidates = @(
+    $ResumeFrom,
+    "checkpoints/parentheses-0.9-130M-v3/step_22888_swa3_base.pt",
+    "I:/parentheses/checkpoints/parentheses-0.9-130M-v3/step_22888_swa3_base.pt",
+    "I:/parentheses/checkpoints/parentheses-0.9-130M-v3/step_22888_swa3.pt",
+    "checkpoints/parentheses-0.9-130M-v3/step_22887_final.pt",
+    "checkpoints/parentheses-0.9-130M-v3/step_22888_final.pt",
+    "checkpoints/parentheses-0.9-130M-v3/step_22888.pt"
+)
+
+$resolvedPath = $null
+foreach ($cand in $candidates) {
+    if (Test-Path $cand) {
+        $resolvedPath = (Resolve-Path $cand).Path
+        break
+    }
+}
+
+if (-not $resolvedPath) {
     $latest = Get-ChildItem "checkpoints/parentheses-0.9-130M-v3\step_*.pt" -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1
     if ($latest) {
-        $ResumeFrom = $latest.FullName
-        Say "Warning: Specified checkpoint not found. Falling back to latest available: $ResumeFrom"
+        $resolvedPath = $latest.FullName
+        Say "Warning: Specified SWA checkpoint not found. Falling back to latest available: $resolvedPath"
     } else {
         Say "[ABORT] No base pretraining checkpoint found at $ResumeFrom"
         exit 1
     }
 }
+$ResumeFrom = $resolvedPath
 
-# 2. Inspect starting step from checkpoint
+# 2. Inspect starting step from checkpoint & Guard Against Step-Counter Trap
 $inspectCmd = "& '$py' -c `"import sys; sys.path.insert(0, '.'); import torch; ckpt = torch.load('$ResumeFrom', map_location='cpu', weights_only=False); print(ckpt.get('step', 0))`""
-$startStep = [int](Invoke-Expression $inspectCmd)
-$targetStep = $startStep + $Steps
-$decayStart = $startStep + [int]($Steps * 0.75)
+$rawStep = [int](Invoke-Expression $inspectCmd)
 
-Say "Base Checkpoint: $ResumeFrom (Base Step: $startStep)"
-Say "SFT Target Step: $targetStep (Steps: $Steps | Cooldown starts at: $decayStart | Peak LR: $Lr | Min LR: $MinLr)"
+# If resuming from pretraining (rawStep >= 20000), auto-package clean SFT starting checkpoint with step=0
+if ($rawStep -ge 20000) {
+    Say "Notice: Pretraining checkpoint detected at step $rawStep with unreset step index."
+    $normalizedCkpt = "checkpoints/parentheses-0.9-130M-v3/step_22888_sft_normalized.pt"
+    Say "Packaging normalized SFT starting checkpoint (step=0, fresh AdamW moments) at: $normalizedCkpt..."
+    $normCmd = "& '$py' -c `"import sys; sys.path.insert(0, '.'); import torch; c = torch.load('$ResumeFrom', map_location='cpu', weights_only=False); out = {'model': c['model'], 'cfg': c.get('cfg', c.get('config')), 'step': 0, 'tokenizer': c.get('tokenizer'), 'normalized_from_step': $rawStep}; torch.save(out, '$normalizedCkpt')`""
+    Invoke-Expression $normCmd
+    $ResumeFrom = (Resolve-Path $normalizedCkpt).Path
+    $rawStep = 0
+    Say "Clean SFT base checkpoint armed: $ResumeFrom"
+}
+
+if ($rawStep -le 0) {
+    Say "Initializing fresh SFT run from step 0."
+    $startStep = 0
+    $targetStep = $Steps
+    $decayStart = [int]($Steps * 0.75)
+} else {
+    Say "Resuming in-progress SFT run from step $rawStep."
+    $startStep = $rawStep
+    $targetStep = $startStep + $Steps
+    $decayStart = $startStep + [int]($Steps * 0.75)
+}
+
+Say "Base Checkpoint: $ResumeFrom (Base Step: $rawStep -> SFT Start Step: $startStep)"
+Say "SFT Target Step: $targetStep (Total SFT Steps: $Steps | Cooldown starts at: $decayStart | Peak LR: $Lr | Min LR: $MinLr)"
 
 # 3. Verify SFT data assets
 $trainBin = "$DataDir/train.bin"
