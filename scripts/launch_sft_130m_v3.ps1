@@ -31,7 +31,7 @@ function Say($m) {
 Say "=== Initializing SFT Launch Sequence for parentheses-0.9-130M-v3 ==="
 
 # 0. Check for in-progress SFT checkpoints to auto-resume seamlessly
-$existingSftCkpts = Get-ChildItem "$OutDir\step_*.pt" -ErrorAction SilentlyContinue | Where-Object { $_.Name -notmatch "final" }
+$existingSftCkpts = Get-ChildItem "$OutDir\step_*.pt" -ErrorAction SilentlyContinue | Where-Object { $_.Name -notmatch "final|swa|normalized" }
 if ($existingSftCkpts) {
     $latestSft = $existingSftCkpts | Sort-Object { 
         if ($_.BaseName -match "step_(\d+)") { [int]$matches[1] } else { 0 } 
