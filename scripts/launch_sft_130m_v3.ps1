@@ -141,7 +141,7 @@ $trainArgs = @(
     '--decay-clip-factor', '0.01',
     '--weight-decay', '0.05',
     '--grad-checkpointing',
-    '--ckpt-every', '500',
+    '--ckpt-every', '250',
     '--log-every', '10'
 )
 

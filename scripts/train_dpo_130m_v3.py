@@ -113,7 +113,7 @@ def save_ckpt(path: Path, model, optimizer, cfg, step: int, tok_meta: dict):
 
 def main() -> int:
     ap = argparse.ArgumentParser(description="Parentheses 0.9-130M-v3 Calibrated DPO Alignment")
-    ap.add_argument("--policy", default="checkpoints/parentheses-0.9-130M-v3-sft/step_2000_final.pt")
+    ap.add_argument("--policy", default="checkpoints/parentheses-0.9-130M-v3-sft/step_1999_final.pt")
     ap.add_argument("--ref", default=None, help="Reference checkpoint (default: same as policy)")
     ap.add_argument("--pairs", default="out/dpo_pairs_balanced.jsonl")
     ap.add_argument("--out-dir", default="checkpoints/parentheses-0.9-130M-v3-dpo-calibrated")
@@ -145,10 +145,14 @@ def main() -> int:
     print("=" * 70)
 
     if not Path(args.policy).exists():
-        # Fallback to latest SFT checkpoint if available
-        cands = sorted(Path("checkpoints/parentheses-0.9-130M-v3-sft").glob("*.pt"))
-        if cands:
-            args.policy = str(cands[-1])
+        # Fallback search in priority order: step_1999_final.pt, step_2000_final.pt, or newest *.pt
+        cands = [
+            Path("checkpoints/parentheses-0.9-130M-v3-sft/step_1999_final.pt"),
+            Path("checkpoints/parentheses-0.9-130M-v3-sft/step_2000_final.pt"),
+        ] + sorted(Path("checkpoints/parentheses-0.9-130M-v3-sft").glob("*.pt"), key=lambda p: p.stat().st_mtime, reverse=True)
+        found = next((c for c in cands if c.exists()), None)
+        if found:
+            args.policy = str(found)
             print(f"[notice] Policy fallback to: {args.policy}")
         else:
             sys.exit(f"[ABORT] Policy checkpoint not found: {args.policy}")
@@ -161,9 +165,11 @@ def main() -> int:
     policy.load_state_dict(policy_state)
     policy.train()
 
-    _, ref_state, _ = load_ckpt(ref_path, args.device)
-    ref = Parentheses(cfg).to(args.device)
-    ref.load_state_dict(ref_state)
+    # Frozen Reference Model: Loaded strictly in BF16 on GPU (or CPU) to conserve VRAM
+    _, ref_state, _ = load_ckpt(ref_path, "cpu")
+    ref_dtype = torch.bfloat16 if args.device == "cuda" else torch.float32
+    ref = Parentheses(cfg).to(dtype=ref_dtype, device=args.device)
+    ref.load_state_dict({k: v.to(dtype=ref_dtype) if torch.is_floating_point(v) else v for k, v in ref_state.items()})
     ref.eval()
     for p in ref.parameters():
         p.requires_grad = False
