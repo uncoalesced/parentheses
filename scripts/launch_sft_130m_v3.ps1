@@ -70,7 +70,7 @@ if ($rawStep -ge 20000) {
     Say "Notice: Pretraining checkpoint detected at step $rawStep with unreset step index."
     $normalizedCkpt = "checkpoints/parentheses-0.9-130M-v3/step_22888_sft_normalized.pt"
     Say "Packaging normalized SFT starting checkpoint (step=0, fresh AdamW moments) at: $normalizedCkpt..."
-    $normCmd = "& '$py' -c `"import sys; sys.path.insert(0, '.'); import torch; c = torch.load('$ResumeFrom', map_location='cpu', weights_only=False); out = {'model': c['model'], 'cfg': c.get('cfg', c.get('config')), 'step': 0, 'tokenizer': c.get('tokenizer'), 'normalized_from_step': $rawStep}; torch.save(out, '$normalizedCkpt')`""
+    $normCmd = "& '$py' -c `"import sys; sys.path.insert(0, '.'); import torch; c = torch.load('$ResumeFrom', map_location='cpu', weights_only=False); out = {'model': c['model'], 'cfg': c.get('cfg', c.get('config')), 'step': -1, 'tokenizer': c.get('tokenizer'), 'normalized_from_step': $rawStep}; torch.save(out, '$normalizedCkpt')`""
     Invoke-Expression $normCmd
     $ResumeFrom = (Resolve-Path $normalizedCkpt).Path
     $rawStep = 0

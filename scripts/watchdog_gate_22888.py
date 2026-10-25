@@ -159,12 +159,12 @@ raw_loaded = torch.load(final_ckpt, map_location="cpu", weights_only=False)
 sft_base_dict = {
     "model": swa_loaded["model"],
     "cfg": raw_loaded.get("cfg", raw_loaded.get("config")),
-    "step": 0,  # CRITICAL: Reset step counter to 0 so SFT runs cleanly 0 -> 2000
+    "step": -1,  # CRITICAL: Set step=-1 so start_step = ckpt['step'] + 1 == 0, starting SFT cleanly from step 0
     "tokenizer": raw_loaded.get("tokenizer"),
     "swa_sources": swa_loaded.get("swa_sources"),
     "base_pretraining_final_step": raw_loaded.get("step", 22888),
     "created_at": time.strftime("%Y-%m-%d %H:%M:%S"),
-    "description": "Clean SWA-3 base weights for SFT v2 sprint (step=0, fresh AdamW moments)",
+    "description": "Clean SWA-3 base weights for SFT v2 sprint (step=-1 -> start_step=0, fresh AdamW moments)",
 }
 
 torch.save(sft_base_dict, sft_base_e)

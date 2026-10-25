@@ -54,8 +54,8 @@ def run_archive_cycle(src_dir: Path, dst_dir: Path, keep_local: int = 3, log_fil
 
     dst_dir.mkdir(parents=True, exist_ok=True)
 
-    # Find candidate checkpoint files in src_dir
-    all_files = [f for f in src_dir.glob("step_*.pt") if f.is_file()]
+    # Find candidate checkpoint files in src_dir (ignoring SWA / model soup derivatives)
+    all_files = [f for f in src_dir.glob("step_*.pt") if f.is_file() and "_swa" not in f.name]
     if not all_files:
         return 0
 
