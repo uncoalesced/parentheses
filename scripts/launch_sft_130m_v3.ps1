@@ -14,7 +14,12 @@ param(
     [double]$MinLr = 5e-6,
     [int]$BatchSize = 4,
     [int]$GradAccum = 4,
-    [int]$CeRows = 4096
+    [int]$CeRows = 4096,
+    # train.mask.notrunc.bin zeroes the 7,943 docs cut at max_seq_len 2048 (see train.mask.notrunc.json)
+    [string]$MaskFile = "train.mask.bin",
+    [int]$WarmupSteps = 0,
+    # set to capture train.py stdout/stderr (UTF-8); empty keeps the old console-only behaviour
+    [string]$TrainLog = ""
 )
 
 Set-Location E:\Parentheses\parentheses-0.9
@@ -107,7 +112,7 @@ Say "SFT Target Step: $targetStep (Total SFT Steps: $Steps | Cooldown starts at:
 
 # 3. Verify SFT data assets
 $trainBin = "$DataDir/train.bin"
-$maskBin = "$DataDir/train.mask.bin"
+$maskBin = "$DataDir/$MaskFile"
 $boundariesNpy = "$DataDir/train_boundaries.npy"
 
 if (-not (Test-Path $trainBin) -or -not (Test-Path $maskBin) -or -not (Test-Path $boundariesNpy)) {
@@ -147,6 +152,7 @@ $trainArgs = @(
     '--min-lr', $MinLr,
     '--decay-start', $decayStart,
     '--max-steps', $targetStep,
+    '--warmup-steps', $WarmupSteps,
     '--differential-adamw',
     '--recurrent-lr-ratio', '0.1',
     '--agc',
@@ -163,10 +169,19 @@ if ((Test-Path $ReplayData) -and ($ReplayFrac -gt 0.0)) {
     Say "Pretrain Replay Buffer Active: $ReplayData ($($ReplayFrac * 100)% per micro-batch)"
 }
 
-Say "Executing SFT training run on RTX 5050..."
+Say "Executing SFT training run on RTX 5050 (mask $maskBin, warmup $WarmupSteps)..."
 try {
-    & $py $trainArgs
-    Say "SFT Sprint Completed Successfully! Checkpoint saved in $OutDir"
+    if ($TrainLog) {
+        Say "train.py output -> $TrainLog"
+        & $py -u $trainArgs 2>&1 | ForEach-Object { "$_" } | Out-File $TrainLog -Append -Encoding utf8
+    } else {
+        & $py $trainArgs
+    }
+    if ($LASTEXITCODE -eq 0) {
+        Say "SFT Sprint Completed Successfully! Checkpoint saved in $OutDir"
+    } else {
+        Say "[FAIL] train.py exited with code $LASTEXITCODE"
+    }
 } finally {
     if (Test-Path $lockFile) {
         Remove-Item $lockFile -Force
