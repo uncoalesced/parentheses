@@ -273,11 +273,11 @@ The four chunked recurrent interactions inside chunk $k$ of length $C=64$ decomp
    *(Only tokens belonging to the final active document at the end of chunk $k$ reach the outgoing state $S_k$).*
 
 3. **Inter-Chunk State Decay Scalar ($A_k$):**
-   $$A_k = \exp(P_{C-1}) \cdot \mathbb{I}[d_{C-1} == d_0]$$
-   *(Zeros the scalar chunk decay if ANY document boundary occurred inside chunk $k$).*
+   $$A_k = \exp(P_{C-1}) \cdot \mathbb{I}[d_{C-1} == d_0 - m_0]$$
+   *(Zeros the scalar chunk decay if ANY document boundary occurred inside chunk $k$ or on its opening token $m_0 = 1$).*
 
 4. **State-to-Chunk Read Vector ($C_k$):**
-   $$w_{\text{in}}(i) = \exp(P_i) \cdot \mathbb{I}[d_i == d_0]$$
-   *(Only tokens preceding the first document boundary in chunk $k$ receive information from incoming state $S_{k-1}$).*
+   $$w_{\text{in}}(i) = \exp(P_i) \cdot \mathbb{I}[d_i == d_0 - m_0]$$
+   *(Only tokens preceding the first document boundary in chunk $k$ receive information from incoming state $S_{k-1}$; if $m_0 = 1$, read is zeroed for all tokens in chunk $k$).*
 
 This formulation guarantees exact mathematical equivalence to an instantaneous $\alpha_{t^*} = 0$ recurrent step while keeping all intermediate tensors finite, differentiable, and $O(1)$ vectorized in FP32.
