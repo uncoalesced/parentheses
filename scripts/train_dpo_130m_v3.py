@@ -23,6 +23,7 @@ import argparse
 import hashlib
 import json
 import math
+import re
 import os
 import random
 import sys
@@ -42,6 +43,28 @@ from train import build_optimizer
 
 EOT, ENG, USER, ASSISTANT = 0, 10, 13, 14
 
+LANG_MAP = {
+    "kan": 2, "kn": 2,
+    "tam": 3, "ta": 3,
+    "tel": 4, "te": 4,
+    "mal": 5, "ml": 5,
+    "eng": 10, "en": 10,
+}
+
+
+def detect_lang_id(prompt: str, lang: str | None = None) -> int:
+    if lang and lang in LANG_MAP:
+        return LANG_MAP[lang]
+    if re.search(r"[ಀ-೿]", prompt):
+        return 2  # kan
+    if re.search(r"[஀-௿]", prompt):
+        return 3  # tam
+    if re.search(r"[ఀ-౿]", prompt):
+        return 4  # tel
+    if re.search(r"[ഀ-ൿ]", prompt):
+        return 5  # mal
+    return 10  # eng
+
 
 def load_tok(path: str) -> tuple[Tokenizer, dict]:
     tok = Tokenizer.from_file(str(Path(path) / "tokenizer.json"))
@@ -54,11 +77,13 @@ def load_ckpt(path: str, device: str):
     return ckpt["cfg"], ckpt["model"], ckpt.get("step", 0)
 
 
-def encode_pair(tok: Tokenizer, prompt: str, response: str) -> tuple[list[int], int]:
+def encode_pair(tok: Tokenizer, prompt: str, response: str, lang: str | None = None) -> tuple[list[int], int]:
+    lang_id = detect_lang_id(prompt, lang)
     p_ids = tok.encode(prompt.strip()).ids
     r_ids = tok.encode(response.strip()).ids
-    ids = [ENG, USER] + p_ids + [ASSISTANT] + r_ids + [EOT]
-    response_start = 1 + 1 + len(p_ids) + 1
+    # Aligns with SFT & FreeThink prompt order: <|user|><lang> prompt <|assistant|> response <|endoftext|>
+    ids = [USER, lang_id] + p_ids + [ASSISTANT] + r_ids + [EOT]
+    response_start = 2 + len(p_ids) + 1
     return ids, response_start
 
 
@@ -138,7 +163,7 @@ def save_ckpt(path: Path, model, optimizer, cfg, step: int, tok_meta: dict):
 
 def main() -> int:
     ap = argparse.ArgumentParser(description="Parentheses 0.9-130M-v3 Calibrated DPO Alignment")
-    ap.add_argument("--policy", default="checkpoints/parentheses-0.9-130M-v3-sft/step_1999_final.pt")
+    ap.add_argument("--policy", "--base-ckpt", dest="policy", default="checkpoints/parentheses-0.9-130M-v3-sft/step_1999_final.pt")
     ap.add_argument("--ref", default=None, help="Reference checkpoint (default: same as policy)")
     ap.add_argument("--pairs", default="out/dpo_pairs_balanced.jsonl")
     ap.add_argument("--out-dir", default="checkpoints/parentheses-0.9-130M-v3-dpo-calibrated")
@@ -150,7 +175,7 @@ def main() -> int:
     ap.add_argument("--weight-decay", type=float, default=0.0)
     ap.add_argument("--max-len", type=int, default=1024)
     ap.add_argument("--max-grad-norm", type=float, default=1.0)
-    ap.add_argument("--sft-coef", type=float, default=0.3,
+    ap.add_argument("--sft-coef", "--sft-coeff", dest="sft_coef", type=float, default=0.3,
                     help="CE regularization coefficient on chosen responses")
     ap.add_argument("--ckpt-every", type=int, default=50)
     ap.add_argument("--seed", type=int, default=20261022)
@@ -217,8 +242,9 @@ def main() -> int:
         r = row.get("rejected", "")
         if not p or not c or not r:
             continue
-        c_ids, c_start = encode_pair(tok, p, c)
-        r_ids, r_start = encode_pair(tok, p, r)
+        lang = row.get("lang")
+        c_ids, c_start = encode_pair(tok, p, c, lang)
+        r_ids, r_start = encode_pair(tok, p, r, lang)
         encoded.append(((c_ids, c_start), (r_ids, r_start)))
 
     out_p = Path(args.out_dir)
