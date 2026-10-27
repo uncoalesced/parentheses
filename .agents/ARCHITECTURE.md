@@ -232,16 +232,52 @@ Every architecture modification must clear the official test suites:
 
 ## 9. Parentheses 1.0 (240M) Architectural Invariants (Post-130M-v3 Ground Truth)
 
-Empirical post-training evaluations and independent audits on 130M-v3 (slab_v3 / Tanzinite) established three non-negotiable architectural mandates for scaling to 240M:
+Empirical post-training evaluations and independent audits on 130M-v3 (`slab_v3` / Tanzinite) established three non-negotiable architectural mandates for scaling to 240M:
 
 1. **Packer Invariant & Document Boundary State Barrier:**
    - **4,096-token Document-Aware Packing:** Documents must NEVER be hard-truncated mid-sequence at arbitrary packing boundaries (e.g., 2,048), which disproportionately destroys high-fertility agglutinative Dravidian syntax and multi-step STEM proofs.
-   - **Explicit Recurrent State Reset (\u03b1_t = 0):** Across <|endoftext|> boundaries, the chunked SSD training kernel must enforce a strict associative memory decay reset:  = 0 \cdot S_{t-1} + \beta_t (k_t \otimes v_t)$. Inter-chunk recurrent state must never leak cross-document information.
+   - **Explicit Recurrent State Reset ($\alpha_t = 0$):** Across `<|endoftext|>` boundaries, the chunked SSD training kernel must enforce a strict associative memory decay reset: $S_t = 0 \cdot S_{t-1} + \beta_t (k_t \otimes v_t)$. Inter-chunk recurrent state must never leak cross-document information.
 
 2. **SFT Mix Epistemic Abstention Invariant:**
    - **3,000 to 5,000 Multilingual Epistemic Abstention Traces:** Must be packed directly into the base SFT training mix (~3% to 4% of SFT volume) across English, Kannada, Tamil, Telugu, and Malayalam.
-   - **Prior Mass Grounding:** Preference optimization (DPO) is a re-ranking mechanism within the reference policy's support; it cannot synthesize an abstention mode from scratch if $\pi_{\\text{ref}}$ assigns zero probability to refusing/abstaining after <|assistant|>.
+   - **Prior Mass Grounding:** Preference optimization (DPO) is a re-ranking mechanism within the reference policy's support; it cannot synthesize an abstention mode from scratch if $\pi_{\text{ref}}$ assigns zero probability to refusing/abstaining after `<|assistant|>`.
 
 3. **Scratchpad Priming for Multi-Step Reasoning at Inference:**
-   - **Constant-Rank Recurrent Memory Limits:** Because linear-recurrent models ( \in \mathbb{R}^{H \times d_h \times d_h}$) maintain constant memory size and lack quadratic (T^2)$ KV-cache random-access lookbacks, multi-digit arithmetic and formal logic require sequential computation steps.
-   - **Inference Priming:** Enforce explicit <think> priming at inference time for numeric, symbolic, or multi-step logic queries to allow intermediate recurrent state updates before output generation.
+   - **Constant-Rank Recurrent Memory Limits:** Because linear-recurrent models ($S_t \in \mathbb{R}^{H \times d_h \times d_h}$) maintain constant memory size and lack quadratic $O(T^2)$ KV-cache random-access lookbacks, multi-digit arithmetic and formal logic require sequential computation steps.
+   - **Inference Priming:** Enforce explicit `<think>` priming at inference time for numeric, symbolic, or multi-step logic queries to allow intermediate recurrent state updates before output generation.
+
+---
+
+### 9.1 Numerical Safeguard: Document-ID Gated Finite Prefix Sums in Chunked SSD ($C=64$)
+
+> [!WARNING]
+> **IEEE-754 Prefix Sum Contamination ($-\infty - (-\infty) = \text{NaN}$):**
+> In standard chunked SSD (Section 2.2), intra-chunk interactions rely on log-space cumulative prefix sums $P_t = \sum_{\tau=0}^t \log \alpha_\tau$ and pairwise differences $L_{i,j} = \exp(P_i - P_j)$.
+> If an `<|endoftext|>` token occurs mid-chunk at $t^* \in (0, C-1)$ and $\log \alpha_{t^*}$ is clamped to $-\infty$ (or `-1e30`), then for all subsequent tokens $t \ge t^*$, $P_t = -\infty$.
+> Evaluating valid pairs in the *new* document where $i \ge j \ge t^*$ yields:
+> $$P_i - P_j = (-\infty) - (-\infty) = \text{NaN}$$
+> Using large finite floors (e.g. `-1e10`) causes catastrophic cancellation and precision collapse in FP32.
+
+**The Solution: Segment-Local Boolean Gating with Finite Log-Decays:**
+Keep $\log \alpha_t \le 0$ strictly finite across the entire sequence. Compute cumulative prefix sums $P_t$ normally, and enforce boundary isolation exclusively via the integer Document ID tensor:
+$$d_t = \sum_{\tau=0}^t m_\tau \quad \text{where } m_\tau = \mathbb{I}[x_{\tau-1} == \text{EOT}]$$
+
+The four chunked recurrent interactions inside chunk $k$ of length $C=64$ decompose cleanly into branchless, finite operations:
+
+1. **Intra-Chunk Attention Matrix ($64 \times 64$):**
+   $$L_{i,j} = \exp(P_i - P_j) \cdot \mathbb{I}[i \ge j] \cdot \mathbb{I}[d_i == d_j]$$
+   *(Tokens only attend to earlier tokens belonging to the identical document).*
+
+2. **Chunk-to-State Write Vector ($B_k$):**
+   $$w_{\text{out}}(j) = \exp(P_{C-1} - P_j) \cdot \mathbb{I}[d_{C-1} == d_j]$$
+   *(Only tokens belonging to the final active document at the end of chunk $k$ reach the outgoing state $S_k$).*
+
+3. **Inter-Chunk State Decay Scalar ($A_k$):**
+   $$A_k = \exp(P_{C-1}) \cdot \mathbb{I}[d_{C-1} == d_0]$$
+   *(Zeros the scalar chunk decay if ANY document boundary occurred inside chunk $k$).*
+
+4. **State-to-Chunk Read Vector ($C_k$):**
+   $$w_{\text{in}}(i) = \exp(P_i) \cdot \mathbb{I}[d_i == d_0]$$
+   *(Only tokens preceding the first document boundary in chunk $k$ receive information from incoming state $S_{k-1}$).*
+
+This formulation guarantees exact mathematical equivalence to an instantaneous $\alpha_{t^*} = 0$ recurrent step while keeping all intermediate tensors finite, differentiable, and $O(1)$ vectorized in FP32.
