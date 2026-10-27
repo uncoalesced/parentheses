@@ -176,6 +176,9 @@ def run_evaluation(
 
             s_ok = check_script(lang, clean_text)
             leak = has_role_leak(clean_text)
+            # model_closed_think: did the model sample </think> itself (None = no <think> was open).
+            # closed_freethink below is only the wrapper finishing plus no tag leaking into the text.
+            model_closed = sess.model_closed_think
             closed_freethink = bool(
                 sess.closed_freethink
                 and sess.internal_close_tag == "</freethink>"
@@ -199,7 +202,9 @@ def run_evaluation(
                 "script": script_of(clean_text),
                 "script_ok": s_ok,
                 "role_leak": leak,
-                "closed_think": closed_freethink,
+                "closed_think": model_closed,
+                "think_opens": sess.think_stats.get("opens", 0),
+                "think_closes": sess.think_stats.get("closes", 0),
                 "closed_freethink": closed_freethink,
                 "internal_close_tag": sess.internal_close_tag,
                 "latency_first_ms": round(first_ms, 2),
@@ -209,7 +214,7 @@ def run_evaluation(
                 "repetition_rate": round(repetition_rate(clean_text), 4),
             }
             results.append(rec)
-            status_symbol = "✓" if (s_ok and not leak and closed_freethink) else "✗"
+            status_symbol = "✓" if (s_ok and not leak and closed_freethink and model_closed is not False) else "✗"
             print(f"  [{status_symbol}] {qid} ({lang}|{mode:12s}): {n_tok} toks @ {tps:.1f} t/s | O(1) ratio={lat_ratio}x | script={s_ok}")
 
     return results
@@ -220,7 +225,8 @@ def generate_markdown_report(results: list[dict], out_path: Path, model_info: st
     total = len(results)
     script_ok_cnt = sum(r["script_ok"] for r in results)
     leak_cnt = sum(r["role_leak"] for r in results)
-    closed_cnt = sum(r["closed_think"] for r in results)
+    opened_cnt = sum(r["closed_think"] is not None for r in results)
+    closed_cnt = sum(r["closed_think"] is True for r in results)
     mean_tps = statistics.mean(r["tokens_per_sec"] for r in results) if results else 0.0
     mean_lat_ratio = statistics.mean(r["latency_ratio"] for r in results) if results else 1.0
     mean_d2 = statistics.mean(r["distinct_2"] for r in results) if results else 0.0
@@ -233,7 +239,7 @@ def generate_markdown_report(results: list[dict], out_path: Path, model_info: st
         f"- **Total Showcase Evaluations:** {total}",
         f"- **Native Script Fidelity:** {script_ok_cnt}/{total} ({script_ok_cnt/max(1, total)*100:.1f}%)",
         f"- **Control Token Leaks:** {leak_cnt}",
-        f"- **Structured Tag Closures:** {closed_cnt}/{total}",
+        f"- **Model-emitted `</think>` closures:** {closed_cnt}/{opened_cnt} sessions with an open `<think>` ({total - opened_cnt} never opened one)",
         f"- **Mean Decoding Speed:** {mean_tps:.1f} tok/s",
         f"- **SSM O(1) Latency Ratio:** {mean_lat_ratio:.3f}x (strictly flat, zero KV-cache creep)",
         f"- **Mean Lexical Distinct-2 ($D_2$):** {mean_d2:.4f}",

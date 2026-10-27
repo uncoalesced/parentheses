@@ -482,6 +482,15 @@ def main():
             raise ValueError(f"--tokenizer {args.tokenizer} is not the tokenizer {args.resume_from} was "
                              f"trained with ({ckpt['tokenizer']['path']})")
         print(f"[info] tokenizer {args.tokenizer} sha256 {tok_meta['sha256'][:12]}, slab_v2={cfg.slab_v2}")
+    elif args.resume_from and ckpt.get("tokenizer"):
+        # no --tokenizer on a resume: carry the parent's metadata forward instead of saving None,
+        # which made every 130M-v3 SFT checkpoint unreadable to FreeThink and eval_dravidian --bpb
+        tok_meta = ckpt["tokenizer"]
+        print(f"[info] tokenizer inherited from {args.resume_from}: {tok_meta['path']} "
+              f"sha256 {tok_meta['sha256'][:12]}")
+    elif cfg.vocab_size > 256:
+        raise ValueError(f"vocab_size {cfg.vocab_size} is a BPE model but no tokenizer is known: pass "
+                         f"--tokenizer (e.g. data/tokenizer/v3_32k), or checkpoints will save tokenizer=None")
 
     def save(path, step):
         torch.save({"model": model.state_dict(), "optimizer": optimizer.state_dict(),

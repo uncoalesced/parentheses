@@ -105,6 +105,31 @@ def response_logps(model: Parentheses, x: torch.Tensor, mask: torch.Tensor,
     return mean_logp, ce_loss
 
 
+@torch.no_grad()
+def pair_diffs(model: Parentheses, encoded: list, device: str, max_len: int,
+               batch_size: int = 8) -> torch.Tensor:
+    """Chosen-minus-rejected mean response log-prob for every pair, in order (no grad, eval mode)."""
+    was_training = model.training
+    model.eval()
+    out = []
+    for i in range(0, len(encoded), batch_size):
+        chunk = encoded[i:i + batch_size]
+        c_x, c_mask = collate_batch([e[0] for e in chunk], device, max_len=max_len)
+        r_x, r_mask = collate_batch([e[1] for e in chunk], device, max_len=max_len)
+        c, _ = response_logps(model, c_x, c_mask, device, needs_grad=False)
+        r, _ = response_logps(model, r_x, r_mask, device, needs_grad=False)
+        out.append((c - r).float().cpu())
+    model.train(was_training)
+    return torch.cat(out)
+
+
+def whole_set_stats(pi_diff: torch.Tensor, ref_diff: torch.Tensor, beta: float) -> dict:
+    """Margin / accuracy / DPO loss over all pairs; the per-step log line only sees one batch."""
+    m = pi_diff - ref_diff
+    return {"pairs": len(m), "margin": m.mean().item(), "median_margin": m.median().item(),
+            "acc": (m > 0).float().mean().item(), "loss": -F.logsigmoid(beta * m).mean().item()}
+
+
 def save_ckpt(path: Path, model, optimizer, cfg, step: int, tok_meta: dict):
     path.parent.mkdir(parents=True, exist_ok=True)
     torch.save({"model": model.state_dict(), "optimizer": optimizer.state_dict(),
@@ -131,6 +156,9 @@ def main() -> int:
     ap.add_argument("--seed", type=int, default=20261022)
     ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     ap.add_argument("--log-every", type=int, default=10)
+    ap.add_argument("--full-eval-every", type=int, default=None,
+                    help="score margin/acc over ALL pairs every N steps (default --ckpt-every; 0 = only "
+                         "before training and at the end). Written to <out-dir>/pair_eval.json")
     args = ap.parse_args()
 
     random.seed(args.seed)
@@ -197,6 +225,20 @@ def main() -> int:
     out_p.mkdir(parents=True, exist_ok=True)
     scaler = torch.amp.GradScaler(args.device, enabled=(args.device == "cuda"))
 
+    # whole-set margins: the reference is frozen, so its diffs are scored once
+    full_every = args.ckpt_every if args.full_eval_every is None else args.full_eval_every
+    ref_all = pair_diffs(ref, encoded, args.device, args.max_len)
+    pair_log = []
+
+    def full_eval(step: int):
+        s = {"step": step, **whole_set_stats(pair_diffs(policy, encoded, args.device, args.max_len),
+                                             ref_all, args.beta)}
+        pair_log.append(s)
+        (out_p / "pair_eval.json").write_text(json.dumps(pair_log, indent=1), encoding="utf-8")
+        print(f"[all-pairs] step {step:4d} | {s['pairs']} pairs | margin {s['margin']:+.4f} "
+              f"(median {s['median_margin']:+.4f}) | acc {s['acc']*100:5.1f}% | dpo {s['loss']:.4f}")
+
+    full_eval(0)
     t0 = time.time()
     for step in range(1, args.steps + 1):
         batch = [random.choice(encoded) for _ in range(args.batch_size)]
@@ -235,13 +277,18 @@ def main() -> int:
             margin = (pi_diff - ref_diff).mean().item()
             dt = time.time() - t0
             sft_str = f" | sft {sft_loss.item():.4f}" if sft_loss is not None else ""
-            print(f"step {step:4d}/{args.steps} | dpo {dpo_loss.item():.4f}{sft_str} | margin {margin:+.4f} | acc {acc*100:5.1f}% | {dt:.1f}s")
+            print(f"step {step:4d}/{args.steps} | dpo {dpo_loss.item():.4f}{sft_str} | "
+                  f"batch({args.batch_size}) margin {margin:+.4f} acc {acc*100:5.1f}% | {dt:.1f}s")
+
+        if full_every and step % full_every == 0 and step != args.steps:
+            full_eval(step)
 
         if step % args.ckpt_every == 0:
             ckpt_path = out_p / f"step_{step:04d}.pt"
             save_ckpt(ckpt_path, policy, optimizer, cfg, base_step + step, tok_meta)
             print(f"[info] saved checkpoint: {ckpt_path}")
 
+    full_eval(args.steps)
     final_path = out_p / f"step_{args.steps:04d}_final.pt"
     save_ckpt(final_path, policy, optimizer, cfg, base_step + args.steps, tok_meta)
     print(f"\n[info] Calibrated DPO completed! Saved final release candidate: {final_path}")

@@ -50,43 +50,43 @@ TEST_CASES = [
         "id": "math-01",
         "cat": "Arithmetic",
         "lang": "eng",
-        "prompt": "What is 17 * 6? Answer with the number.",
-        "expected": ["102"],
+        "prompt": "What is 23 * 4? Answer with the number.",
+        "expected": ["92"],
     },
     {
         "id": "math-02",
         "cat": "Arithmetic",
         "lang": "eng",
-        "prompt": "What is 144 / 12?",
-        "expected": ["12"],
+        "prompt": "What is 91 divided by 7?",
+        "expected": ["13"],
     },
     {
         "id": "math-03",
         "cat": "Arithmetic",
         "lang": "eng",
-        "prompt": "What is 15% of 80?",
-        "expected": ["12"],
+        "prompt": "How much is 30 percent of 120?",
+        "expected": ["36"],
     },
     {
         "id": "math-04",
         "cat": "Arithmetic",
         "lang": "eng",
-        "prompt": "What is 7 squared?",
-        "expected": ["49"],
+        "prompt": "Calculate 9 squared.",
+        "expected": ["81"],
     },
     {
         "id": "math-05",
         "cat": "Arithmetic",
         "lang": "eng",
-        "prompt": "What is 25 + 17?",
-        "expected": ["42"],
+        "prompt": "Add 58 and 27.",
+        "expected": ["85"],
     },
     {
         "id": "math-06",
         "cat": "Arithmetic",
         "lang": "eng",
-        "prompt": "What is 100 - 37?",
-        "expected": ["63"],
+        "prompt": "Subtract 64 from 200.",
+        "expected": ["136"],
     },
 
     # --- Category 2: Word Math & Logic Puzzles ---
@@ -94,43 +94,43 @@ TEST_CASES = [
         "id": "logic-01",
         "cat": "Logic & Word Math",
         "lang": "eng",
-        "prompt": "A farmer has 17 sheep. All but nine run away. How many remain?",
-        "expected": ["9", "nine"],
+        "prompt": "Mira had 12 apples and gave away all but 5 of them. How many apples does Mira keep?",
+        "expected": ["5", "five"],
     },
     {
         "id": "logic-02",
         "cat": "Logic & Word Math",
         "lang": "eng",
-        "prompt": "If you overtake the person in second place during a race, what position are you in?",
-        "expected": ["second", "2nd"],
+        "prompt": "Tom is taller than Ana, and Ana is taller than Ravi. Who is the shortest of the three?",
+        "expected": ["Ravi"],
     },
     {
         "id": "logic-03",
         "cat": "Logic & Word Math",
         "lang": "eng",
-        "prompt": "Which is heavier: 1 kg of iron or 1 kg of cotton? Answer briefly.",
-        "expected": ["same", "equal"],
+        "prompt": "How many legs do three dogs have altogether?",
+        "expected": ["12", "twelve"],
     },
     {
         "id": "logic-04",
         "cat": "Logic & Word Math",
         "lang": "eng",
-        "prompt": "What is the smallest prime number?",
-        "expected": ["2"],
+        "prompt": "Name the largest even number that is less than 50.",
+        "expected": ["48"],
     },
     {
         "id": "logic-05",
         "cat": "Logic & Word Math",
         "lang": "eng",
-        "prompt": "If yesterday was two days before Sunday, what day is today?",
-        "expected": ["Saturday"],
+        "prompt": "If tomorrow is Wednesday, which day was yesterday?",
+        "expected": ["Monday"],
     },
     {
         "id": "logic-06",
         "cat": "Logic & Word Math",
         "lang": "eng",
-        "prompt": "Reply with only the number that comes after 99.",
-        "expected": ["100"],
+        "prompt": "Write just the whole number that comes right before 300.",
+        "expected": ["299"],
     },
 
     # --- Category 3: Persona & Self-Knowledge ---
@@ -138,22 +138,23 @@ TEST_CASES = [
         "id": "persona-01",
         "cat": "Persona & Identity",
         "lang": "eng",
-        "prompt": "Who created you?",
+        "prompt": "Which person or team developed the model I am chatting with?",
         "expected": ["uncoalesced"],
     },
     {
         "id": "persona-02",
         "cat": "Persona & Identity",
         "lang": "eng",
-        "prompt": "What is your name?",
+        "prompt": "Tell me what this assistant is called.",
         "expected": ["Parentheses"],
     },
     {
         "id": "persona-03",
         "cat": "Persona & Identity",
         "lang": "eng",
-        "prompt": "Are you a standard Transformer model?",
-        "expected": ["recurrent", "not a transformer", "state space", "ssd", "linear attention", "no"],
+        "prompt": "Describe the kind of neural network architecture you are built on.",
+        # no bare "no": it is a substring of "not", "know", "normal" and passed almost anything
+        "expected": ["recurrent", "not a transformer", "state space", "ssd", "linear attention", "mamba", "rwkv"],
     },
 
     # --- Category 4: Native Dravidian Languages ---
@@ -161,56 +162,56 @@ TEST_CASES = [
         "id": "drav-kan-01",
         "cat": "Kannada",
         "lang": "kan",
-        "prompt": "೧೭ x ೬ ಎಷ್ಟು?",
-        "expected": ["೧೦೨", "102"],
+        "prompt": "೮ x ೯ ಎಷ್ಟು?",
+        "expected": ["೭೨", "72"],
     },
     {
         "id": "drav-kan-02",
         "cat": "Kannada",
         "lang": "kan",
-        "prompt": "ನಿಮ್ಮ ಹೆಸರೇನು ಮತ್ತು ನಿಮ್ಮನ್ನು ಯಾರು ರಚಿಸಿದರು?",
+        "prompt": "ನಿನ್ನನ್ನು ಯಾರು ತಯಾರಿಸಿದರು? ನಿನ್ನ ಹೆಸರು ಏನು?",
         "expected": ["uncoalesced", "ಪ್ಯಾರೆಂಥಿಸಿಸ್", "Parentheses"],
     },
     {
         "id": "drav-tam-01",
         "cat": "Tamil",
         "lang": "tam",
-        "prompt": "17 x 6 எவ்வளவு?",
-        "expected": ["102", "நூற்று இரண்டு"],
+        "prompt": "13 + 29 எவ்வளவு?",
+        "expected": ["42", "நாற்பத்தி இரண்டு"],
     },
     {
         "id": "drav-tam-02",
         "cat": "Tamil",
         "lang": "tam",
-        "prompt": "உங்களை உருவாக்கியவர் யார்?",
+        "prompt": "உன்னை யார் உருவாக்கினார்கள்?",
         "expected": ["uncoalesced"],
     },
     {
         "id": "drav-tel-01",
         "cat": "Telugu",
         "lang": "tel",
-        "prompt": "17 x 6 ఎంత?",
-        "expected": ["102"],
+        "prompt": "45 - 18 ఎంత?",
+        "expected": ["27"],
     },
     {
         "id": "drav-tel-02",
         "cat": "Telugu",
         "lang": "tel",
-        "prompt": "మిమ్మల్ని ఎవరు సృష్టించారు?",
+        "prompt": "నిన్ను ఎవరు తయారు చేశారు?",
         "expected": ["uncoalesced"],
     },
     {
         "id": "drav-mal-01",
         "cat": "Malayalam",
         "lang": "mal",
-        "prompt": "17 x 6 എത്രയാണ്?",
-        "expected": ["102"],
+        "prompt": "6 x 7 എത്രയാണ്?",
+        "expected": ["42"],
     },
     {
         "id": "drav-mal-02",
         "cat": "Malayalam",
         "lang": "mal",
-        "prompt": "നിങ്ങളെ സൃഷ്ടിച്ചത് ആരാണ്?",
+        "prompt": "നിന്നെ ആരാണ് നിർമ്മിച്ചത്?",
         "expected": ["uncoalesced"],
     },
 
@@ -347,7 +348,23 @@ def main():
     parser.add_argument("--checkpoint", type=str, required=True)
     parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu")
     parser.add_argument("--out-json", type=str, default=None)
+    parser.add_argument("--pairs", nargs="*", default=["out/dpo_pairs_balanced.jsonl", "out/dpo_pairs_v1.jsonl"],
+                        help="training pair JSONLs the suite must not overlap (exact or short n-gram)")
+    parser.add_argument("--allow-contaminated", action="store_true",
+                        help="run even if a prompt repeats a training prompt (scores are then recall)")
     args = parser.parse_args()
+
+    # 18 of the original 24 prompts were copied from the DPO pairs, so "6/6 arithmetic" was recall
+    from check_eval_contamination import load_pair_prompts, prompt_overlap
+    pair_files = [f for f in args.pairs if (REPO_ROOT / f).is_file() or Path(f).is_file()]
+    hits = prompt_overlap(TEST_CASES, load_pair_prompts(
+        [str(REPO_ROOT / f) if (REPO_ROOT / f).is_file() else f for f in pair_files]))
+    print(f"[contamination] {len(TEST_CASES)} prompts vs {', '.join(pair_files) or 'no pair files'}: "
+          f"{len(hits)} overlap")
+    for h in hits:
+        print(f"  {h[0]}: {h[1]!r} ({h[2]})")
+    if hits and not args.allow_contaminated:
+        sys.exit("[ABORT] honest suite overlaps training prompts; fix the prompts or pass --allow-contaminated")
 
     model, tok = load_model(Path(args.checkpoint), args.device)
     results = run_eval(model, tok, args.device)

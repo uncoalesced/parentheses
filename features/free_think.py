@@ -262,10 +262,14 @@ def load_bpe_tokenizer(ckpt: dict):
 
 def _stream_bpe(model: Parentheses, tok, primed: str, lang: str, max_tokens: int | None,
                 temperature: float, top_k: int, timings: list[float] | None = None,
-                mode: str = "continuation", min_tokens: int = 0):
+                mode: str = "continuation", min_tokens: int = 0, think_stats: dict | None = None):
     """BPE twin of _stream_text: <lang> + primed text in (or <|user|><lang> prompt<|assistant|><think>
     + native analytical cue when mode='structured'), decoded text out. All internal <think>, </think>,
-    <freethink>, and </freethink> tags are kept strictly internal and never emitted into visible text."""
+    <freethink>, and </freethink> tags are kept strictly internal and never emitted into visible text.
+
+    `think_stats`, if given, records what the model itself sampled: "opened" (a <think> was primed or
+    sampled), "open" (still inside one when the stream ended), "opens"/"closes" (sampled token counts).
+    The visible text has the tags stripped, so this is the only place a real </think> can be seen."""
     import sys
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
     from eval_queries import STOP_TOKENS, looping
@@ -295,6 +299,10 @@ def _stream_bpe(model: Parentheses, tok, primed: str, lang: str, max_tokens: int
     think_open_id = tok.token_to_id("<think>")
     think_close_id = tok.token_to_id("</think>")
     para_ids = tok.encode("\n\n", add_special_tokens=False).ids
+    if think_stats is None:
+        think_stats = {}
+    primed_open = mode == "structured"
+    think_stats.update(opened=primed_open, open=primed_open, opens=0, closes=0)
 
     out, pending = [], []
     restarts = 0
@@ -383,9 +391,11 @@ def _stream_bpe(model: Parentheses, tok, primed: str, lang: str, max_tokens: int
             if timings is not None:
                 timings.append(time.perf_counter() - started)
             if t == think_open_id:
+                think_stats.update(opened=True, open=True, opens=think_stats["opens"] + 1)
                 out.append(t)
                 continue
             if t == think_close_id:
+                think_stats.update(open=False, closes=think_stats["closes"] + 1)
                 out.append(t)
                 if pending:
                     flushed = _prepare_chunk(tok.decode(pending, skip_special_tokens=False))
@@ -558,11 +568,23 @@ class FreeThinkSession:
         self.internal_close_tag: str = "</freethink>"
         self.closed_freethink: bool = False
         self.internal_transcript: str = ""
+        self.think_stats: dict = {}
 
     @property
     def closed_think(self) -> bool:
         """Backward-compatible alias for `closed_freethink`."""
         return self.closed_freethink
+
+    @property
+    def model_closed_think(self) -> bool | None:
+        """Did the model itself sample a </think> that closed its last <think>?
+
+        None when no <think> was open (continuation mode where the model never opened one, or a byte
+        model). `closed_freethink` only means "the session finished" and is always True after a run.
+        """
+        if not self.think_stats.get("opened"):
+            return None
+        return not self.think_stats["open"]
 
     def start(self, prompt: str, max_tokens: int | None = None, force: bool = False,
               timings: list[float] | None = None, mode: str | None = None,
@@ -581,13 +603,15 @@ class FreeThinkSession:
         self.history = []
         self.closed_freethink = False
         self.internal_transcript = ""
+        self.think_stats = {}
         active_mode = parsed_mode or mode or self.mode
         active_min = self.min_tokens if min_tokens is None else min_tokens
         if self.tokenizer is not None:
             primed = format_primed(clean_prompt, self.lang, active_mode)
             chunks = _stream_bpe(self.model, self.tokenizer, primed, self.lang, max_tokens,
                                  self.temperature, self.top_k, timings,
-                                 mode=active_mode, min_tokens=active_min)
+                                 mode=active_mode, min_tokens=active_min,
+                                 think_stats=self.think_stats)
         else:
             primed = PRIMING.format(prompt=clean_prompt.strip())
             chunks = _stream_text(self.model, primed, max_tokens, self.temperature, self.top_k, timings)
@@ -784,6 +808,13 @@ def _self_test():
     assert s_struct.prompt == "ಬೆಂಗಳೂರು ಒಂದು ನಗರ.", s_struct.prompt
     assert s_struct.closed_freethink and s_struct.internal_close_tag == "</freethink>"
     assert s_struct.internal_transcript.endswith("</freethink>")
+    # closure is what the model sampled, not the wrapper: primed <think> counts as opened, and it is
+    # closed only if a </think> id came out after the last <think>
+    st = s_struct.think_stats
+    assert st["opened"] and isinstance(s_struct.model_closed_think, bool), st
+    assert s_struct.model_closed_think == (not st["open"]) and (st["closes"] > 0 or st["open"]), st
+    assert s.think_stats["opened"] == (s.think_stats["opens"] > 0), s.think_stats
+    assert (s.model_closed_think is None) == (not s.think_stats["opened"]), s.think_stats
     assert all(tag not in t_struct for tag in INTERNAL_TAGS + INTERNAL_COMMANDS), repr(t_struct)
     print("[self-test] free_think ok")
 

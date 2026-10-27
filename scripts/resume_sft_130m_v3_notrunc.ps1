@@ -35,6 +35,7 @@ $trainArgs = @(
     '--sft-spans', 'data/processed_sft_stem_open_v2/train.mask.notrunc.bin',
     '--boundaries', 'data/processed_sft_stem_open_v2/train_boundaries.npy',
     '--resume-from', $ResumeFrom,
+    '--tokenizer', 'data/tokenizer/v3_32k',
     '--out-dir', 'checkpoints/parentheses-0.9-130M-v3-sft-notrunc',
     '--batch-size', 4, '--grad-accum', 4, '--ce-rows', 4096,
     '--lr', 3e-5, '--min-lr', 5e-6, '--decay-start', 1500, '--max-steps', 2000,

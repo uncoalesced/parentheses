@@ -144,6 +144,7 @@ $trainArgs = @(
     '--sft-spans', $maskBin,
     '--boundaries', $boundariesNpy,
     '--resume-from', $ResumeFrom,
+    '--tokenizer', 'data/tokenizer/v3_32k',
     '--out-dir', $OutDir,
     '--batch-size', $BatchSize,
     '--grad-accum', $GradAccum,
