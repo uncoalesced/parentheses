@@ -81,8 +81,16 @@ TOKENIZER_PATH = REPO / "data" / "tokenizer" / "v3_32k" / "tokenizer.json"
 STEM_FILE = Path("F:/Lingual_Data/data/processed_stem/stem_corpus_v1.jsonl")
 OPEN_FILE = Path("F:/Lingual_Data/data/processed_open_data/open_data_corpus_v1.jsonl")
 CURATED_DIR = Path("F:/Lingual_Data/distillation/conversational_intelligence/curated")
-METAMATH_FILE = REPO / "data" / "raw" / "sft_real" / "meta-math__MetaMathQA" / "MetaMathQA-395K.json"
-RAW_MANUAL = REPO / "data" / "raw" / "manual" / "raw-sourced"
+METAMATH_FILE = (
+    REPO / "data" / "raw" / "sft_real" / "meta-math__MetaMathQA" / "MetaMathQA-395K.json"
+    if (REPO / "data" / "raw" / "sft_real" / "meta-math__MetaMathQA" / "MetaMathQA-395K.json").exists()
+    else Path("I:/parentheses/data/raw/sft_real/meta-math__MetaMathQA/MetaMathQA-395K.json")
+)
+RAW_MANUAL = (
+    REPO / "data" / "raw" / "manual" / "raw-sourced"
+    if (REPO / "data" / "raw" / "manual" / "raw-sourced" / "indicqa").exists()
+    else Path("I:/parentheses/data/raw/manual/raw-sourced")
+)
 
 
 def clean_text(s: str) -> str:
@@ -166,6 +174,7 @@ def encode_think_doc(tok: Tokenizer, lang: str, prompt: str, reasoning: str, ans
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--export-jsonl", default=None, help="Export harvested SFT pairs to JSONL file for 4096 FFD packing")
     parser.add_argument("--limit-stem", type=int, default=45000)
     parser.add_argument("--limit-open", type=int, default=25000)
     parser.add_argument("--limit-conv", type=int, default=25000)
@@ -380,6 +389,30 @@ def main():
     rng.shuffle(docs)
     total_docs = len(docs)
     print(f"\nTotal Selected Dataset Size: {total_docs:,} documents")
+
+    if args.export_jsonl:
+        export_p = Path(args.export_jsonl)
+        export_p.parent.mkdir(parents=True, exist_ok=True)
+        print(f"\nExporting {total_docs:,} raw SFT pairs to {export_p}...")
+        with open(export_p, "w", encoding="utf-8") as f_out:
+            for dom, lang, prompt, reasoning, answer in docs:
+                p_clean = strip_internal_tags(clean_text(prompt))
+                a_clean = strip_internal_tags(clean_text(answer))
+                if reasoning and len(reasoning) >= 20:
+                    r_clean = strip_internal_tags(clean_text(reasoning))
+                    resp = f"<think>\n{r_clean}\n</think>\n\n{a_clean}"
+                else:
+                    resp = a_clean
+                row = {
+                    "domain": dom,
+                    "lang": lang,
+                    "prompt": p_clean,
+                    "response": resp,
+                }
+                f_out.write(json.dumps(row, ensure_ascii=False) + "\n")
+        print(f"Exported {total_docs:,} SFT pairs successfully.")
+        if args.dry_run:
+            return 0
 
     if args.dry_run:
         print("[DRY-RUN] Exiting without writing binaries.")
