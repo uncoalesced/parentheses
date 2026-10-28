@@ -2240,3 +2240,28 @@ ext_shift_states.
 - tests/test_sft_abstention_v4.py: Catalogs completeness, 800/lang distribution, 85/15 think split, end-to-end CLI execution.
 - tests/test_pack_sft_4096_v4.py: MaxSegmentTree capacity invariants, dynamic token resolution, quarantine edge cases, boundary parity, end-to-end CLI binary outputs.
 - Full repository test regression: 52 passed, 6 skipped, 64 subtests passed (100% green).
+
+
+## 2026-10-28 14:40 IST — Antigravity: Parentheses 1.0 (240M / slab_v4) Backbone Integration Complete (models/model_slab_v4.py)
+
+- **Architecture Hyperparameters (253.49M params):**
+  - Wide-and-shallow 16 layers, d_model = 1024, 16 heads (d_head = 64, rank 1024 per layer), tied embeddings (32,768 vocab, v3_32k BPE), context 4096.
+  - Exact parameter count: 253,494,768 total (219.94M non-embedding).
+  - Preset registered in model/config.py as 'parentheses-1.0-240M'.
+- **Single Entry-Point Document Reset Wiring:**
+  - compute_doc_ids(input_ids, eot_token_id=0) executes once at model entry point, producing (reset_mask, doc_ids).
+  - Threads (reset_mask, doc_ids) into all 16 SlabV4Block layers.
+  - Integrated Layer-0 V0 Value Residual Highway: Layer 0 value activations propagate across subsequent layers via learnable mixing gates.
+- **Critical Batch Collation Invariant (Divisible by C=64, Zero Cross-Bin Bleed):**
+  - Container-aligned 4,096 collation:
+    x = packed_ids[b, :4096] (length 4096, divisible by C=64)
+    y = concat(packed_ids[b, 1:4096], [EOT_ID]) (length 4096)
+    loss_mask = concat(packed_mask[b, 1:4096], [0]) (length 4096)
+  - Supervises terminal EOT from position 4094, while cleanly masking dummy target at 4095 with 0 (no cross-bin leakage).
+- **Verification Suite (tests/test_model_slab_v4.py):**
+  - test_slab_v4_parameter_count_and_sizing: PASSED (253.49M params)
+  - test_single_entrypoint_document_reset_wiring: PASSED (auto-reset without NaN/Inf)
+  - test_slab_v4_forward_and_recurrent_step_parity: PASSED (chunked SSD forward vs O(1) step parity < 1e-3)
+  - test_v0_highway_signal_propagation: PASSED (layer 0 source + layers 1..15 mixing gates)
+  - test_causal_4096_collation_next_token_alignment: PASSED (exact next-token shift invariant)
+  - Full slab_v4 suite: 14/14 tests green in 6.48s.

@@ -107,6 +107,11 @@ PRESETS = {
                                            attn_type="selective_linear", slab_v2=True, slab_v3=True, tie_embeddings=True,
                                            bias=False, dropout=0.0),
 
+    # Parentheses 1.0 (240M / slab_v4): 16 layers, 1024 dim, 16 heads (rank 1024/layer), Tri-Channel Boundary Reset.
+    "parentheses-1.0-240M": ModelConfig(vocab_size=32768, block_size=4096, n_layer=16, n_head=16, n_embd=1024,
+                                        attn_type="selective_linear", slab_v2=True, slab_v3=True, tie_embeddings=True,
+                                        bias=False, dropout=0.0),
+
     # Long-term / Plan Two territory -- kept for reference, not a near-term
     # target on the RTX 5050 laptop. See docs/training-time-estimate.md.
     "parentheses-0.9-50m": ModelConfig(vocab_size=32000, block_size=1024, n_layer=8, n_head=8, n_embd=512, tie_embeddings=False),
