@@ -2265,3 +2265,28 @@ ext_shift_states.
   - test_v0_highway_signal_propagation: PASSED (layer 0 source + layers 1..15 mixing gates)
   - test_causal_4096_collation_next_token_alignment: PASSED (exact next-token shift invariant)
   - Full slab_v4 suite: 14/14 tests green in 6.48s.
+
+
+## 2026-10-28 15:10 IST - Antigravity: Parentheses 1.0 (240M / slab_v4) Training Loop Wired & Verified in train.py
+
+- **Backbone & Collation Integration (feat/240m-slab-v4 @ 87c21cb):**
+  - Updated model/config.py: Added slab_v4: bool = False flag to ModelConfig dataclass and preset 'parentheses-1.0-240M' (slab_v4=True).
+  - Updated models/model_slab_v4.py:
+    - Implemented chunked_loss(x, targets, rows=ce_rows) using block-wise checkpointed cross-entropy to avoid materializing [B*T, vocab] (524 MB per sequence in FP32) when return_logits=False.
+    - Integrated robust dual-format reset mask support: handles both boolean masks (True at document boundaries) and legacy uint8 masks (0 at boundaries, 1 elsewhere), automatically computing cumulative doc_ids when omitted.
+    - Added SlabV4SFTDataset and get_container_batch with strict within-container causal shift (x = row[:4096], y = concat(row[1:4096], [EOT]), mask = concat(mask[1:4096], [0])).
+    - Hardened ignore_index defensively handling both -100 and legacy -1 target masks.
+  - Updated train.py:
+    - Added --container-sft CLI flag for 4,096-aligned FFD container batching (zero cross-bin bleed, within-bin causal target shift).
+    - Routed model instantiation to SlabV4Model(cfg) for 'parentheses-1.0-240M' and configured segregated parameter groups via model.configure_optimizers() (projections, embeddings/norms, recurrent dynamics at 0.1x LR).
+    - Enabled per-block activation checkpointing (model.gradient_checkpointing_enable()), dropping activation memory from ~3.4 GB to ~0.25 GB to operate safely within 8 GB VRAM.
+- **Verification & Smoke Run:**
+  - train.py --self-test: PASSED (all 6 self-tests green).
+  - tests/test_model_slab_v4.py: 7/7 tests passed (including test_slab_v4_chunked_loss_parity and test_slab_v4_uint8_reset_mask_conversion).
+  - Live CUDA Smoke Run on RTX 5050 Laptop GPU (8 GB VRAM):
+    python train.py --preset parentheses-1.0-240M --data data/processed_sft_240m_v4/train.bin --sft-spans data/processed_sft_240m_v4/train.mask.bin --container-sft --grad-checkpointing --batch-size 1 --max-steps 5 --log-every 1 --tokenizer data/tokenizer/v3_32k
+    - Allocation: 253.5M params on CUDA, activation checkpointing enabled, 79.0% supervised tokens (466,018 / 589,824).
+    - Throughput: ~1.4s/step at T=4096, B=1.
+    - Loss descent: 10.6288 -> 7.6526 (0 NaNs, clean descent).
+    - Checkpoint save: verified checkpoints/step_4_final.pt.
+  - Full repository regression suite: 59 passed, 6 skipped, 64 subtests passed (100% green).
