@@ -116,14 +116,17 @@ class SlabV4Attention(nn.Module):
         self.conv_weight = nn.Parameter(
             torch.randn(3 * self.n_embd, 1, self.conv_kernel_size) * (1.0 / math.sqrt(self.conv_kernel_size))
         )
-        self.conv_bias = nn.Parameter(torch.zeros(3 * self.n_embd)) if cfg.bias else None
+        self.conv_bias = nn.Parameter(torch.zeros(3 * self.n_embd))
 
         # Gated Decay Rate: log_alpha = -softplus(alpha_proj(x_ctrl))
         self.alpha_proj = nn.Linear(self.n_embd, self.n_head, bias=True)
         self._init_decay_bias()
 
         # Beta-Gated Selective Write: beta = 2.0 * sigmoid(beta_proj(x_ctrl))
-        self.beta_proj = nn.Linear(self.n_embd, self.n_head, bias=False)
+        self.beta_proj = nn.Linear(self.n_embd, self.n_head, bias=True)
+        with torch.no_grad():
+            self.beta_proj.weight.zero_()
+            self.beta_proj.bias.zero_()
 
         # Layer-0 V0 Value Residual Highway
         if self.layer_idx > 0:
@@ -161,12 +164,13 @@ class SlabV4Attention(nn.Module):
 
         # Channel 2: Document-boundary isolated Depthwise Causal Conv1d
         u_conv, _, _ = causal_conv1d_v4(u, self.conv_weight, self.conv_bias, doc_ids)
+        u_conv = F.silu(u_conv)
 
         qkv = u_conv.view(B, T, 3, H, Dh)
         q, k, v = qkv[:, :, 0], qkv[:, :, 1], qkv[:, :, 2]
 
-        # L2 normalize Q and K in float32 for associative stability
-        q = F.normalize(q.float(), dim=-1).to(q.dtype)
+        # L2 normalize Q and K in float32 for associative stability, scaled by 1/sqrt(head_dim)
+        q = F.normalize(q.float(), dim=-1).to(q.dtype) * (1.0 / math.sqrt(Dh))
         k = F.normalize(k.float(), dim=-1).to(k.dtype)
 
         # V0 Value Residual Highway
@@ -199,8 +203,8 @@ class SlabV4Attention(nn.Module):
         w_norm = self.y_norm.view(1, 1, H, Dh).to(y.dtype)
         y = (y_normed * w_norm).reshape(B, T, C)
 
-        # Output gate + linear projection
-        out = self.proj(y * F.silu(self.gate(x)))
+        # Output gate + linear projection (gated by x_ctrl)
+        out = self.proj(y * F.silu(self.gate(x_ctrl)))
         return out, v0_out
 
     def step(
@@ -236,12 +240,13 @@ class SlabV4Attention(nn.Module):
         u_conv = (window.permute(0, 2, 1) * w_conv).sum(dim=-1)
         if self.conv_bias is not None:
             u_conv = u_conv + self.conv_bias.unsqueeze(0)
+        u_conv = F.silu(u_conv)
         conv_next = window[:, 1:, :]
 
         qkv = u_conv.view(B, 1, 3, H, Dh)
         q, k, v = qkv[:, :, 0], qkv[:, :, 1], qkv[:, :, 2]
 
-        q = F.normalize(q.float(), dim=-1).to(q.dtype)
+        q = F.normalize(q.float(), dim=-1).to(q.dtype) * (1.0 / math.sqrt(Dh))
         k = F.normalize(k.float(), dim=-1).to(k.dtype)
 
         v0_out = v if self.layer_idx == 0 else v0
@@ -268,7 +273,7 @@ class SlabV4Attention(nn.Module):
         y_normed = (y_float * torch.rsqrt(y_float.pow(2).mean(-1, keepdim=True) + 1e-5)).to(y.dtype)
         y = (y_normed * self.y_norm.view(1, 1, H, Dh)).reshape(B, C)
 
-        out = self.proj(y * F.silu(self.gate(x)))
+        out = self.proj(y * F.silu(self.gate(x_ctrl)))
         return out, (S_next, conv_next, token_next), v0_out
 
 

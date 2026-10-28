@@ -254,3 +254,37 @@ def test_slab_v4_uint8_reset_mask_conversion():
     assert err1 < 1e-5, f"uint8 vs auto mismatch: {err1}"
     assert err2 < 1e-5, f"uint8 vs bool mismatch: {err2}"
 
+
+def test_net2widernet_130m_to_240m_forward_parity():
+    """Verify function-preserving Net2WiderNet 130M -> 240M expansion preserves top-1 predictions and low logit delta."""
+    ckpt_path = Path("I:/parentheses/checkpoints/parentheses-0.9-130M-v3/step_22888_swa3_base.pt")
+    if not ckpt_path.exists():
+        pytest.skip("Golden 130M checkpoint not found on I: drive")
+
+    from scripts.grow_model_slab_v4 import grow_130m_to_240m
+    from model.backbone import Parentheses
+
+    model240, _ = grow_130m_to_240m(ckpt_path, out_path=None, jitter=1e-3, seed=42)
+    model240.eval()
+
+    ckpt130 = torch.load(ckpt_path, map_location="cpu", weights_only=False)
+    model130 = Parentheses(ckpt130["cfg"])
+    model130.load_state_dict(ckpt130["model"])
+    model130.eval()
+
+    tokens = torch.randint(10, 500, (1, 64))
+    with torch.no_grad():
+        out130, _ = model130(tokens)
+        out240, _ = model240(tokens)
+
+    # 1. Top-1 predictions must agree 100%
+    pred130 = out130.argmax(dim=-1)
+    pred240 = out240.argmax(dim=-1)
+    agreement = (pred130 == pred240).float().mean().item()
+    assert agreement == 1.0, f"Token prediction agreement failed: {agreement}"
+
+    # 2. Mean logit difference must be < 0.1
+    mean_diff = (out130 - out240).abs().mean().item()
+    assert mean_diff < 0.1, f"Mean logit diff too high: {mean_diff}"
+
+
