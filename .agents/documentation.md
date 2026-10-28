@@ -2214,3 +2214,29 @@ ext_shift_states.
 ### 5. Storage & Archival
 - Mirrored dpo-v2-raw/ and dpo-v2-swa3/ checkpoints, ONNX graphs, and evaluation results to I:\parentheses\.
 - E: drive free space is currently 11.96 GB; intermediate checkpoints (7.1 GB in sft-notrunc/) are queued for user approval before pruning.
+
+
+## 2026-10-28 — Antigravity: Step 3 (Parentheses 1.0 / 240M / slab_v4 Bring-Up) — Epistemic Abstention Generator & 4,096-Token FFD Document-Aware Packer
+
+### 1. Multilingual Epistemic Abstention Generator (scripts/generate_sft_abstention_v4.py)
+- Generated 4,000 balanced epistemic abstention traces (data/sft_v4_abstention_4000.jsonl):
+  - 800 traces each across English, Kannada (kan), Tamil (tam), Telugu (tel), and Malayalam (mal).
+  - 85.0% (3,400) structured <think>...</think> verification blocks, 15.0% (600) direct honest abstentions.
+  - 100% <think> tag balance (0 unclosed tags, 0 hallucinations) across 5 unverified/anachronistic archetypes.
+  - Ensures prior probability mass on honest abstention is grounded directly in the base SFT reference policy before DPO.
+
+### 2. 4,096-Token First-Fit-Decreasing (FFD) Document-Aware Packer (scripts/pack_sft_4096_v4.py)
+- Resolved critical token ID defect in raw draft: dynamically bound USER_ID (13), ASSISTANT_ID (14), THINK_OPEN_ID (15), THINK_CLOSE_ID (16), and EOT_ID (0) to v3_32k vocabulary (correcting draft collision with low-resource language tags).
+- Built O(N log M) MaxSegmentTree First-Fit-Decreasing packer:
+  - Document atomicity: zero mid-document truncation across all packed sequences.
+  - 100% <|endoftext|> termination at every document boundary.
+  - Element-aligned supervision: prompt tokens masked to 0, assistant response + terminal EOT masked to 1, end-of-bin padding masked to 0.
+  - Dual boundary alignment: emits both 3D coordinate boundaries train_boundaries.npy (N, 3) and 1D flat token offsets train_boundaries_flat.npy (N,).
+- Validation Run (data/processed_sft_240m_v4/):
+  - Packed 4,000 documents into 144 bins (589,824 tokens) with 99.118% packing efficiency.
+  - Multi-dataset stress test: packed 47,579 documents (8.81M tokens) into 2,158 bins with 99.692% packing efficiency and 0 quarantines in < 15 seconds.
+
+### 3. Verification & Test Suite
+- tests/test_sft_abstention_v4.py: Catalogs completeness, 800/lang distribution, 85/15 think split, end-to-end CLI execution.
+- tests/test_pack_sft_4096_v4.py: MaxSegmentTree capacity invariants, dynamic token resolution, quarantine edge cases, boundary parity, end-to-end CLI binary outputs.
+- Full repository test regression: 52 passed, 6 skipped, 64 subtests passed (100% green).
