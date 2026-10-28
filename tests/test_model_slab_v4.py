@@ -182,3 +182,75 @@ def test_causal_4096_collation_next_token_alignment():
     # Invariant: Final dummy target at index 4095 is masked with 0
     assert y[4095] == EOT_ID
     assert loss_mask[4095] == 0
+
+
+def test_slab_v4_chunked_loss_parity():
+    """Verify that chunked_loss (return_logits=False) matches full cross_entropy loss."""
+    torch.manual_seed(42)
+    cfg = SlabV4Config(
+        vocab_size=256,
+        block_size=128,
+        n_layer=2,
+        n_head=4,
+        n_embd=128,
+        chunk_size=64,
+        ignore_index=-100,
+    )
+    model = SlabV4Model(cfg)
+    model.eval()
+
+    x = torch.randint(5, 250, (2, 128))
+    targets = torch.randint(5, 250, (2, 128))
+    # Mask out some positions with -100 and -1
+    targets[0, 10:20] = -100
+    targets[1, 30:40] = -1
+
+    with torch.no_grad():
+        logits_full, loss_full = model(x, targets, return_logits=True)
+        logits_none, loss_chunked = model(x, targets, return_logits=False, ce_rows=64)
+
+    assert logits_none is None
+    assert loss_full is not None
+    assert loss_chunked is not None
+    diff = (loss_full - loss_chunked).abs().item()
+    print(f"Chunked loss difference: {diff:.6e}")
+    assert diff < 1e-4, f"Chunked loss mismatch: {diff}"
+
+
+def test_slab_v4_uint8_reset_mask_conversion():
+    """Verify that uint8 boundary mask (0=boundary, 1=non-boundary) matches bool mask (True=boundary)."""
+    torch.manual_seed(42)
+    cfg = SlabV4Config(
+        vocab_size=256,
+        block_size=128,
+        n_layer=2,
+        n_head=4,
+        n_embd=128,
+        chunk_size=64,
+    )
+    model = SlabV4Model(cfg)
+    model.eval()
+
+    x = torch.randint(5, 250, (1, 128))
+    # Set document boundary at t=64
+    x[0, 63] = 0
+
+    # uint8 mask: 0 at boundary (token 64), 1 elsewhere
+    uint8_mask = torch.ones((1, 128), dtype=torch.uint8)
+    uint8_mask[0, 64] = 0
+
+    # bool mask: True at boundary (token 64), False elsewhere
+    bool_mask = torch.zeros((1, 128), dtype=torch.bool)
+    bool_mask[0, 64] = True
+
+    with torch.no_grad():
+        logits_auto, _ = model(x)
+        logits_uint8, _ = model(x, reset_mask=uint8_mask)
+        logits_bool, _ = model(x, reset_mask=bool_mask)
+
+    err1 = (logits_auto - logits_uint8).abs().max().item()
+    err2 = (logits_bool - logits_uint8).abs().max().item()
+
+    assert err1 < 1e-5, f"uint8 vs auto mismatch: {err1}"
+    assert err2 < 1e-5, f"uint8 vs bool mismatch: {err2}"
+

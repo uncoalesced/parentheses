@@ -29,6 +29,8 @@ class ModelConfig:
     #                              attn_type: old checkpoints have no field, read False, and
     #                              keep loading and comparing equal.
     slab_v3: bool = False        # selective_linear only: slab_v3 research upgrades (Token-Shift,
+    slab_v4: bool = False        # selective_linear only: Parentheses 1.0 (240M / slab_v4) upgrades
+    #                              (Tri-Channel Boundary Reset, Wide-and-Shallow 16-layer, 1024 dim).
     #                              Beta-Gated Selective Write, and Layer-0 V0 Value Residual Highway).
 
     @property
@@ -109,7 +111,7 @@ PRESETS = {
 
     # Parentheses 1.0 (240M / slab_v4): 16 layers, 1024 dim, 16 heads (rank 1024/layer), Tri-Channel Boundary Reset.
     "parentheses-1.0-240M": ModelConfig(vocab_size=32768, block_size=4096, n_layer=16, n_head=16, n_embd=1024,
-                                        attn_type="selective_linear", slab_v2=True, slab_v3=True, tie_embeddings=True,
+                                        attn_type="selective_linear", slab_v2=True, slab_v3=True, slab_v4=True, tie_embeddings=True,
                                         bias=False, dropout=0.0),
 
     # Long-term / Plan Two territory -- kept for reference, not a near-term

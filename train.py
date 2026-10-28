@@ -22,6 +22,7 @@ import numpy as np
 import torch
 
 from model import ModelConfig, PRESETS, Parentheses
+from models.model_slab_v4 import SlabV4Model, get_container_batch
 
 
 def supervised_starts(mask: np.memmap, hi: int, block_size: int, batch_size: int,
@@ -256,6 +257,8 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument("--preset", default="parentheses-0.9-300k", choices=list(PRESETS.keys()))
     p.add_argument("--data", default="data/processed/train.bin", help="path to tokenized uint16 .bin file")
+    p.add_argument("--container-sft", action="store_true",
+                   help="container-aligned 4,096 FFD bin batching (zero cross-bin bleed, within-bin causal target shift)")
     p.add_argument("--sft-spans", default=None,
                    help="SFT stage: uint8 loss mask written by data/prepare_sft.py --pack "
                         "(e.g. data/processed_sft/train.mask.bin), same length as --data. "
@@ -331,6 +334,7 @@ def main():
         return
 
     cfg: ModelConfig = PRESETS[args.preset]
+    is_slab_v4 = getattr(cfg, "slab_v4", False) or args.preset == "parentheses-1.0-240M"
     if args.device == "cuda":
         # Windows lets CUDA spill into shared system RAM instead of raising OOM, which
         # runs ~10x slower with no error. Cap it so overflow is a real OOM the overnight
@@ -338,21 +342,36 @@ def main():
         torch.cuda.set_per_process_memory_fraction(0.92)
     if args.seed is not None:
         torch.manual_seed(args.seed)
-    model = Parentheses(cfg).to(args.device)
-    print(f"[info] {args.preset}: {model.num_params()/1e6:.1f}M params on {args.device}")
+    if is_slab_v4:
+        model = SlabV4Model(cfg).to(args.device)
+        print(f"[info] {args.preset} (slab_v4): {model.num_params()/1e6:.1f}M params on {args.device}")
+    else:
+        model = Parentheses(cfg).to(args.device)
+        print(f"[info] {args.preset}: {model.num_params()/1e6:.1f}M params on {args.device}")
 
     if args.grad_checkpointing:
-        model.grad_checkpointing = True   # per-block activation checkpointing in Parentheses.hidden
+        if is_slab_v4:
+            model.gradient_checkpointing_enable()
+        else:
+            model.grad_checkpointing = True   # per-block activation checkpointing in Parentheses.hidden
         print("[info] activation checkpointing on (per block)")
 
-    optimizer = build_optimizer(
-        model,
-        args.lr,
-        args.weight_decay,
-        use_8bit=args.optimizer_8bit,
-        differential=args.differential_adamw,
-        recurrent_lr_ratio=args.recurrent_lr_ratio,
-    )
+    if is_slab_v4:
+        optimizer = model.configure_optimizers(
+            lr=args.lr,
+            weight_decay=args.weight_decay,
+            recurrent_lr_ratio=args.recurrent_lr_ratio,
+            use_8bit=args.optimizer_8bit,
+        )
+    else:
+        optimizer = build_optimizer(
+            model,
+            args.lr,
+            args.weight_decay,
+            use_8bit=args.optimizer_8bit,
+            differential=args.differential_adamw,
+            recurrent_lr_ratio=args.recurrent_lr_ratio,
+        )
 
     use_amp = args.device == "cuda"
     scaler = torch.amp.GradScaler(args.device, enabled=use_amp)
@@ -374,6 +393,16 @@ def main():
                 f"wrong bytes; re-run data/prepare_sft.py --pack to write both together.")
         print(f"[info] SFT loss masking on: {int(np.count_nonzero(mask)):,} of {len(mask):,} "
               f"bytes supervised ({np.count_nonzero(mask)/len(mask):.1%})")
+
+    if args.container_sft:
+        if len(data) % cfg.block_size != 0:
+            raise ValueError(
+                f"--container-sft requires data length to be an exact multiple of block_size {cfg.block_size}, "
+                f"got {len(data):,} tokens ({len(data) % cfg.block_size} trailing tokens)."
+            )
+        num_bins = len(data) // cfg.block_size
+        print(f"[info] container-aligned SFT batching on: {num_bins:,} bins of {cfg.block_size} tokens "
+              f"(within-bin causal shift, zero cross-bin bleed)")
 
     boundaries = None
     if args.boundaries:
@@ -516,8 +545,16 @@ def main():
         optimizer.zero_grad(set_to_none=True)
         loss_accum = 0.0
         for _ in range(args.grad_accum):
-            x, y, reset_mask = mixed_batch(data, mixes, cfg.block_size, args.batch_size,
-                                           args.device, mask, boundaries)
+            if args.container_sft:
+                eot_id = getattr(cfg, "eot_token_id", 0)
+                ign_idx = getattr(cfg, "ignore_index", -100 if is_slab_v4 else -1)
+                x, y, reset_mask = get_container_batch(
+                    data, mask, cfg.block_size, args.batch_size, args.device,
+                    eot_token_id=eot_id, ignore_index=ign_idx,
+                )
+            else:
+                x, y, reset_mask = mixed_batch(data, mixes, cfg.block_size, args.batch_size,
+                                               args.device, mask, boundaries)
             with torch.autocast(device_type=args.device, dtype=torch.bfloat16, enabled=use_amp):
                 # logits are only needed for z-loss; otherwise the chunked CE never builds
                 # the (B*T, vocab) tensor -- the dominant memory cost at a 64k vocab
@@ -545,7 +582,7 @@ def main():
         if step % args.log_every == 0:
             dt = time.time() - t0
             extra_telemetry = ""
-            if getattr(cfg, "slab_v3", False) and (step % 250 == 0 or step == start_step):
+            if (getattr(cfg, "slab_v3", False) or is_slab_v4) and (step % 250 == 0 or step == start_step):
                 with torch.no_grad():
                     v_res_vals = [
                         torch.sigmoid(b.attn.v_residual_lamb).mean().item()
