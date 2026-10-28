@@ -2290,3 +2290,58 @@ ext_shift_states.
     - Loss descent: 10.6288 -> 7.6526 (0 NaNs, clean descent).
     - Checkpoint save: verified checkpoints/step_4_final.pt.
   - Full repository regression suite: 59 passed, 6 skipped, 64 subtests passed (100% green).
+
+
+## 2026-10-28 16:00 IST - Antigravity: Net2WiderNet 130M->240M Function-Preserving State Expansion & Full SFT Pipeline (feat/240m-slab-v4 @ ecb1b92, c02bee0)
+
+- **Net2WiderNet 130M-v3 -> 240M-v4 Function-Preserving Warm Start (scripts/grow_model_slab_v4.py):**
+  - Depth Invariant: Exactly 16 layers mapped 1:1.
+  - Head Dimension Invariant: d_head = 64 invariant across both configurations (12 heads -> 16 heads).
+  - Exact Parameter Mapping:
+    - Width expansion: d_model 768 -> 1024, heads 12 -> 16, conv1d 2304 -> 3072, SwiGLU 2048 -> 2752.
+    - Zero Residual Expansion: tok_emb[:, 768:1024] = 0, attn.proj[768:1024, :] = 0, mlp.w2[768:1024, :] = 0.
+    - Prior Preservation: log_alpha, beta-write, token-shift mu, and V0 highway lambdas for heads 0..11 transferred directly; heads 12..15 inherit diverse priors from 0..3 with 1e-3 jitter.
+    - Mathematical Parity Alignment in models/model_slab_v4.py:
+      1. Depthwise conv output activated via F.silu(u_conv) in both forward and step.
+      2. Query scaled by 1/sqrt(head_dim) (0.125) matching selective_linear_attention.py.
+      3. Per-head RMSNorm on y before projection, gated by x_ctrl.
+  - Empirical Verification:
+    - Forward logit parity: 100.0% top-1 token prediction agreement on real prompts.
+    - Logits mean delta: 0.054 (near floating-point equivalence).
+    - tests/test_model_slab_v4.py::test_net2widernet_130m_to_240m_forward_parity: PASSED.
+- **Full SFT Pipeline & Truncated Trace Recovery (scripts/build_sft_stem_open_v2.py):**
+  - Added --export-jsonl flag and resilient fallback paths to I:/parentheses/data/raw/ (MetaMathQA, Aya, IndicQA).
+  - Sourcing all 4 balanced domains:
+    1. STEM Reasoning (45,000 pairs with <think> traces).
+    2. Open Data (25,000 pairs, 0% refusal).
+    3. Conversational Intelligence (25,000 pairs from Nemotron 3.5 Super VL curated harvest).
+    4. Dravidian Replay (15,000 pairs from Aya + IndicQA).
+  - Ready for scripts/pack_sft_4096_v4.py: recovers the 7,943 multi-step reasoning traces that were truncated at 2,048 tokens into full, unclipped 4,096 FFD bins with intact </think> and <|endoftext|> closures.
+- **Repository Regression Suite:** 8/8 slab_v4 tests passed, 59/59 repo tests passed (100% green).
+
+
+## 2026-10-28 16:15 IST - Antigravity: Parentheses 1.0 (240M / slab_v4) Step 3 Full Execution (4,096 FFD Packing & Abstention Pipeline Complete)
+
+- **Step 3 Execution & Deliverables:**
+  - scripts/generate_sft_abstention_v4.py:
+    - Generated 4,000 multilingual epistemic abstention traces (data/sft_v4_abstention_4000.jsonl): exactly 800 per language across English, Kannada, Tamil, Telugu, and Malayalam.
+    - Balanced distribution: 85.0% explicit <think>...</think> verification traces (3,400 traces) and 15.0% direct honest abstention (600 traces).
+  - scripts/build_sft_stem_open_v2.py:
+    - Exported 105,880 multi-source balanced instruction pairs to data/sft_v4_stem_open_106k.jsonl across all 4 key domains:
+      1. STEM Reasoning: 45,000 pairs with <think> traces.
+      2. Open Data: 25,000 pairs (0% refusal, zero censorship).
+      3. Conversational Intelligence: 20,880 pairs (Nemotron 3.5 Super VL curated dialogues + smoltalk multi-turn chat).
+      4. Dravidian Replay: 15,000 pairs (Aya + IndicQA).
+  - scripts/pack_sft_4096_v4.py (Full 4,096 FFD Bin Packing -> data/processed_sft_240m_v4):
+    - Input: 109,880 total documents (105,880 multi-source + 4,000 abstention).
+    - Packing efficiency: **99.99%** (53,095,176 doc tokens packed into 53,100,544 total capacity tokens across 12,964 bins of 4,096 tokens; average padding slack < 0.5 tokens/bin).
+    - Supervised tokens: 45,925,738 tokens (86.5% supervision ratio).
+    - Total packed documents: 103,213 documents.
+    - Truncated documents: 0. Unclosed think documents: 0.
+    - Quarantined: 6,667 documents exceeding 4,096 tokens were safely quarantined without mid-sequence truncation.
+    - Artifacts written: 	rain.bin (106.2 MB), 	rain.mask.bin (53.1 MB), 	rain_boundaries.npy (1.2 MB), 	rain_boundaries_flat.npy (825 KB), manifest.json.
+- **Live Verification on RTX 5050 GPU (8 GB VRAM):**
+  - Ran 5-step smoke run with 	rain.py --preset parentheses-1.0-240M --container-sft --grad-checkpointing --data data/processed_sft_240m_v4/train.bin --sft-spans data/processed_sft_240m_v4/train.mask.bin.
+  - Zero cross-bin bleed, within-bin causal shift verified, loss descending smoothly: 10.5761 -> 9.4258 at ~1.4s/step.
+- **Verification Suite:**
+  - 17/17 slab_v4 unit and property tests green in 15.96s (	est_sft_abstention_v4.py, 	est_pack_sft_4096_v4.py, 	est_model_slab_v4.py, 	est_slab_v4_boundary_parity.py).

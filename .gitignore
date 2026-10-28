@@ -30,3 +30,4 @@ gates/
 AGENTS.md
 CLAUDE.md
 GATES.md
+data/*.jsonl

@@ -313,6 +313,8 @@ def main():
 
     # Add multi-turn smoltalk chat dialogues if available
     sft_real_raw = REPO / "data" / "raw" / "sft_real" / "HuggingFaceTB__smol-smoltalk" / "data"
+    if not sft_real_raw.exists():
+        sft_real_raw = Path("I:/parentheses/data/raw/sft_real/HuggingFaceTB__smol-smoltalk/data")
     if sft_real_raw.exists():
         import pyarrow.parquet as pq
         added_smol = 0
