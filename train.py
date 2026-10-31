@@ -94,6 +94,12 @@ def get_batch(data: np.memmap, block_size: int, batch_size: int, device: str,
     # not y's: it gates which past tokens the attention may carry state from, and
     # the model reads it alongside the inputs.
     reset_mask = None if boundaries is None else boundary_reset_mask(boundaries, ix.numpy(), block_size)
+    if reset_mask is None:
+        reset_mask = torch.ones((batch_size, block_size), dtype=torch.uint8)
+    eot_mask = (x == 0)
+    if block_size > 1:
+        eot_mask[:, 1:] = eot_mask[:, 1:] | (x[:, :-1] == 0)
+    reset_mask = reset_mask.masked_fill(eot_mask, 0)
     if device == "cuda":
         x, y = x.pin_memory().to(device, non_blocking=True), y.pin_memory().to(device, non_blocking=True)
         if reset_mask is not None:
@@ -279,6 +285,8 @@ def main():
                    help="extra corpus: PATH ROWS [BOUNDARIES]. ROWS of every micro-batch come from "
                         "PATH (uint16 .bin); BOUNDARIES (.npy) turns on document resets for it. "
                         "Repeat per corpus, e.g. one per low-resource language.")
+    p.add_argument("--secondary-data-dir", default=None,
+                   help="Session 3 dual-memmap micro-batch interleaving secondary directory")
     p.add_argument("--out-dir", default="checkpoints")
     p.add_argument("--resume-from", default=None,
                    help="checkpoint .pt to resume from (for staged/batched runs). "
@@ -464,6 +472,14 @@ def main():
         raise ValueError(f"mix rows {[n for _, _, n in mixes]} must each be >= 1 and leave at least one "
                          f"row of --data in a batch of {args.batch_size}")
 
+    dual_loader = None
+    if getattr(args, "secondary_data_dir", None):
+        from scripts.dual_loader import DualCurriculumLoader
+        prim_dir = Path(args.data).parent if Path(args.data).is_file() else Path(args.data)
+        sec_dir = Path(args.secondary_data_dir)
+        dual_loader = DualCurriculumLoader(prim_dir, sec_dir, seq_len=cfg.block_size)
+        print(f"[info] DualCurriculumLoader active: interleaving {prim_dir.name} and {sec_dir.name} across {args.grad_accum} micro-steps")
+
     os.makedirs(args.out_dir, exist_ok=True)
 
     start_step = 0
@@ -474,7 +490,7 @@ def main():
         # (features/free_think.py carries the same note). Torch 2.6+ defaults this
         # to True, which rejects the load outright -- --resume-from could not load
         # any checkpoint this repo has ever written.
-        ckpt = torch.load(args.resume_from, map_location=args.device, weights_only=False)
+        ckpt = torch.load(args.resume_from, map_location="cpu", weights_only=False)
         if ckpt["cfg"] != cfg:
             raise ValueError(
                 f"--resume-from checkpoint was trained with cfg {ckpt['cfg']!r}, but "
@@ -521,9 +537,59 @@ def main():
         raise ValueError(f"vocab_size {cfg.vocab_size} is a BPE model but no tokenizer is known: pass "
                          f"--tokenizer (e.g. data/tokenizer/v3_32k), or checkpoints will save tokenizer=None")
 
+    if args.resume_from:
+        del ckpt
+        if args.device == "cuda":
+            torch.cuda.empty_cache()
+
     def save(path, step):
         torch.save({"model": model.state_dict(), "optimizer": optimizer.state_dict(),
                     "cfg": cfg, "step": step, "tokenizer": tok_meta}, path)
+
+    val_data_mmap = None
+    val_bounds_mmap = None
+    val_bin_candidate = os.path.join(os.path.dirname(args.data), "val.bin")
+    val_bnd_candidate = os.path.join(os.path.dirname(args.data), "val_boundaries.npy")
+    if os.path.exists(val_bin_candidate):
+        val_data_mmap = np.memmap(val_bin_candidate, dtype=np.uint16, mode="r")
+        if os.path.exists(val_bnd_candidate):
+            val_bounds_mmap = np.load(val_bnd_candidate, mmap_mode="r")
+
+    @torch.no_grad()
+    def run_val_20(target_data=None, target_bounds=None) -> tuple[float, float]:
+        v_data = target_data if target_data is not None else val_data_mmap
+        v_bnds = target_bounds if target_bounds is not None else val_bounds_mmap
+        if v_data is None or len(v_data) <= cfg.block_size + 1:
+            return float("nan"), float("nan")
+        if args.device == "cuda":
+            torch.cuda.empty_cache()
+        was_training = model.training
+        model.eval()
+        n_eval = 20
+        max_start = len(v_data) - cfg.block_size - 1
+        stride = max(1, max_start // n_eval)
+        losses = []
+        for i in range(n_eval):
+            s = i * stride
+            xv = torch.from_numpy(v_data[s : s + cfg.block_size].astype(np.int64)).unsqueeze(0)
+            yv = torch.from_numpy(v_data[s + 1 : s + 1 + cfg.block_size].astype(np.int64)).unsqueeze(0)
+            rm = boundary_reset_mask(v_bnds, np.array([s]), cfg.block_size) if v_bnds is not None else torch.ones((1, cfg.block_size), dtype=torch.uint8)
+            eot_m = (xv == 0)
+            if cfg.block_size > 1:
+                eot_m[:, 1:] = eot_m[:, 1:] | (xv[:, :-1] == 0)
+            rm = rm.masked_fill(eot_m, 0)
+            xv, yv, rm = xv.to(args.device), yv.to(args.device), rm.to(args.device)
+            with torch.autocast(device_type=args.device, dtype=torch.bfloat16, enabled=use_amp):
+                _, vl = model(xv, yv, reset_mask=rm, return_logits=False, ce_rows=1024)
+            losses.append(float(vl.item()))
+            del xv, yv, rm, vl
+        if was_training:
+            model.train()
+        if args.device == "cuda":
+            torch.cuda.empty_cache()
+        args._last_log_t = time.time()
+        mean_vl = float(np.mean(losses))
+        return mean_vl, float(np.exp(min(mean_vl, 20.0)))
 
     if args.seed is not None:
         # batch sampling only from here on; offset by start_step so a resume does not
@@ -544,8 +610,12 @@ def main():
             g["lr"] = lr * mult
         optimizer.zero_grad(set_to_none=True)
         loss_accum = 0.0
-        for _ in range(args.grad_accum):
-            if args.container_sft:
+        for micro_step in range(args.grad_accum):
+            if dual_loader is not None:
+                x, y, reset_mask = dual_loader.sample_micro_batch(
+                    step, micro_step, args.batch_size, args.device, boundary_reset_mask
+                )
+            elif args.container_sft:
                 eot_id = getattr(cfg, "eot_token_id", 0)
                 ign_idx = getattr(cfg, "ignore_index", -100 if is_slab_v4 else -1)
                 x, y, reset_mask = get_container_batch(
@@ -574,15 +644,23 @@ def main():
                 clip_factor=args.clip_factor,
                 decay_clip_factor=args.decay_clip_factor,
             )
+            gnorm_val = float(torch.nn.utils.clip_grad_norm_(model.parameters(), float("inf")).item())
         else:
-            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+            gnorm_val = float(torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0).item())
         scaler.step(optimizer)
         scaler.update()
+        optimizer.zero_grad(set_to_none=True)
 
         if step % args.log_every == 0:
-            dt = time.time() - t0
-            extra_telemetry = ""
-            if (getattr(cfg, "slab_v3", False) or is_slab_v4) and (step % 250 == 0 or step == start_step):
+            now_t = time.time()
+            dt = now_t - t0
+            step_dt = max(1e-6, now_t - getattr(args, "_last_log_t", t0))
+            args._last_log_t = now_t
+            tps = (args.batch_size * args.grad_accum * cfg.block_size * max(1, args.log_every)) / step_dt
+            extra_telemetry = f" | grad_norm {gnorm_val:.4f} | tok/s {tps:.0f}"
+            v0_mix = float("nan")
+            beta_mean = float("nan")
+            if getattr(cfg, "slab_v3", False) or is_slab_v4:
                 with torch.no_grad():
                     v_res_vals = [
                         torch.sigmoid(b.attn.v_residual_lamb).mean().item()
@@ -596,13 +674,47 @@ def main():
                     if v_res_vals and beta_biases:
                         v0_mix = sum(v_res_vals) / len(v_res_vals)
                         beta_mean = sum(beta_biases) / len(beta_biases)
-                        extra_telemetry = f" | v0_mix {v0_mix:.4f} | beta_write {beta_mean:.4f}"
-            print(f"step {step:6d} | loss {loss_accum:.4f} | lr {args.lr * mult:.2e}{extra_telemetry} | {dt:.1f}s elapsed")
+                        extra_telemetry += f" | v0_mix {v0_mix:.4f} | beta_write {beta_mean:.4f}"
+            val_loss_val, val_ppl_val = float("nan"), float("nan")
+            if step == start_step or (step > 0 and step % 250 == 0):
+                val_loss_val, val_ppl_val = run_val_20()
+                if val_loss_val == val_loss_val:
+                    extra_telemetry += f" | val_loss {val_loss_val:.4f} | val_ppl {val_ppl_val:.2f}"
+                if dual_loader is not None and dual_loader.sec_val is not None:
+                    sec_vloss, sec_vppl = run_val_20(dual_loader.sec_val, dual_loader.sec_bounds)
+                    if sec_vloss == sec_vloss:
+                        extra_telemetry += f" | val_v5 {sec_vloss:.4f} | ppl_v5 {sec_vppl:.2f}"
+            print(f"step {step:6d} | loss {loss_accum:.4f} | lr {args.lr * mult:.2e}{extra_telemetry} | {dt:.1f}s elapsed", flush=True)
+            if is_slab_v4:
+                import json
+                os.makedirs("out", exist_ok=True)
+                vram_gb = torch.cuda.memory_reserved() / (1024**3) if args.device == "cuda" else 0.0
+                rec = {
+                    "step": step,
+                    "loss": round(loss_accum, 6),
+                    "lr": round(args.lr * mult, 8),
+                    "grad_norm": round(gnorm_val, 6),
+                    "beta_write": round(beta_mean, 6) if beta_mean == beta_mean else None,
+                    "v0_mix": round(v0_mix, 6) if v0_mix == v0_mix else None,
+                    "tok_per_sec": round(tps, 1),
+                    "vram_gb": round(vram_gb, 3),
+                }
+                if val_loss_val == val_loss_val:
+                    rec["val_loss"] = round(val_loss_val, 4)
+                    rec["val_ppl"] = round(val_ppl_val, 2)
+                with open(os.path.join("out", "session1_240m_metrics.jsonl"), "a", encoding="utf-8") as jf:
+                    jf.write(json.dumps(rec) + "\n")
 
         if step > 0 and step % args.ckpt_every == 0:
             path = os.path.join(args.out_dir, f"step_{step}.pt")
             save(path, step)
-            print(f"[info] saved checkpoint: {path}")
+            latest_path = os.path.join(args.out_dir, "latest.pt")
+            try:
+                import shutil
+                shutil.copy2(path, latest_path)
+            except Exception:
+                pass
+            print(f"[info] saved checkpoint: {path}", flush=True)
 
     # final save -- the loop above only checkpoints on a step%ckpt_every==0
     # step *inside* range(max_steps), so whenever max_steps isn't hit by
