@@ -1,4 +1,4 @@
-torch>=2.2
+torch>=2.15.0
 numpy
 datasets          # for pulling wikimedia/wikipedia + gutenberg mirrors
 tokenizers        # BPE tokenizer training
