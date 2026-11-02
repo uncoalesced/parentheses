@@ -99,5 +99,5 @@ typing_extensions==4.16.0
 tzdata==2026.3
 urllib3==2.8.0
 word2number==1.1
-xxhash==4.0.1
+xxhash==4.0.2
 yarl==1.24.5
