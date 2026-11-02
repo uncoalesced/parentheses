@@ -62,7 +62,7 @@ pillow==13.0.0
 portalocker==4.4.0
 propcache==0.5.2
 protobuf==7.36.1
-pyarrow==25.0.1
+pyarrow==26.0.0
 Pygments==2.21.0
 pyparsing==3.3.3
 pytablewriter==1.2.1
