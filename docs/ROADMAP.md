@@ -1,6 +1,6 @@
 # Roadmap
 
-parentheses is a small language model I am building from scratch on one 8 GB laptop GPU, aimed mostly at Kannada and the other Dravidian languages, with English alongside them. The released preview is parentheses-0.9-130M. The next model, parentheses-1.0-240M, is in progress, and I am working through it one training session at a time. This is a work in progress. This page says what is done, what is next, and where I think the weak spots are.
+parentheses is a small language model I am building from scratch on one 8 GB laptop GPU, aimed mostly at Kannada and the other Dravidian languages, with English alongside them. The released preview is parentheses-0.9-130M. The next model, parentheses-1.0-240M, is in progress, and I am working through it one training session at a time. This is a work in progress. This page says what is done, what is next, and where I think the weak spots are. For how it got this far, see [HISTORY.md](HISTORY.md).
 
 ## At a glance
 
@@ -103,4 +103,4 @@ For bugs, open an issue at https://github.com/uncoalesced/parentheses/issues. Th
 
 ---
 
-Related: [README](../README.md), [Setup](SETUP.md), [Architecture](ARCHITECTURE.md), [Documentation](DOCUMENTATION.md)
+Related: [README](../README.md), [History](HISTORY.md), [Setup](SETUP.md), [Architecture](ARCHITECTURE.md), [Documentation](DOCUMENTATION.md), [Contributing](../CONTRIBUTING.md)

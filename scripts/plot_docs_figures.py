@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 from pathlib import Path
 
@@ -32,10 +33,8 @@ BORDER = "#4B4B4B"
 
 ROOT = Path(__file__).resolve().parent.parent
 MARK = ROOT / "assets" / "parentheses_mark.svg"
-FONT_CANDIDATES = [
-    Path(r"C:\Users\Joel Anthony\AppData\Local\Programs\cursor\resources\app\out\media\jetbrains-mono-regular.ttf"),
-    Path(r"C:\Windows\Fonts\JetBrainsMono-Regular.ttf"),
-]
+FONT_CANDIDATES = [Path(p) for p in (os.environ.get("PARENTHESES_FONT", ""),
+                                     r"C:\Windows\Fonts\JetBrainsMono-Regular.ttf") if p]
 
 plt.rcParams["svg.fonttype"] = "path"
 for _f in FONT_CANDIDATES:
@@ -201,6 +200,36 @@ def training_240m(metrics_jsonl: Path, out: Path):
     plt.close(fig)
 
 
+def history_growth(out: Path):
+    """Parameter count of each 2026 stage on a log scale (labels 0.2-0.8 are retroactive)."""
+    stages = [  # (days since 2026-08-31, params, label, released)
+        (0, 0.3e6, "0.2", False), (5, 0.3e6, "0.3", False), (31, 0.33e6, "0.4", False),
+        (37, 40.9e6, "0.5", False), (39, 40.9e6, "0.6", False), (40, 119.7e6, "0.7", False),
+        (52, 148.2e6, "0.8", False), (60, 148.4e6, "0.9", True), (64, 253.5e6, "1.0", False),
+    ]
+    fig = frame("parentheses: from 300k to 254M parameters in nine weeks",
+                "parameters, log scale  ·  days since 31 Aug 2026  ·  filled = released")
+    ax = fig.add_axes([0.1, 0.14, 0.85, 0.66])
+    style(ax)
+    ax.set_yscale("log")
+    ax.plot([s[0] for s in stages], [s[1] for s in stages], color=BORDER, lw=2, zorder=1)
+    for x, y, label, released in stages:
+        if released:
+            ax.scatter([x], [y], s=420, color=SANDY, zorder=3)
+        else:
+            ax.scatter([x], [y], s=260, color=GRAPHITE, edgecolors=SANDY_TINT, linewidths=2, zorder=3)
+        below = label == "0.6"  # sits two days after 0.5 at the same size
+        ax.text(x, y / 2.4 if below else y * 1.9, label, ha="center", va="top" if below else "baseline",
+                color=SANDY if released else PORCELAIN, fontsize=12)
+    ax.set_yticks([1e5, 1e6, 1e7, 1e8, 1e9])
+    ax.set_yticklabels(["100k", "1M", "10M", "100M", "1B"])
+    ax.set_ylim(1e5, 1.5e9)
+    ax.set_xlim(-4, 70)
+    ax.set_xlabel("days since the laptop pivot", color=MUTED, fontsize=11)
+    fig.savefig(out, facecolor=GRAPHITE)
+    plt.close(fig)
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     p.add_argument("--out", default=str(ROOT / "docs" / "figures"))
@@ -211,7 +240,8 @@ def main():
     bpb_130m(ROOT / "out" / "cmp_130m_v3" / "bpb.json", out / "bpb-by-language-130m.svg")
     tokenizer(out / "tokenizer-bytes-per-token.svg")
     training_240m(ROOT / "out" / "session1_240m_metrics.jsonl", out / "training-240m-sessions.svg")
-    print(f"wrote 4 figures to {out}")
+    history_growth(out / "history-growth.svg")
+    print(f"wrote 5 figures to {out}")
 
 
 if __name__ == "__main__":

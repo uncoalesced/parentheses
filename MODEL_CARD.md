@@ -462,6 +462,6 @@ The dataset integrates open permissive sources, CC BY-SA copyleft datasets, and 
 
 ## Licensing & Distribution
 
-- **Software Code & Architecture:** Licensed under the [MIT License](file:///E:/Parentheses/parentheses-0.9/LICENSE).
-- **Model Weights & Checkpoints:** Released under the [Apache License, Version 2.0](file:///E:/Parentheses/parentheses-0.9/LICENSE-MODEL).
+- **Software Code & Architecture:** Licensed under the [MIT License](LICENSE).
+- **Model Weights & Checkpoints:** Released under the [Apache License, Version 2.0](LICENSE-MODEL).
 - **Commercial & Research Use:** Fully permitted under the terms of the Apache 2.0 and MIT licenses.

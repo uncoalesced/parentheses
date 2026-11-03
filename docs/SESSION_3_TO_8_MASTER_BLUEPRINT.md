@@ -27,14 +27,14 @@ Monitoring requires tracking two independent validation losses simultaneously:
 ## 2. Post-Training Roadmap (Sessions 4–8)
 
 ### 2.1 Sessions 4–6: Pretraining Expansion & Annealing
-- Continued scaling across high-throughput data shards on expansion storage (`I:\parentheses`).
+- Continued scaling across high-throughput data shards on expansion storage (`the expansion drive`).
 - Cosine learning-rate annealing and gradient norm stability clipping.
 
 ### 2.2 SFT v5 Phase
 - Supervised Fine-Tuning incorporating **8,000 abstention-aware reasoning traces** to ensure robust epistemic calibration and refusal handling.
 
 ### 2.3 Session 8: On-Policy DPO v2 & SWA-3
-- Script: `E:\Parentheses\parentheses-0.9\scripts\train_dpo_v2_apache.py`
+- Script: `scripts/train_dpo_v2_apache.py`
 - Modes: `--mode generate`, `--mode precompute-ref`, `--mode train` (with `0.1 * NLL` anchor), `--mode swa3`, and `--mode all`.
 - Ensures alignment stability and preference optimization without degrading core recurrent state dynamics (`beta_write`, `v0_mix`).
 

@@ -150,6 +150,10 @@ That's about 1.6 MB of state for the whole model, no matter how long the output 
 
 parentheses-1.0-240M is 16 layers at width 1024, grown from 0.9, and trained on the same laptop. From now on, everything I release is under Apache 2.0 and trained only on data whose license allows commercial use. That rule shuts out most good Kannada text, which is the biggest problem the project has right now. [docs/ROADMAP.md](docs/ROADMAP.md) has the full plan, the training curve so far, the parts that went wrong, and how you can help.
 
+### History
+
+[docs/HISTORY.md](docs/HISTORY.md) is how parentheses got here: from a 64M transformer on a 4 GB GTX 1050 in 2024, through a run of small models, to the recurrent model on a laptop GPU, and the licensing mistakes I learned from along the way.
+
 ### Documentation
 
 [docs/DOCUMENTATION.md](docs/DOCUMENTATION.md) is the reference manual. The first part covers the code: a map of the repository, every `chat.py` option, the Python API, training and evaluation scripts, and the ONNX export. The second part is the full mathematics of the model, from tokenisation through the chunked scan to constant-memory decoding.
@@ -176,7 +180,7 @@ parentheses-1.0-240M is 16 layers at width 1024, grown from 0.9, and trained on 
 
 ## Helping out
 
-Right now it's just me. If you'd like to help, start by running the [setup](docs/SETUP.md) on your machine and [opening an issue](https://github.com/uncoalesced/parentheses/issues) for anything that breaks or reads badly. I'll post specific areas for open contributions; until then, the [roadmap](docs/ROADMAP.md#how-you-can-help) lists the open problems.
+Right now it's just me. If you'd like to help, start by running the [setup](docs/SETUP.md) on your machine and [opening an issue](https://github.com/uncoalesced/parentheses/issues) for anything that breaks or reads badly. [CONTRIBUTING.md](CONTRIBUTING.md) lists the open problems and what I can accept, and [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) explains why the model is uncensored. For anything else, email mail@uncoalesced.com.
 
 ## Licenses
 

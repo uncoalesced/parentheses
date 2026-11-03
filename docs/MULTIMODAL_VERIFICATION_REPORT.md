@@ -8,7 +8,7 @@
 
 ## 1. Executive Summary & Architectural Invariant
 
-Per the Parentheses architectural mandate (`AGENTS.md`), Parentheses is a **Recurrent Selective Linear Attention State Space Model (SSM)**, not a quadratic Transformer. The Multimodal Subsystem (`features/multimodal.py`) and its integration into Modular Free Think / RAG (`features/modular_free_think.py`), CLI (`scripts/chat.py`, `release/parentheses-0.9-120M-candidate/chat.py`), and Web Studio (`app.py`, `release/parentheses-0.9-120M-candidate/app.py`) are designed strictly around the constant-$O(1)$ recurrent state update law:
+Per the Parentheses architecture ([ARCHITECTURE.md](ARCHITECTURE.md)), Parentheses is a **Recurrent Selective Linear Attention State Space Model (SSM)**, not a quadratic Transformer. The Multimodal Subsystem (`features/multimodal.py`) and its integration into Modular Free Think / RAG (`features/modular_free_think.py`), CLI (`scripts/chat.py`, `release/parentheses-0.9-120M-candidate/chat.py`), and Web Studio (`app.py`, `release/parentheses-0.9-120M-candidate/app.py`) are designed strictly around the constant-$O(1)$ recurrent state update law:
 
 $$S_t = \alpha_t S_{t-1} + \frac{k_t \otimes v_t}{\sqrt{d_{\text{head}}}}, \qquad y_t = q_t S_t$$
 
@@ -24,12 +24,12 @@ $$S_t = \alpha_t S_{t-1} + \frac{k_t \otimes v_t}{\sqrt{d_{\text{head}}}}, \qqua
 
 | File | Description |
 | :--- | :--- |
-| [`features/multimodal.py`](file:///E:/Parentheses/parentheses-0.9/features/multimodal.py) | Core multimodal subsystem: `SSMVisualProjector`, `prefill_visual_state()`, `ImageProcessor`, `describe_image()`, `VisualDescription`, `DocumentProcessor`, `extract_document_text()`, `extract_pdf_text()`, `extract_docx_text()`, `extract_html_text()`, `extract_csv_text()`, `extract_json_text()`, `create_pdf_bytes()`, `create_docx_bytes()`. |
-| [`release/parentheses-0.9-120M-candidate/features/multimodal.py`](file:///E:/Parentheses/parentheses-0.9/release/parentheses-0.9-120M-candidate/features/multimodal.py) | Synced release-candidate copy of the multimodal subsystem. |
-| [`features/modular_free_think.py`](file:///E:/Parentheses/parentheses-0.9/features/modular_free_think.py) | Updated `IngestedStore.ingest()` to automatically extract text/descriptions from `.pdf`, `.docx`, `.html`, `.xml`, `.csv`, `.tsv`, `.json`, `.jsonl`, and images (`.png`, `.jpg`, `.jpeg`, `.bmp`, `.webp`); added `IngestedStore.ingest_image()`, `IngestedStore.ingest_text()`, `ModularFreeThinkSession.ingest_image()`, `session.image_states`, and `--image` CLI flag. Synced to `release/parentheses-0.9-120M-candidate/features/modular_free_think.py`. |
-| [`scripts/chat.py`](file:///E:/Parentheses/parentheses-0.9/scripts/chat.py) & [`release/parentheses-0.9-120M-candidate/chat.py`](file:///E:/Parentheses/parentheses-0.9/release/parentheses-0.9-120M-candidate/chat.py) | Added `--image` and `--doc` (`--ingest`) CLI arguments plus inline `/image <path>` and `/doc <path>` commands that ingest images and documents into the active `IngestedStore` and `SSMVisualProjector` while hiding `/image` and `/doc` directives from visible output. |
-| [`app.py`](file:///E:/Parentheses/parentheses-0.9/app.py) & [`release/parentheses-0.9-120M-candidate/app.py`](file:///E:/Parentheses/parentheses-0.9/release/parentheses-0.9-120M-candidate/app.py) | Added `GenerationEngine.ingest_multimodal()`, `POST /api/ingest` endpoint (accepting base64 or path uploads for PDF, DOCX, HTML, CSV, JSON, PNG, JPEG, WebP, BMP), and the Web Studio `📎 Attach Image / Document` upload button with live ingested chunk badges. |
-| [`tests/test_multimodal_suite.py`](file:///E:/Parentheses/parentheses-0.9/tests/test_multimodal_suite.py) | Comprehensive 15-test `unittest` verification suite covering image patch tokenization, $O(1)$ SSM state prefill, `slab_v2` state prefill, visual feature/quadrant/metadata analysis, Dravidian visual summaries, PDF, DOCX, HTML, CSV/TSV/JSON/JSONL, mixed BM25 + Vector (`turbovec`) retrieval, end-to-end BPE generation, real 120M checkpoint (`step_9786_final.pt`) evaluation, and Web Studio `/api/ingest`. |
+| [`features/multimodal.py`](../features/multimodal.py) | Core multimodal subsystem: `SSMVisualProjector`, `prefill_visual_state()`, `ImageProcessor`, `describe_image()`, `VisualDescription`, `DocumentProcessor`, `extract_document_text()`, `extract_pdf_text()`, `extract_docx_text()`, `extract_html_text()`, `extract_csv_text()`, `extract_json_text()`, `create_pdf_bytes()`, `create_docx_bytes()`. |
+| [`release/parentheses-0.9-120M-candidate/features/multimodal.py`](../release/parentheses-0.9-120M-candidate/features/multimodal.py) | Synced release-candidate copy of the multimodal subsystem. |
+| [`features/modular_free_think.py`](../features/modular_free_think.py) | Updated `IngestedStore.ingest()` to automatically extract text/descriptions from `.pdf`, `.docx`, `.html`, `.xml`, `.csv`, `.tsv`, `.json`, `.jsonl`, and images (`.png`, `.jpg`, `.jpeg`, `.bmp`, `.webp`); added `IngestedStore.ingest_image()`, `IngestedStore.ingest_text()`, `ModularFreeThinkSession.ingest_image()`, `session.image_states`, and `--image` CLI flag. Synced to `release/parentheses-0.9-120M-candidate/features/modular_free_think.py`. |
+| [`scripts/chat.py`](../scripts/chat.py) & [`release/parentheses-0.9-120M-candidate/chat.py`](../release/parentheses-0.9-120M-candidate/chat.py) | Added `--image` and `--doc` (`--ingest`) CLI arguments plus inline `/image <path>` and `/doc <path>` commands that ingest images and documents into the active `IngestedStore` and `SSMVisualProjector` while hiding `/image` and `/doc` directives from visible output. |
+| [`app.py`](../app.py) & [`release/parentheses-0.9-120M-candidate/app.py`](../release/parentheses-0.9-120M-candidate/app.py) | Added `GenerationEngine.ingest_multimodal()`, `POST /api/ingest` endpoint (accepting base64 or path uploads for PDF, DOCX, HTML, CSV, JSON, PNG, JPEG, WebP, BMP), and the Web Studio `📎 Attach Image / Document` upload button with live ingested chunk badges. |
+| [`tests/test_multimodal_suite.py`](../tests/test_multimodal_suite.py) | Comprehensive 15-test `unittest` verification suite covering image patch tokenization, $O(1)$ SSM state prefill, `slab_v2` state prefill, visual feature/quadrant/metadata analysis, Dravidian visual summaries, PDF, DOCX, HTML, CSV/TSV/JSON/JSONL, mixed BM25 + Vector (`turbovec`) retrieval, end-to-end BPE generation, real 120M checkpoint (`step_9786_final.pt`) evaluation, and Web Studio `/api/ingest`. |
 
 ---
 
@@ -64,18 +64,18 @@ $env:CUDA_VISIBLE_DEVICES='-1'
 $env:PYTHONIOENCODING='utf-8'
 
 # 1. Run the 15-test multimodal verification suite (includes real 120M checkpoint & Web Studio tests)
-E:\Parentheses\parentheses-0.9\.venv\Scripts\python.exe tests\test_multimodal_suite.py
+.venv/Scripts/python.exe tests\test_multimodal_suite.py
 
 # 2. Run the multimodal module self-test
-E:\Parentheses\parentheses-0.9\.venv\Scripts\python.exe -m features.multimodal --self-test
+.venv/Scripts/python.exe -m features.multimodal --self-test
 
 # 3. Run the Modular Free Think (RAG + Multimodal) self-test
-E:\Parentheses\parentheses-0.9\.venv\Scripts\python.exe -m features.modular_free_think --self-test
+.venv/Scripts/python.exe -m features.modular_free_think --self-test
 
 # 4. Run the CLI chat self-test (repo & release candidate)
-E:\Parentheses\parentheses-0.9\.venv\Scripts\python.exe scripts\chat.py --self-test
-E:\Parentheses\parentheses-0.9\.venv\Scripts\python.exe release\parentheses-0.9-120M-candidate\chat.py --self-test
+.venv/Scripts/python.exe scripts\chat.py --self-test
+.venv/Scripts/python.exe release\parentheses-0.9-120M-candidate\chat.py --self-test
 
 # 5. Run the Web Studio self-test (verifies GET /, GET /api/health, POST /api/ingest, POST /api/stream)
-E:\Parentheses\parentheses-0.9\.venv\Scripts\python.exe release\parentheses-0.9-120M-candidate\app.py --self-test
+.venv/Scripts/python.exe release\parentheses-0.9-120M-candidate\app.py --self-test
 ```

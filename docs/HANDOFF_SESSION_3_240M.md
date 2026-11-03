@@ -3,9 +3,9 @@
 ## 1. Architectural & Launch Invariants
 - **Lineage / Scale:** Parentheses 1.0-240M (`slab_v4`), 253.54M parameters (`d_model=1024`, `n_layers=16`, `n_heads=16`, `d_head=64`, tied `tok_emb` / `head`).
 - **Recurrent Duality Invariant:** Selective Linear Attention (SSD) with $O(1)$ constant recurrent memory state updates ($16 \times 64 \times 64 = 65,536$ state floats/layer), zero quadratic attention, zero sequence softmax, zero KV-cache.
-- **Source Anchor Checkpoint:** `I:\parentheses\checkpoints\parentheses-1.0-240M-s2\step_4000.pt` (fallback: `checkpoints/parentheses-1.0-240M-s2/latest.pt`).
+- **Source Anchor Checkpoint:** `checkpoints/parentheses-1.0-240M-s2/step_4000.pt` (fallback: `checkpoints/parentheses-1.0-240M-s2/latest.pt`).
 - **Step Range:** Steps 4,001 -> 6,001 (2,000 steps = 131.07M tokens; cumulative 393.22M tokens).
-- **Execution Script:** `E:\Parentheses\parentheses-0.9\scripts\launch_s3_240m.ps1`
+- **Execution Script:** `scripts/launch_s3_240m.ps1`
 
 ---
 
