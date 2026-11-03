@@ -1,0 +1,81 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 560" width="980" height="560" role="img">
+<rect width="980" height="560" fill="#333333"/>
+<text x="36.0" y="46.0" fill="#FDFFFC" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="20" font-weight="600" text-anchor="start">Initial memory horizon per head</text>
+<text x="36.0" y="72.0" fill="#9A9B99" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="13" font-weight="400" text-anchor="start">1 − α log-spaced from 10⁻¹ to 10⁻⁴·⁵ · half-life = ln 2 / (−ln α) · init values; training moves them</text>
+<polyline points="190.0,110.0 190.0,510.0" fill="none" stroke="#4B4B4B" stroke-width="1" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="190.0" y="532.0" fill="#9A9B99" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="12" font-weight="400" text-anchor="middle">10^0</text>
+<polyline points="332.0,110.0 332.0,510.0" fill="none" stroke="#4B4B4B" stroke-width="1" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="332.0" y="532.0" fill="#9A9B99" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="12" font-weight="400" text-anchor="middle">10^1</text>
+<polyline points="474.0,110.0 474.0,510.0" fill="none" stroke="#4B4B4B" stroke-width="1" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="474.0" y="532.0" fill="#9A9B99" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="12" font-weight="400" text-anchor="middle">10^2</text>
+<polyline points="616.0,110.0 616.0,510.0" fill="none" stroke="#4B4B4B" stroke-width="1" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="616.0" y="532.0" fill="#9A9B99" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="12" font-weight="400" text-anchor="middle">10^3</text>
+<polyline points="758.0,110.0 758.0,510.0" fill="none" stroke="#4B4B4B" stroke-width="1" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="758.0" y="532.0" fill="#9A9B99" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="12" font-weight="400" text-anchor="middle">10^4</text>
+<polyline points="900.0,110.0 900.0,510.0" fill="none" stroke="#4B4B4B" stroke-width="1" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="900.0" y="532.0" fill="#9A9B99" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="12" font-weight="400" text-anchor="middle">10^5</text>
+<polyline points="703.0,104.0 703.0,510.0" fill="none" stroke="#F5B884" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="5 5"/>
+<text x="709.0" y="100.0" fill="#F5B884" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="12" font-weight="400" text-anchor="start">block_size 4096</text>
+<text x="36.0" y="137.0" fill="#FDFFFC" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="13" font-weight="400" text-anchor="start">head  0</text>
+<text x="120.0" y="137.0" fill="#9A9B99" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="11" font-weight="400" text-anchor="start">0.900000</text>
+<polyline points="190.0,132.0 306.2,132.0" fill="none" stroke="#AF703D" stroke-width="6" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="306.2" cy="132.0" r="8.0" fill="#F19143"/>
+<text x="320.2" y="137.0" fill="#FDFFFC" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="12" font-weight="400" text-anchor="start">6.6</text>
+<text x="36.0" y="169.0" fill="#FDFFFC" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="13" font-weight="400" text-anchor="start">head  1</text>
+<text x="120.0" y="169.0" fill="#9A9B99" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="11" font-weight="400" text-anchor="start">0.951936</text>
+<polyline points="190.0,164.0 353.1,164.0" fill="none" stroke="#AF703D" stroke-width="6" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="353.1" cy="164.0" r="8.0" fill="#F19143"/>
+<text x="367.1" y="169.0" fill="#FDFFFC" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="12" font-weight="400" text-anchor="start">14</text>
+<text x="36.0" y="201.0" fill="#FDFFFC" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="13" font-weight="400" text-anchor="start">head  2</text>
+<text x="120.0" y="201.0" fill="#9A9B99" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="11" font-weight="400" text-anchor="start">0.976899</text>
+<polyline points="190.0,196.0 399.0,196.0" fill="none" stroke="#AF703D" stroke-width="6" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="399.0" cy="196.0" r="8.0" fill="#F19143"/>
+<text x="413.0" y="201.0" fill="#FDFFFC" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="12" font-weight="400" text-anchor="start">30</text>
+<text x="36.0" y="233.0" fill="#FDFFFC" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="13" font-weight="400" text-anchor="start">head  3</text>
+<text x="120.0" y="233.0" fill="#9A9B99" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="11" font-weight="400" text-anchor="start">0.988897</text>
+<polyline points="190.0,228.0 444.6,228.0" fill="none" stroke="#AF703D" stroke-width="6" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="444.6" cy="228.0" r="8.0" fill="#F19143"/>
+<text x="458.6" y="233.0" fill="#FDFFFC" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="12" font-weight="400" text-anchor="start">62</text>
+<text x="36.0" y="265.0" fill="#FDFFFC" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="13" font-weight="400" text-anchor="start">head  4</text>
+<text x="120.0" y="265.0" fill="#9A9B99" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="11" font-weight="400" text-anchor="start">0.994663</text>
+<polyline points="190.0,260.0 490.0,260.0" fill="none" stroke="#AF703D" stroke-width="6" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="490.0" cy="260.0" r="8.0" fill="#F19143"/>
+<text x="504.0" y="265.0" fill="#FDFFFC" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="12" font-weight="400" text-anchor="start">130</text>
+<text x="36.0" y="297.0" fill="#FDFFFC" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="13" font-weight="400" text-anchor="start">head  5</text>
+<text x="120.0" y="297.0" fill="#9A9B99" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="11" font-weight="400" text-anchor="start">0.997435</text>
+<polyline points="190.0,292.0 535.2,292.0" fill="none" stroke="#AF703D" stroke-width="6" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="535.2" cy="292.0" r="8.0" fill="#F19143"/>
+<text x="549.2" y="297.0" fill="#FDFFFC" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="12" font-weight="400" text-anchor="start">270</text>
+<text x="36.0" y="329.0" fill="#FDFFFC" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="13" font-weight="400" text-anchor="start">head  6</text>
+<text x="120.0" y="329.0" fill="#9A9B99" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="11" font-weight="400" text-anchor="start">0.998767</text>
+<polyline points="190.0,324.0 580.5,324.0" fill="none" stroke="#AF703D" stroke-width="6" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="580.5" cy="324.0" r="8.0" fill="#F19143"/>
+<text x="594.5" y="329.0" fill="#FDFFFC" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="12" font-weight="400" text-anchor="start">562</text>
+<text x="36.0" y="361.0" fill="#FDFFFC" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="13" font-weight="400" text-anchor="start">head  7</text>
+<text x="120.0" y="361.0" fill="#9A9B99" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="11" font-weight="400" text-anchor="start">0.999407</text>
+<polyline points="190.0,356.0 625.7,356.0" fill="none" stroke="#AF703D" stroke-width="6" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="625.7" cy="356.0" r="8.0" fill="#F19143"/>
+<text x="639.7" y="361.0" fill="#FDFFFC" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="12" font-weight="400" text-anchor="start">1,169</text>
+<text x="36.0" y="393.0" fill="#FDFFFC" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="13" font-weight="400" text-anchor="start">head  8</text>
+<text x="120.0" y="393.0" fill="#9A9B99" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="11" font-weight="400" text-anchor="start">0.999715</text>
+<polyline points="190.0,388.0 670.8,388.0" fill="none" stroke="#AF703D" stroke-width="6" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="670.8" cy="388.0" r="8.0" fill="#F19143"/>
+<text x="684.8" y="393.0" fill="#FDFFFC" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="12" font-weight="400" text-anchor="start">2,433</text>
+<text x="36.0" y="425.0" fill="#FDFFFC" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="13" font-weight="400" text-anchor="start">head  9</text>
+<text x="120.0" y="425.0" fill="#9A9B99" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="11" font-weight="400" text-anchor="start">0.999863</text>
+<polyline points="190.0,420.0 716.0,420.0" fill="none" stroke="#AF703D" stroke-width="6" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="716.0" cy="420.0" r="8.0" fill="#F19143"/>
+<text x="730.0" y="425.0" fill="#FDFFFC" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="12" font-weight="400" text-anchor="start">5,063</text>
+<text x="36.0" y="457.0" fill="#FDFFFC" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="13" font-weight="400" text-anchor="start">head 10</text>
+<text x="120.0" y="457.0" fill="#9A9B99" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="11" font-weight="400" text-anchor="start">0.999934</text>
+<polyline points="190.0,452.0 761.2,452.0" fill="none" stroke="#AF703D" stroke-width="6" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="761.2" cy="452.0" r="8.0" fill="#F19143"/>
+<text x="775.2" y="457.0" fill="#FDFFFC" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="12" font-weight="400" text-anchor="start">10,535</text>
+<text x="36.0" y="489.0" fill="#FDFFFC" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="13" font-weight="400" text-anchor="start">head 11</text>
+<text x="120.0" y="489.0" fill="#9A9B99" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="11" font-weight="400" text-anchor="start">0.999968</text>
+<polyline points="190.0,484.0 806.4,484.0" fill="none" stroke="#AF703D" stroke-width="6" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="806.4" cy="484.0" r="8.0" fill="#F19143"/>
+<text x="820.4" y="489.0" fill="#FDFFFC" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="12" font-weight="400" text-anchor="start">21,919</text>
+<text x="120.0" y="106.0" fill="#9A9B99" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="12" font-weight="400" text-anchor="start">α</text>
+<text x="190.0" y="556.0" fill="#9A9B99" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="12" font-weight="400" text-anchor="start">tokens until one write has decayed to half, with α held at its init value</text>
+</svg>

@@ -805,6 +805,8 @@ def load_model_and_tokenizer(ckpt_path: Path | str, device: str = "cpu"):
             tie_embeddings=cfg_dict.get("tie_embeddings", True),
             attn_type=cfg_dict.get("attn_type", "selective_linear"),
             slab_v2=cfg_dict.get("slab_v2", False),
+            slab_v3=cfg_dict.get("slab_v3", False),
+            slab_v4=cfg_dict.get("slab_v4", False),
         )
         model = Parentheses(cfg)
         st_file = release_dir / "model.safetensors"
@@ -826,7 +828,11 @@ def load_model_and_tokenizer(ckpt_path: Path | str, device: str = "cpu"):
                 s, e = v["data_offsets"]
                 sd[k] = torch.frombuffer(mv[s:e], dtype=dtype_map[v["dtype"]]).reshape(v["shape"]).clone()
 
-        model.load_state_dict(sd, strict=False)
+        res = model.load_state_dict(sd, strict=False)
+        if res.unexpected_keys:
+            # Weights the built config has no slot for were dropped: config.json and code disagree.
+            print(f"[chat] WARNING: {len(res.unexpected_keys)} checkpoint tensors were not loaded "
+                  f"(e.g. {res.unexpected_keys[0]}). Output will be degraded.")
         if cfg.tie_embeddings:
             model.head.weight = model.tok_emb.weight
         model.to(device).eval()

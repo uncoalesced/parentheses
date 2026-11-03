@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 400" width="980" height="400" role="img">
+<rect width="980" height="400" fill="#333333"/>
+<text x="36.0" y="46.0" fill="#FDFFFC" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="20" font-weight="600" text-anchor="start">From logits to the next token</text>
+<text x="36.0" y="72.0" fill="#9A9B99" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="13" font-weight="400" text-anchor="start">Parentheses.stream() · penalties act on raw logits, min-p acts on probabilities</text>
+<rect x="36.0" y="120.0" width="104.0" height="64.0" rx="10" fill="#F19143"/>
+<text x="88.0" y="149.0" fill="#333333" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="13" font-weight="600" text-anchor="middle">logits</text>
+<text x="88.0" y="167.0" fill="#333333" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="11.5" font-weight="400" text-anchor="middle">z = E · h</text>
+<polyline points="141.0,152.0 150.0,152.0" fill="none" stroke="#F19143" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="150.0" cy="152.0" r="4.0" fill="#F19143"/>
+<rect x="152.0" y="120.0" width="104.0" height="64.0" rx="10" fill="#3C3C3C" stroke="#4B4B4B" stroke-width="1.5"/>
+<text x="204.0" y="149.0" fill="#FDFFFC" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="13" font-weight="600" text-anchor="middle">repetition</text>
+<text x="204.0" y="167.0" fill="#9A9B99" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="11.5" font-weight="400" text-anchor="middle">z/p or z·p</text>
+<polyline points="257.0,152.0 266.0,152.0" fill="none" stroke="#F19143" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="266.0" cy="152.0" r="4.0" fill="#F19143"/>
+<rect x="268.0" y="120.0" width="104.0" height="64.0" rx="10" fill="#3C3C3C" stroke="#4B4B4B" stroke-width="1.5"/>
+<text x="320.0" y="149.0" fill="#FDFFFC" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="13" font-weight="600" text-anchor="middle">n-gram ban</text>
+<text x="320.0" y="167.0" fill="#9A9B99" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="11.5" font-weight="400" text-anchor="middle">z ← −∞</text>
+<polyline points="373.0,152.0 382.0,152.0" fill="none" stroke="#F19143" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="382.0" cy="152.0" r="4.0" fill="#F19143"/>
+<rect x="384.0" y="120.0" width="104.0" height="64.0" rx="10" fill="#3C3C3C" stroke="#4B4B4B" stroke-width="1.5"/>
+<text x="436.0" y="149.0" fill="#FDFFFC" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="13" font-weight="600" text-anchor="middle">temperature</text>
+<text x="436.0" y="167.0" fill="#9A9B99" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="11.5" font-weight="400" text-anchor="middle">z / τ</text>
+<polyline points="489.0,152.0 498.0,152.0" fill="none" stroke="#F19143" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="498.0" cy="152.0" r="4.0" fill="#F19143"/>
+<rect x="500.0" y="120.0" width="104.0" height="64.0" rx="10" fill="#3C3C3C" stroke="#4B4B4B" stroke-width="1.5"/>
+<text x="552.0" y="149.0" fill="#FDFFFC" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="13" font-weight="600" text-anchor="middle">top-k</text>
+<text x="552.0" y="167.0" fill="#9A9B99" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="11.5" font-weight="400" text-anchor="middle">keep k best</text>
+<polyline points="605.0,152.0 614.0,152.0" fill="none" stroke="#F19143" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="614.0" cy="152.0" r="4.0" fill="#F19143"/>
+<rect x="616.0" y="120.0" width="104.0" height="64.0" rx="10" fill="#3C3C3C" stroke="#4B4B4B" stroke-width="1.5"/>
+<text x="668.0" y="149.0" fill="#FDFFFC" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="13" font-weight="600" text-anchor="middle">softmax</text>
+<text x="668.0" y="167.0" fill="#9A9B99" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="11.5" font-weight="400" text-anchor="middle">π = softmax(z)</text>
+<polyline points="721.0,152.0 730.0,152.0" fill="none" stroke="#F19143" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="730.0" cy="152.0" r="4.0" fill="#F19143"/>
+<rect x="732.0" y="120.0" width="104.0" height="64.0" rx="10" fill="#3C3C3C" stroke="#4B4B4B" stroke-width="1.5"/>
+<text x="784.0" y="149.0" fill="#FDFFFC" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="13" font-weight="600" text-anchor="middle">min-p</text>
+<text x="784.0" y="167.0" fill="#9A9B99" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="11.5" font-weight="400" text-anchor="middle">π &lt; p·π_max → 0</text>
+<polyline points="837.0,152.0 846.0,152.0" fill="none" stroke="#F19143" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="846.0" cy="152.0" r="4.0" fill="#F19143"/>
+<rect x="848.0" y="120.0" width="104.0" height="64.0" rx="10" fill="#F19143"/>
+<text x="900.0" y="149.0" fill="#333333" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="13" font-weight="600" text-anchor="middle">sample</text>
+<text x="900.0" y="167.0" fill="#333333" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="11.5" font-weight="400" text-anchor="middle">multinomial</text>
+<text x="36.0" y="240.0" fill="#FDFFFC" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="12.5" font-weight="400" text-anchor="start">repetition: a token seen ≥ 2× in the last 64 gets p^min(count−1, 3); positive logits divide, negative multiply</text>
+<text x="36.0" y="270.0" fill="#FDFFFC" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="12.5" font-weight="400" text-anchor="start">n-gram ban: if the last n−1 tokens occurred earlier in the window, the token that followed them gets −∞</text>
+<text x="36.0" y="300.0" fill="#FDFFFC" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="12.5" font-weight="400" text-anchor="start">min-p: zero every token below p · π_max, then renormalise</text>
+<text x="36.0" y="330.0" fill="#F5B884" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="12.5" font-weight="400" text-anchor="start">FreeThink BPE path: repetition 1.12 · 4-gram ban · min-p 0.06 · stop on a 32-token block repeated 4×</text>
+</svg>
