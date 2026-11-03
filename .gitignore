@@ -30,3 +30,7 @@ gates/
 AGENTS.md
 CLAUDE.md
 GATES.md
+data/*.jsonl
+
+# Agent journals and briefs stay local
+.agents/

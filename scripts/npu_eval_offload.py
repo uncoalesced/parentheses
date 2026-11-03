@@ -1,4 +1,4 @@
-"""
+﻿"""
 NPU Eval Offload Procedure & Harness for Parentheses 0.9.
 Engineered for AMD Ryzen AI NPU (Phoenix XDNA1, VEN_1022 DEV_1502).
 
@@ -14,6 +14,9 @@ Usage:
   # Run standalone verification of NPU eval offload:
   python scripts/npu_eval_offload.py --model checkpoints/all-sources-v1/embedder_fixed128.onnx --samples 1000
 """
+
+# Strict GPU isolation: never touch NVIDIA CUDA device 0
+os.environ["CUDA_VISIBLE_DEVICES"] = ""
 
 import argparse
 import datetime

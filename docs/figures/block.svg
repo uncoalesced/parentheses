@@ -1,0 +1,107 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 900" width="980" height="900" role="img">
+<rect width="980" height="900" fill="#333333"/>
+<text x="36.0" y="46.0" fill="#FDFFFC" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="20" font-weight="600" text-anchor="start">One Parentheses block (slab_v3)</text>
+<text x="36.0" y="72.0" fill="#9A9B99" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="13" font-weight="400" text-anchor="start">pre-norm residual · selective linear attention · SwiGLU channel mixer</text>
+<polyline points="70.0,100.0 70.0,860.0" fill="none" stroke="#FDFFFC" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="70.0" y="92.0" fill="#FDFFFC" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="14" font-weight="600" text-anchor="middle">x_l</text>
+<text x="70.0" y="885.0" fill="#FDFFFC" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="14" font-weight="600" text-anchor="middle">x_l+1</text>
+<polyline points="70.0,130.0 150.0,130.0" fill="none" stroke="#9A9B99" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="150.0" cy="130.0" r="4.0" fill="#9A9B99"/>
+<rect x="150.0" y="108.0" width="150.0" height="44.0" rx="10" fill="#3C3C3C" stroke="#4B4B4B" stroke-width="1.5"/>
+<text x="225.0" y="135.0" fill="#FDFFFC" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="14" font-weight="600" text-anchor="middle">RMSNorm</text>
+<polyline points="300.0,130.0 340.0,130.0 340.0,210.0 360.0,210.0" fill="none" stroke="#9A9B99" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="360.0" cy="210.0" r="4.0" fill="#9A9B99"/>
+<rect x="360.0" y="184.0" width="330.0" height="52.0" rx="10" fill="#3C3C3C" stroke="#4B4B4B" stroke-width="1.5"/>
+<text x="525.0" y="207.0" fill="#FDFFFC" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="14" font-weight="600" text-anchor="middle">token-shift</text>
+<text x="525.0" y="225.0" fill="#9A9B99" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="11.5" font-weight="400" text-anchor="middle">x_ctrl = μ·x_t + (1−μ)·x_t−1</text>
+<polyline points="300.0,130.0 360.0,130.0" fill="none" stroke="#9A9B99" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="360.0" cy="130.0" r="4.0" fill="#9A9B99"/>
+<rect x="360.0" y="108.0" width="170.0" height="44.0" rx="10" fill="#3C3C3C" stroke="#4B4B4B" stroke-width="1.5"/>
+<text x="445.0" y="127.0" fill="#FDFFFC" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="14" font-weight="600" text-anchor="middle">W_qkv</text>
+<text x="445.0" y="145.0" fill="#9A9B99" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="11.5" font-weight="400" text-anchor="middle">768 → 2304</text>
+<polyline points="530.0,130.0 560.0,130.0" fill="none" stroke="#9A9B99" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="560.0" cy="130.0" r="4.0" fill="#9A9B99"/>
+<rect x="560.0" y="108.0" width="220.0" height="44.0" rx="10" fill="#3C3C3C" stroke="#4B4B4B" stroke-width="1.5"/>
+<text x="670.0" y="127.0" fill="#FDFFFC" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="14" font-weight="600" text-anchor="middle">causal conv k=4</text>
+<text x="670.0" y="145.0" fill="#9A9B99" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="11.5" font-weight="400" text-anchor="middle">depthwise · then SiLU</text>
+<polyline points="780.0,130.0 830.0,130.0 830.0,160.0" fill="none" stroke="#9A9B99" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="830.0" cy="175.0" r="16.0" fill="#F19143"/>
+<text x="830.0" y="181.0" fill="#333333" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="15" font-weight="700" text-anchor="middle">q</text>
+<polyline points="780.0,130.0 880.0,130.0 880.0,160.0" fill="none" stroke="#9A9B99" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="880.0" cy="175.0" r="16.0" fill="#F19143"/>
+<text x="880.0" y="181.0" fill="#333333" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="15" font-weight="700" text-anchor="middle">k</text>
+<polyline points="780.0,130.0 930.0,130.0 930.0,160.0" fill="none" stroke="#9A9B99" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="930.0" cy="175.0" r="16.0" fill="#F19143"/>
+<text x="930.0" y="181.0" fill="#333333" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="15" font-weight="700" text-anchor="middle">v</text>
+<rect x="800.0" y="214.0" width="110.0" height="40.0" rx="10" fill="#3C3C3C" stroke="#4B4B4B" stroke-width="1.5"/>
+<text x="855.0" y="239.0" fill="#FDFFFC" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="13" font-weight="600" text-anchor="middle">L2 norm</text>
+<polyline points="830.0,191.0 830.0,214.0" fill="none" stroke="#9A9B99" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>
+<polyline points="880.0,191.0 880.0,214.0" fill="none" stroke="#9A9B99" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>
+<polyline points="930.0,191.0 930.0,300.0" fill="none" stroke="#9A9B99" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="930.0" cy="315.0" r="15.0" fill="#F5B884"/>
+<text x="930.0" y="321.0" fill="#333333" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="17" font-weight="700" text-anchor="middle">+</text>
+<text x="950.0" y="320.0" fill="#F5B884" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="12" font-weight="600" text-anchor="start">V0</text>
+<text x="745.0" y="290.0" fill="#9A9B99" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="12" font-weight="400" text-anchor="start">σ(λ)·v + (1−σ(λ))·v₀</text>
+<polyline points="930.0,330.0 930.0,380.0" fill="none" stroke="#9A9B99" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="930.0" cy="395.0" r="15.0" fill="#F19143"/>
+<text x="930.0" y="401.0" fill="#333333" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="17" font-weight="700" text-anchor="middle">×</text>
+<text x="870.0" y="400.0" fill="#9A9B99" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="12" font-weight="400" text-anchor="start">β_t</text>
+<polyline points="450.0,236.0 450.0,300.0" fill="none" stroke="#9A9B99" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="450.0" cy="300.0" r="4.0" fill="#9A9B99"/>
+<rect x="370.0" y="300.0" width="160.0" height="56.0" rx="10" fill="#3C3C3C" stroke="#4B4B4B" stroke-width="1.5"/>
+<text x="450.0" y="325.0" fill="#FDFFFC" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="14" font-weight="600" text-anchor="middle">decay α_t</text>
+<text x="450.0" y="343.0" fill="#9A9B99" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="11.5" font-weight="400" text-anchor="middle">exp(−softplus(W_α x))</text>
+<polyline points="600.0,236.0 600.0,300.0" fill="none" stroke="#9A9B99" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="600.0" cy="300.0" r="4.0" fill="#9A9B99"/>
+<rect x="545.0" y="300.0" width="150.0" height="56.0" rx="10" fill="#3C3C3C" stroke="#4B4B4B" stroke-width="1.5"/>
+<text x="620.0" y="325.0" fill="#FDFFFC" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="14" font-weight="600" text-anchor="middle">write β_t</text>
+<text x="620.0" y="343.0" fill="#9A9B99" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="11.5" font-weight="400" text-anchor="middle">2·σ(W_β x)</text>
+<polyline points="695.0,328.0 912.0,392.0" fill="none" stroke="#9A9B99" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="912.0" cy="392.0" r="4.0" fill="#9A9B99"/>
+<polyline points="690.0,210.0 720.0,210.0 720.0,672.0" fill="none" stroke="#9A9B99" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="4 6"/>
+<rect x="150.0" y="430.0" width="780.0" height="118.0" rx="12" fill="#3C3C3C" stroke="#F19143" stroke-width="2"/>
+<text x="170.0" y="458.0" fill="#F5B884" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="13" font-weight="600" text-anchor="start">matrix state per head  S_t ∈ ℝ^(64×64)  ·  12 heads</text>
+<text x="540.0" y="498.0" fill="#FDFFFC" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="19" font-weight="600" text-anchor="middle">S_t = α_t · S_t−1  +  k_t v_tᵀ / √64</text>
+<text x="540.0" y="532.0" fill="#FDFFFC" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="17" font-weight="600" text-anchor="middle">y_t = q_t · S_t</text>
+<polyline points="450.0,356.0 450.0,430.0" fill="none" stroke="#F19143" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="450.0" cy="430.0" r="4.0" fill="#F19143"/>
+<polyline points="855.0,254.0 855.0,430.0" fill="none" stroke="#9A9B99" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="855.0" cy="430.0" r="4.0" fill="#9A9B99"/>
+<polyline points="930.0,410.0 930.0,430.0" fill="none" stroke="#9A9B99" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="930.0" cy="430.0" r="4.0" fill="#9A9B99"/>
+<polyline points="540.0,548.0 540.0,580.0" fill="none" stroke="#9A9B99" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="540.0" cy="580.0" r="4.0" fill="#9A9B99"/>
+<rect x="420.0" y="580.0" width="240.0" height="48.0" rx="10" fill="#3C3C3C" stroke="#4B4B4B" stroke-width="1.5"/>
+<text x="540.0" y="601.0" fill="#FDFFFC" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="14" font-weight="600" text-anchor="middle">per-head RMSNorm</text>
+<text x="540.0" y="619.0" fill="#9A9B99" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="11.5" font-weight="400" text-anchor="middle">· learned scale w</text>
+<polyline points="540.0,628.0 540.0,672.0" fill="none" stroke="#9A9B99" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="540.0" cy="672.0" r="4.0" fill="#9A9B99"/>
+<circle cx="540.0" cy="690.0" r="15.0" fill="#F19143"/>
+<text x="540.0" y="696.0" fill="#333333" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="17" font-weight="700" text-anchor="middle">×</text>
+<polyline points="720.0,672.0 720.0,690.0 557.0,690.0" fill="none" stroke="#9A9B99" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="557.0" cy="690.0" r="4.0" fill="#9A9B99"/>
+<text x="735.0" y="686.0" fill="#9A9B99" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="12" font-weight="400" text-anchor="start">SiLU(W_g · x_ctrl)</text>
+<text x="735.0" y="704.0" fill="#9A9B99" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="12" font-weight="400" text-anchor="start">output gate</text>
+<polyline points="525.0,690.0 362.0,690.0" fill="none" stroke="#9A9B99" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="362.0" cy="690.0" r="4.0" fill="#9A9B99"/>
+<rect x="220.0" y="668.0" width="140.0" height="44.0" rx="10" fill="#3C3C3C" stroke="#4B4B4B" stroke-width="1.5"/>
+<text x="290.0" y="687.0" fill="#FDFFFC" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="14" font-weight="600" text-anchor="middle">W_o</text>
+<text x="290.0" y="705.0" fill="#9A9B99" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="11.5" font-weight="400" text-anchor="middle">768 → 768</text>
+<polyline points="220.0,690.0 87.0,690.0" fill="none" stroke="#F19143" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="87.0" cy="690.0" r="4.0" fill="#F19143"/>
+<circle cx="70.0" cy="690.0" r="15.0" fill="#F19143"/>
+<text x="70.0" y="696.0" fill="#333333" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="17" font-weight="700" text-anchor="middle">+</text>
+<polyline points="70.0,760.0 150.0,760.0" fill="none" stroke="#9A9B99" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="150.0" cy="760.0" r="4.0" fill="#9A9B99"/>
+<rect x="150.0" y="738.0" width="150.0" height="44.0" rx="10" fill="#3C3C3C" stroke="#4B4B4B" stroke-width="1.5"/>
+<text x="225.0" y="765.0" fill="#FDFFFC" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="14" font-weight="600" text-anchor="middle">RMSNorm</text>
+<polyline points="300.0,760.0 340.0,760.0" fill="none" stroke="#9A9B99" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="340.0" cy="760.0" r="4.0" fill="#9A9B99"/>
+<rect x="340.0" y="732.0" width="400.0" height="56.0" rx="10" fill="#3C3C3C" stroke="#4B4B4B" stroke-width="1.5"/>
+<text x="540.0" y="757.0" fill="#FDFFFC" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="14" font-weight="600" text-anchor="middle">SwiGLU</text>
+<text x="540.0" y="775.0" fill="#9A9B99" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="11.5" font-weight="400" text-anchor="middle">W₂ · (SiLU(W₁x) ⊙ W₃x)   768 → 2048 → 768</text>
+<polyline points="740.0,760.0 770.0,760.0 770.0,830.0 87.0,830.0" fill="none" stroke="#F19143" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="87.0" cy="830.0" r="4.0" fill="#F19143"/>
+<circle cx="70.0" cy="830.0" r="15.0" fill="#F19143"/>
+<text x="70.0" y="836.0" fill="#333333" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="17" font-weight="700" text-anchor="middle">+</text>
+</svg>

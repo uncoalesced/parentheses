@@ -1,10 +1,13 @@
-"""
+﻿"""
 Quantize and evaluate retrieval embedder on NPU vs CPU.
 Validates INT8 quantization, measure latency/throughput, and verifies cosine >= 0.99.
 
 Usage:
   python scripts/quantize_and_eval_npu.py
 """
+
+# Strict GPU isolation: never touch NVIDIA CUDA device 0
+os.environ["CUDA_VISIBLE_DEVICES"] = ""
 
 import argparse
 import glob

@@ -1,18 +1,29 @@
 <p align="center">
-  <img src="assets/parentheses_mark.svg" alt="parentheses mark" width="96">
+  <img src="../assets/parentheses_mark.svg" alt="parentheses mark" width="96">
 </p>
 
 # Parentheses 0.9-130M-v3: how the model works
 
+This document has two parts. Part A: using the code is a practical reference for running, loading and exporting the model from this repository. Part B: the math covers sections 1 to 19, which explain how the recurrence works and trace each formula to the code. For a gentler explanation, read [ARCHITECTURE.md](ARCHITECTURE.md); for installation and weights, read [SETUP.md](SETUP.md).
+
 Parentheses is a recurrent language model. It reads one token at a time and keeps a fixed-size memory: one small matrix per attention head per layer. Each token updates that memory with a decay and a write, and reads it back with a single matrix-vector product. There is no softmax over past positions, no key-value cache and no positional encoding. The same layer can also be computed in parallel across a whole sequence, and that is how it trains.
 
-This document covers the mathematics and runtime behaviour of the `parentheses-0.9-130M-v3` preset in `model/config.py`. It describes what the code computes. Every formula can be traced to a line in `model/selective_linear_attention.py`, `model/backbone.py` or the decoding features. Training (data, schedule, hardware) is out of scope.
+Part B covers the mathematics and runtime behaviour of the `parentheses-0.9-130M-v3` preset in `model/config.py`. It describes what the code computes. Every formula can be traced to a line in `model/selective_linear_attention.py`, `model/backbone.py` or the decoding features. Training (data, schedule, hardware) is out of scope.
 
 Where prose elsewhere in the repo disagrees with the code, this document follows the code. For example, the docstring at the top of `model/backbone.py` still says "byte-level" and "RoPE". Neither applies to this model.
 
 ---
 
 ## Contents
+
+- [Part A: using the code](#part-a-using-the-code)
+  - [A.1 Repository map](#a1-repository-map)
+  - [A.2 Running the chat](#a2-running-the-chat)
+  - [A.3 chat.py reference](#a3-chatpy-reference)
+  - [A.4 Python API](#a4-python-api)
+  - [A.5 Training and evaluation](#a5-training-and-evaluation)
+  - [A.6 Exports](#a6-exports)
+- [Part B: the math](#part-b-the-math)
 
 1. [Notation](#1-notation)
 2. [The model at a glance](#2-the-model-at-a-glance)
@@ -35,6 +46,174 @@ Where prose elsewhere in the repo disagrees with the code, this document follows
 19. [Appendix](#19-appendix)
 
 ---
+
+## Part A: using the code
+
+Run every command from the repository root. Paths below are relative to it.
+
+### A.1 Repository map
+
+| Path | What it holds |
+| :--- | :--- |
+| `model/` | The model code. `config.py` defines `ModelConfig` and `PRESETS`. `selective_linear_attention.py` is the recurrent layer, with a chunked parallel forward, a one-token `step` and a dense fallback. `backbone.py` defines `Parentheses`, with `forward`, `step`, `stream` and `generate`. `embedding_head.py` and `vocab_surgery.py` are also here. |
+| `features/` | Features built on the model. `free_think.py` runs open-ended decoding. `modular_free_think.py` splices retrieval into the decode loop. `conversation_memory.py` keeps chat memory. `multimodal.py` handles images and documents. `web_tools.py` handles web search and URL fetching. |
+| `scripts/` | Command-line tools. `chat.py` is the chat, `eval_dravidian.py` computes bits per byte, `overnight_driver.py` runs long training jobs and `export_npu_130m_v3.py` exports ONNX. The folder also holds `report_stats.py`, `check_docs.py` and many `build_*`, `eval_*` and `launch_*` scripts. |
+| `data/` | Data code only: `prepare_*.py`, `tokenize_corpus.py`, `scrub_pii.py`, and `tokenizer/` with `train_tokenizer.py` and the `v3_*` tokenizer folders. The corpora in `data/raw/` and `data/processed*/` are gitignored and are not in the repository. |
+| `tests/` | Validation scripts, including `validate_130m_v3.py` for this model, plus eval suites and `test_*.py` files. `pytest.ini` at the root configures pytest. |
+| `eval/` | Evaluation query sets (`*.jsonl`), `mc_reason_distractors.json` and `JUDGE_RUBRIC.md`. |
+| `assets/` | Logo files: `parentheses_mark.svg`, `parentheses_mark_transparent.svg` and the two lockup SVGs. The diagrams live in `docs/figures/`. |
+| `docs/` | This document, the session reports and planning notes, and `figures/` for the SVGs embedded here. |
+| `models/` | slab_v4 model code (`model_slab_v4.py`, `slab_v4_boundary.py`). `train.py` imports it. |
+| `train.py` | The training loop. It is a plain loop with no Trainer. |
+| `app.py` | Local web UI and streaming server. |
+| `requirements.txt` | The dependency list for `pip install -r requirements.txt`. |
+| `requirements-lock.txt` | Exact versions from the development environment (torch cu128 on Windows). |
+| `MODEL_CARD.md` | The model card, with YAML front matter. |
+| `RELEASE_NOTES.md` | Release notes. |
+| `DATA_LEDGER.md` | Disk accounting for the 0.9 line: what takes up space and what can be reclaimed. |
+| `LICENSE` | The code license (MIT). |
+| `LICENSE-MODEL` | Apache 2.0 text. It is not the licence of the 0.9 weights, which the Hugging Face model card lists as CC BY-NC 4.0. |
+| `LICENSE_POLICY.md` | The rule for which training data future releases may use. |
+| `SECURITY.md` | The security policy. |
+
+The `checkpoints/`, `out/`, `exports/` and `release/` folders are gitignored. Model weights go in `checkpoints/`, and run logs and eval outputs go in `out/`.
+
+### A.2 Running the chat
+
+Install the requirements and download the weights first, as described in [SETUP.md](SETUP.md). Then run:
+
+```bash
+python scripts/chat.py --checkpoint checkpoints/parentheses-0.9-130M-v3 --device cuda
+```
+
+Without `--device cuda` the chat runs on the CPU. That works but is much slower. If `--device cuda` fails with `Torch not compiled with CUDA enabled`, the installed PyTorch is a CPU-only build, and SETUP.md covers the fix. The flags are listed in A.3.
+
+### A.3 chat.py reference
+
+| Flag | Default | What it does |
+| :--- | :--- | :--- |
+| `--checkpoint PATH` | an old 120M path | A folder with `config.json`, `model.safetensors` and `tokenizer.json`, or a `.pt` training checkpoint. Pass it explicitly. |
+| `--device` | `cpu` | `cpu` or `cuda`. Apple `mps` is untested. |
+| `--format` (`--mode`) | `chat` | `chat` answers directly. `think` writes a reasoning block first. `freethink` runs an open-ended stream with retrieval. `base` continues raw text with no chat template. |
+| `--lang` | `auto` | `auto` detects the language of each prompt from its script. Other values: `eng`, `kan`, `tam`, `tel`, `mal`, `tcy`, `kff`, `kxv`, `nit`. Forcing a language sends every prompt to it, including English input. |
+| `--max-new-tokens` | 300 | Tokens to generate per reply. |
+| `--temperature` | 0.7 | Sampling temperature. |
+| `--top-k` | 40 | Sample only from the 40 most likely tokens. |
+| `--system TEXT` | built-in prompt | Replaces the system prompt. The system prompt is on by default. |
+| `--no-system` | off | Turns the system prompt off. |
+| `--image PATH ...` | none | Attaches images (`.png`, `.jpg`, `.bmp`, `.webp`). |
+| `--doc PATH ...` (`--ingest`) | none | Attaches documents (`.pdf`, `.docx`, `.html`, `.csv`, `.json`, `.txt`). |
+| `--web` (`--web-search`) | off | Allows web grounding for clearly real-time questions. |
+| `--self-test` | off | Runs the built-in checks. |
+
+Inside the chat:
+
+| Input | Effect |
+| :--- | :--- |
+| An empty line | Quits. Ctrl+C also quits. |
+| `/lang CODE` | Sets the language for the whole session. `/lang auto` or `/auto` goes back to detection. |
+| `/kan`, `/tam`, `/tel`, `/mal`, `/eng`, `/tcy`, `/kff`, `/kxv`, `/nit` | Forces that language for one message, for example `/tam what is your name?`. |
+| `/think`, `/chat`, `/freethink`, `/base` | Changes the format for one message, for example `/think why is the sky blue?`. Typed alone, they do not change the mode. To change the format for a whole session, restart with `--format`. |
+| `/image PATH` (or `/img`), `/doc PATH` | Attaches a file for the rest of the session. On its own, the line only attaches and does not generate a reply. |
+| `/web QUERY`, `/url URL` | Adds web context to the message. |
+
+Each reply starts with a `[Routing: ...]` line that shows which language the prompt was routed to. For Tulu, Koya, Kuvi and Kolami, pass `--lang` or use the prefix form (such as `/tcy`), because auto-detection relies on a few marker words. Simple arithmetic such as `17 x 6` is answered by a built-in calculator, not by the model.
+
+### A.4 Python API
+
+Load the model from the folder with the three weight files:
+
+```python
+import safetensors.torch
+import torch
+from tokenizers import Tokenizer
+
+from model.backbone import Parentheses
+from model.config import PRESETS
+
+model = Parentheses(PRESETS["parentheses-0.9-130M-v3"])
+sd = safetensors.torch.load_file("checkpoints/parentheses-0.9-130M-v3/model.safetensors")
+result = model.load_state_dict(sd, strict=False)  # the head is tied to the embedding
+print(result.missing_keys, result.unexpected_keys)  # missing or unexpected keys mean weights did not load
+model.eval()
+tok = Tokenizer.from_file("checkpoints/parentheses-0.9-130M-v3/tokenizer.json")
+```
+
+The loader in `scripts/chat.py` does the same work and warns if any tensors fail to load. Run this from the repository root:
+
+```python
+from scripts.chat import load_model_and_tokenizer, reply
+
+model, tok, cfg, _ = load_model_and_tokenizer("checkpoints/parentheses-0.9-130M-v3", device="cuda")
+print(reply(model, "hello", "cuda", 200, 0.7, 40, tok=tok, lang="auto", fmt="chat", stream=False))
+```
+
+The model has two forward forms. They compute the same function, and the self-tests check that they agree.
+
+- Parallel form, `model(input_ids)`. This runs a whole sequence at once and returns `(logits, loss)`. Pass `targets` to get a loss. Training and prompt prefill use this form. Inside each layer, lengths that are a multiple of 64 use the chunked path, and other lengths use a slower dense path.
+- Recurrent form, `model.step(idx, states)`. This takes one token per sequence and returns `(logits, new_states)`. Each layer keeps one 64 x 64 matrix per head, so memory stays the same however long the text gets. Start from `model.empty_states(batch_size, device=...)`.
+
+```python
+device = next(model.parameters()).device
+prompt_ids = tok.encode("hello").ids  # raw ids; chat.py adds the chat template, this loop does not
+states = model.empty_states(1, device=device)
+with torch.no_grad():
+    for token_id in prompt_ids:
+        logits, states = model.step(torch.tensor([[token_id]], device=device), states)
+```
+
+The self-tests document the exact signatures and check the two forms against each other:
+
+```bash
+python -m model.backbone
+python -m model.selective_linear_attention
+```
+
+### A.5 Training and evaluation
+
+This section is an orientation. It does not cover data preparation or hyperparameters.
+
+`train.py` is a plain training loop with no Trainer, so it is easy to read and change. The training corpora are not in the repository, so a training run needs data you build yourself.
+
+Long runs go through `scripts/overnight_driver.py`. It runs `train.py` as a child process, so start the driver itself detached for long runs. The forwarded arguments must include `--out-dir` and `--max-steps`. After a crash it resumes from the newest checkpoint in `--out-dir`, up to `--max-restarts` times (default 3), and writes progress to `out/overnight_status.txt`:
+
+```bash
+python scripts/overnight_driver.py --name <run> -- <train.py arguments>
+```
+
+`scripts/eval_dravidian.py --bpb` reports bits per UTF-8 byte on the same held-out text for byte and BPE checkpoints:
+
+```bash
+python scripts/eval_dravidian.py --bpb --checkpoints <checkpoint> --out out/bpb_eval_<name>.json
+```
+
+Run the self-tests after touching `model/` or `train.py`. They use synthetic data and need no network access:
+
+```bash
+python -m model.selective_linear_attention
+python -m model.backbone
+python train.py --self-test
+python scripts/eval_dravidian.py --self-test
+python data/tokenizer/train_tokenizer.py --self-test
+python scripts/report_stats.py --self-test
+python scripts/check_docs.py
+```
+
+`check_docs.py` fails when a doc names code that no longer exists, so run it after a rename. Use `python` from an environment where `requirements.txt` is installed, such as a project `.venv`.
+
+### A.6 Exports
+
+`scripts/export_npu_130m_v3.py` exports the single-step recurrent graph of the 130M-v3 model to ONNX. The graph has fixed shapes. A step takes one token and a fixed-size state, so no cache grows with the text. The script reads a `.pt` training checkpoint:
+
+```bash
+python scripts/export_npu_130m_v3.py --checkpoint <path-to-checkpoint>.pt --verify
+```
+
+`--provider` picks the runtime that `--verify` checks against: `dml` (the default, DirectML), `vitisai` or `cpu`. The output goes to `out/npu/` by default. In the project's checks, the export is 694 MB, runs on ONNX Runtime with DirectML, and matches PyTorch to within about 2e-5.
+
+---
+
+## Part B: the math
 
 ## 1. Notation
 
@@ -92,7 +271,7 @@ $$
 and $p(\text{token}_{t+1} = i \mid \text{prefix}) = \mathrm{softmax}(z_t)_i$.
 
 <p align="center">
-  <img src="docs/figures/block.svg" alt="One Parentheses block: residual spine, token mixing with matrix state, and SwiGLU" width="900">
+  <img src="figures/block.svg" alt="One Parentheses block: residual spine, token mixing with matrix state, and SwiGLU" width="900">
 </p>
 
 ### 2.1 Where the parameters are
@@ -119,7 +298,7 @@ The count below is exact and matches `Parentheses.num_params()`.
 The SwiGLU hidden width is $\lfloor 8d/3 \rfloor = 2048$, rounded up to a multiple of 64 (already one). Half the model is channel mixing. The parts that make this a recurrent model are the decay, the write gate, the conv, $\mu$ and $\lambda$. Together with all the norms they cost about half a million parameters, or 0.36% of the total.
 
 <p align="center">
-  <img src="docs/figures/param-budget.svg" alt="Waffle chart of the parameter budget" width="900">
+  <img src="figures/param-budget.svg" alt="Waffle chart of the parameter budget" width="900">
 </p>
 
 ---
@@ -145,7 +324,7 @@ For the Dravidian scripts, the second alternative does the work. A GPT-2-style p
 Numbers match one digit at a time (`\p{N}` with no `+`), so the model reads a multi-digit number digit by digit.
 
 <p align="center">
-  <img src="docs/figures/akshara-tokenization.svg" alt="Kannada phrase split by a letters-only regex versus the v3_32k pre-tokeniser" width="900">
+  <img src="figures/akshara-tokenization.svg" alt="Kannada phrase split by a letters-only regex versus the v3_32k pre-tokeniser" width="900">
 </p>
 
 The figure shows real tokenizer output. "ಕನ್ನಡ ಭಾಷೆ" is 10 code points and 28 UTF-8 bytes. A letters-only split gives 7 fragments, and v3_32k encodes the phrase as 2 tokens (ids 17427 and 18533). Keeping marks inside pre-tokens does not guarantee one token per word. BPE can only apply merges it learned, so a word without a covering merge still splits, sometimes at a mark. The Tamil word for "Tamil" encodes as its stem plus a separate virama token.
@@ -347,7 +526,7 @@ $$
 ## 6. The recurrence as associative memory
 
 <p align="center">
-  <img src="docs/figures/state-update.svg" alt="State update: decay the old matrix, add the outer product of key and value, read with the query" width="900">
+  <img src="figures/state-update.svg" alt="State update: decay the old matrix, add the outer product of key and value, read with the query" width="900">
 </p>
 
 The state $S_t$ is a $64 \times 64$ matrix that works as a key-value store. Writing the pair $(k, v)$ adds the rank-one matrix $k^\top v / \sqrt{d_h}$. Reading with a query $q$ returns
@@ -419,7 +598,7 @@ $$
 It has the shape of causal attention, with softmax replaced by the decay mask $M$. The diagonal of $M$ is exactly 1, because the current token is read with no decay. Each entry below the diagonal is the product of the decays between the two positions.
 
 <p align="center">
-  <img src="docs/figures/decay-mask.svg" alt="Decay mask under a constant decay and under a selective decay with two forgetting events" width="900">
+  <img src="figures/decay-mask.svg" alt="Decay mask under a constant decay and under a selective decay with two forgetting events" width="900">
 </p>
 
 With a constant $\alpha$, $M$ fades smoothly and exponentially away from the diagonal (left panel). With a selective $\alpha_t$, one small decay cuts every path that crosses it (right panel). When $\alpha_7 = 0.04$, every entry $M_{ts}$ with $s < 7 \le t$ is multiplied by 0.04. The head has effectively started over, with no explicit reset. The selective gate learns to do this.
@@ -500,7 +679,7 @@ Layer 0's values feed every layer through the highway. Each layer $\ell \ge 1$ c
 The dense form is quadratic in $T$. `forward()` instead splits the sequence into $n = T / C$ chunks of $C = 64$ tokens. Interactions within a chunk are computed densely. Interactions between chunks go through one $64 \times 64$ state per chunk.
 
 <p align="center">
-  <img src="docs/figures/chunked-scan.svg" alt="Block lower-triangular structure of the chunked form and the state hand-off between chunks" width="900">
+  <img src="figures/chunked-scan.svg" alt="Block lower-triangular structure of the chunked form and the state hand-off between chunks" width="900">
 </p>
 
 ### 8.1 Inside a chunk
@@ -564,7 +743,7 @@ At $T = 4096$ and $n = 64$, everything is linear in $T$ apart from the $n^2$ ter
 Training packs several documents into one 4,096-token window. Without isolation, the end of one document would leak into the memory at the start of the next. A `reset_mask` set to 0 at the first token of each document and 1 everywhere else prevents that.
 
 <p align="center">
-  <img src="docs/figures/reset-isolation.svg" alt="Block-diagonal mask from document ids and the three state parts a reset clears" width="900">
+  <img src="figures/reset-isolation.svg" alt="Block-diagonal mask from document ids and the three state parts a reset clears" width="900">
 </p>
 
 ### 9.1 In the parallel form
@@ -628,7 +807,7 @@ This runs after the generic weight initialisation, because the generic pass zero
 | 11 | 0.999968 | $3.16 \times 10^{-5}$ | 21,919 |
 
 <p align="center">
-  <img src="docs/figures/head-timescales.svg" alt="Initial half-life of each head on a log scale, with the 4096-token block size marked" width="900">
+  <img src="figures/head-timescales.svg" alt="Initial half-life of each head on a log scale, with the 4096-token block size marked" width="900">
 </p>
 
 Three of the twelve heads start with horizons longer than the 4,096-token training window. Starting from a spread of timescales follows S4 and Mamba practice. Each head begins with its own range (local syntax, sentence, paragraph, document), so gradient descent does not have to find the spread on its own.
@@ -720,7 +899,7 @@ In fp32 that is 3,637,248 bytes (3.64 MB). In bf16 it is half that. This is the 
 A Transformer of the same depth and width stores a key and a value vector per layer for every past token. In fp32 that is $2 \times 16 \times 768 \times 4 = 98{,}304$ bytes per token. Its cache overtakes Parentheses' fixed state after 37 tokens, reaches 403 MB at 4,096 tokens, and reaches 3.2 GB at 32,768 tokens.
 
 <p align="center">
-  <img src="docs/figures/state-vs-kvcache.svg" alt="Fixed recurrent state versus a growing KV cache, log scale" width="900">
+  <img src="figures/state-vs-kvcache.svg" alt="Fixed recurrent state versus a growing KV cache, log scale" width="900">
 </p>
 
 This compares memory only. A KV cache keeps every past token exactly, so attention can copy any earlier span word for word. A fixed state cannot. Section 18 covers what that costs.
@@ -738,7 +917,7 @@ Training sees windows of up to 4,096 tokens. Inference has no window: the state 
 ## 14. Decoding: from logits to text
 
 <p align="center">
-  <img src="docs/figures/sampling-pipeline.svg" alt="Sampling pipeline: repetition penalty, n-gram ban, temperature, top-k, softmax, min-p, multinomial" width="900">
+  <img src="figures/sampling-pipeline.svg" alt="Sampling pipeline: repetition penalty, n-gram ban, temperature, top-k, softmax, min-p, multinomial" width="900">
 </p>
 
 `stream()` turns each step's logits $z \in \mathbb{R}^V$ into a token. The order of the stages matters: penalties act on raw logits, and min-p acts on probabilities.
@@ -816,7 +995,7 @@ The cue deliberately ends without a trailing space. In byte-level BPE a trailing
 `ModularFreeThinkSession` adds a document store to the decode loop. The model's state cannot grow, so retrieved text enters by rewriting the prompt rather than by extending a cache.
 
 <p align="center">
-  <img src="docs/figures/freethink-rag-loop.svg" alt="Retrieval loop: query from the running thought, BM25 top chunks, primed context, decode 64 tokens, repeat" width="900">
+  <img src="figures/freethink-rag-loop.svg" alt="Retrieval loop: query from the running thought, BM25 top chunks, primed context, decode 64 tokens, repeat" width="900">
 </p>
 
 ### 16.1 The loop
