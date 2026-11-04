@@ -143,8 +143,8 @@ That's about 1.6 MB of state for the whole model, no matter how long the output 
 |---|---|
 | parentheses-0.9-130M preview | Released |
 | 1.0-240M pretraining, sessions 1 to 4 | Done (step 8,000) |
-| Session 5: textbooks plus Dravidian replay | Next |
-| Session 6: learning-rate anneal | Planned |
+| Session 5: textbooks plus Dravidian replay | In progress |
+| Session 6: learning-rate anneal | Next |
 | Instruction tuning that teaches "I don't know" | Planned |
 | Preference tuning and the 1.0-240M release | Planned |
 

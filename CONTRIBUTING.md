@@ -31,7 +31,7 @@ Open an [issue on GitHub](https://github.com/uncoalesced/parentheses/issues). Th
 - your GPU, if any;
 - the full output, including any warning lines from `chat.py`.
 
-Check [the troubleshooting section](docs/SETUP.md#troubleshooting) first; the common problems are there.
+Check [the troubleshooting section](docs/SETUP.md#troubleshooting) first; the common problems are there. Security problems go through [SECURITY.md](SECURITY.md) instead of a public issue.
 
 ## Code contributions
 
@@ -49,7 +49,7 @@ Anything that adds refusal behaviour, moralising, or a hidden content filter to 
 
 ## Licences
 
-By contributing, you agree that your contribution is released under the project's licences: the code under the [MIT License](LICENSE), and any training data you provide under the licence you state for it, which has to pass [LICENSE_POLICY.md](LICENSE_POLICY.md). The licence of the current model weights is in the [README](README.md#licenses).
+By contributing, you agree that your contribution is released under the project's licences: the code under the licence the repository carries when it's merged (the [MIT License](LICENSE) today; [LICENSE_POLICY.md](LICENSE_POLICY.md) says releases from 1.0 onward move to Apache 2.0), and any training data you provide under the licence you state for it, which has to pass [LICENSE_POLICY.md](LICENSE_POLICY.md). The licence of the current model weights is in the [README](README.md#licenses).
 
 ## Contact
 

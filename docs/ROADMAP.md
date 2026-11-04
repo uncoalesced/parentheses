@@ -11,8 +11,8 @@ parentheses is a small language model I am building from scratch on one 8 GB lap
 | 1.0-240M Session 2 | Done | Steps 2,001 to 4,000. |
 | 1.0-240M Session 3 | Done | Steps 4,001 to 6,000. Validation loss 3.1120, perplexity 22.47 (a different validation set from Session 1's). |
 | 1.0-240M Session 4 | Done | Steps 6,001 to 8,000. STEM, maths and code mix. Held-out bits per byte got worse in all nine languages. |
-| 1.0-240M Session 5 | Next | Steps 8,001 to 10,000. English textbooks as the main data, with Dravidian and English replay. |
-| 1.0-240M Session 6 | Planned | The single learning-rate anneal. |
+| 1.0-240M Session 5 | In progress | Steps 8,001 to 10,000. English textbooks as the main data, with Dravidian and English replay. |
+| 1.0-240M Session 6 | Next | The single learning-rate anneal. |
 | 1.0-240M SFT v5 | Planned | About 8,000 abstention-aware reasoning traces. |
 | 1.0-240M Session 8 | Planned | On-policy DPO v2 and SWA-3 checkpoint averaging. |
 | 1.0-240M release | Planned | No date. |
@@ -59,7 +59,7 @@ It made things worse on held-out data. Bits per byte went up in all nine languag
 
 ### Session 5
 
-Session 5 is next, covering steps 8,001 to 10,000. English textbook text from Cosmopedia-v2 and FineWeb-Edu is the primary data. Replay from my Dravidian and English set goes up to 8 of every 16 micro-steps, from 6 in Session 4. That is my direct response to the regression. The learning rate stays constant at 3e-4, and the one anneal happens in Session 6. I have not run Session 5 yet, so I do not know whether the bigger replay share will stop the damage.
+Session 5 covers steps 8,001 to 10,000 and is nearly finished. English textbook text from Cosmopedia-v2 and FineWeb-Edu is the primary data. Replay from my Dravidian and English set goes up to 8 of every 16 micro-steps, from 6 in Session 4. That is my direct response to the regression. The learning rate stays constant at 3e-4, and the one anneal happens in Session 6. Until its held-out bits per byte are measured, I do not know whether the bigger replay share stopped the damage.
 
 ### Sessions 6 to 8
 

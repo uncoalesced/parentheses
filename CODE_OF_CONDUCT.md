@@ -8,9 +8,9 @@ This page has two parts. The first is about the model: parentheses is uncensored
 
 parentheses is trained to answer what it's asked. Concretely:
 
-- There is no refusal training. No data in any training stage teaches the model to decline a question because of its topic.
+- There is no refusal training. I filter refusals out of the training data, so nothing teaches the model to decline a question because of its topic.
 - There are no guard or safety models anywhere in the pipeline. They aren't used as teachers, as judges, or as filters on training data.
-- There is no content filter in the chat script or the weights. What the model generates is what you see.
+- There is no content filter in the chat script or the weights. The only thing the script answers on its own is plain arithmetic, which it computes exactly.
 - It doesn't lecture. An answer shouldn't come wrapped in warnings, disclaimers or moral advice nobody asked for.
 
 Uncensored doesn't mean careless with the truth. The other half of the goal is honesty: when the model doesn't know something, it should say "I don't know" instead of making something up. A model that refuses nothing but invents facts has failed just as badly as one that refuses everything. Getting both right at the same time is the hardest part of the project, and [the roadmap](docs/ROADMAP.md#teaching-it-to-say-i-dont-know) covers how I'm working on it.
@@ -56,6 +56,6 @@ This part is short because it should be obvious, but writing it down means it's 
 
 ### Reporting
 
-If someone's behaviour is a problem, email **mail@uncoalesced.com** with what happened and links if you have them. I'll read every report, reply to say I've received it, and keep your name private unless you tell me otherwise. Depending on what happened, I may ask the person to change how they're behaving, remove comments, or block them from the project. Right now I'm the only maintainer, so if the report is about me, say so in the email and I'll treat it with the same seriousness; you can also raise it publicly in an issue.
+If someone's behaviour is a problem, email **mail@uncoalesced.com** with what happened and links if you have them. I'll read every report, reply to say I've received it, and keep your name private unless you tell me otherwise. Depending on what happened, I may ask the person to change how they're behaving, remove comments, or block them from the project. Right now I'm the only maintainer, so if the report is about me, say so in the email and I'll treat it with the same seriousness; you can also raise it publicly in an issue or report it to GitHub support.
 
 This applies in the project's GitHub repository, its issues and pull requests, and any email about the project.
