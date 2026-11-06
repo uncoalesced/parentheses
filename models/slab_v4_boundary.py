@@ -8,6 +8,7 @@ Parentheses 1.0 (240M / slab_v4) Tri-Channel Document Boundary Reset Primitives:
   3. causal_conv1d_v4: Document-boundary-isolated Depthwise Causal Conv1d (K=4)
   4. ssd_chunk_scan_v4: NaN-safe, seam-exact 4-regime Chunked SSD Associative Scan (C=64)
   5. ssd_recurrent_step_v4: Ground-truth O(1) recurrent step reference with EOT reset
+  6. ssd_chunk_scan_delta_v4 / ssd_recurrent_step_delta_v4: opt-in gated delta-rule variants
 """
 
 from __future__ import annotations
@@ -278,6 +279,171 @@ def ssd_recurrent_step_v4(
         kv_t = torch.matmul(k_f[:, t].unsqueeze(-1), v_f[:, t].unsqueeze(-2))  # [B, H, Dh, Dh]
         S = a_t * S + b_t * kv_t
         y_t = torch.matmul(q_f[:, t].unsqueeze(-2), S).squeeze(-2)             # [B, H, Dh]
+        outputs.append(y_t)
+
+    y = torch.stack(outputs, dim=1).to(orig_dtype)
+    return y, S
+
+
+def ssd_chunk_scan_delta_v4(
+    q: torch.Tensor,
+    k: torch.Tensor,
+    v: torch.Tensor,
+    log_alpha: torch.Tensor,
+    beta: torch.Tensor,
+    reset_mask: torch.Tensor,
+    doc_ids: torch.Tensor,
+    chunk_size: int = 64,
+    initial_state: Optional[torch.Tensor] = None,
+    _erase: bool = True,
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    """
+    Gated delta-rule (Gated DeltaNet) variant of ssd_chunk_scan_v4, same masks and seam semantics:
+      S_t = a_t (I - b_t k_t^T k_t) S_{t-1} + b_t k_t^T v_t = a_t S_{t-1} + k_t^T d_t
+      d_t = b_t (v_t - a_t k_t S_{t-1})                              (k must be L2-normalised)
+    Per chunk with incoming state S_0, the corrected values D = U - Z S_0 solve
+      (I + A) D = b*V - (b*w_in) * (K S_0),  A_ij = b_i L_ij (k_i . k_j) for j < i, same doc.
+    U = (I+A)^-1 (b*V) and Z = (I+A)^-1 diag(b*w_in) K do not depend on S, so one batched
+    unit-lower-triangular solve covers all chunks; the inter-chunk loop only applies S terms:
+      y      = (w_in*Q - (QK^T*L) Z) S_0 + (QK^T*L) U
+      S_next = (A_k - (K*w_out)^T Z) S_0 + (K*w_out)^T U
+
+    Computes in promote_types(q.dtype, float32): fp32 for bf16/fp32 inputs, fp64 for fp64 tests.
+    _erase=False drops A and Z and reproduces ssd_chunk_scan_v4 op for op (parity test only).
+    """
+    B, T, H, Dh = q.shape
+    C = chunk_size
+    assert T % C == 0, f"Sequence length T={T} must be divisible by chunk_size C={C}"
+    N = T // C
+
+    orig_dtype = q.dtype
+    cdt = torch.promote_types(orig_dtype, torch.float32)
+    q_f = q.to(cdt)
+    k_f = k.to(cdt)
+    v_f = (v * beta.unsqueeze(-1)).to(cdt)  # Fold beta write gate into v
+    log_a_f = log_alpha.to(cdt)
+
+    q_c = q_f.view(B, N, C, H, Dh).permute(0, 1, 3, 2, 4)        # [B, N, H, C, Dh]
+    k_c = k_f.view(B, N, C, H, Dh).permute(0, 1, 3, 2, 4)        # [B, N, H, C, Dh]
+    v_c = v_f.view(B, N, C, H, Dh).permute(0, 1, 3, 2, 4)        # [B, N, H, C, Dh]
+    log_a_c = log_a_f.view(B, N, C, H).permute(0, 1, 3, 2)       # [B, N, H, C]
+
+    d_c = doc_ids.view(B, N, C)                                  # [B, N, C]
+    m_c = reset_mask.view(B, N, C)                               # [B, N, C]
+
+    P = torch.cumsum(log_a_c, dim=-1)                            # [B, N, H, C]
+
+    # 1. Intra-chunk decay L_{i,j} (diagonal included) [B, N, H, C, C]
+    P_diff = P.unsqueeze(-1) - P.unsqueeze(-2)                   # [B, N, H, C, C]
+    tril_mask = torch.tril(torch.ones((C, C), dtype=torch.bool, device=q.device))
+    same_doc_intra = (d_c.unsqueeze(-1) == d_c.unsqueeze(-2)).unsqueeze(2)  # [B, N, 1, C, C]
+    valid_intra = tril_mask.view(1, 1, 1, C, C) & same_doc_intra
+
+    P_diff_safe = P_diff.masked_fill(~valid_intra, -1e30)
+    L = torch.exp(P_diff_safe) * valid_intra.to(cdt)             # [B, N, H, C, C]
+
+    qk = torch.matmul(q_c, k_c.transpose(-1, -2))                # [B, N, H, C, C]
+    qkL = qk * L
+
+    # 2. Seam-safe document anchors (identical to ssd_chunk_scan_v4)
+    d_0 = d_c[:, :, 0]                                           # [B, N]
+    m_0 = m_c[:, :, 0].to(d_c.dtype)                             # [B, N]
+    d_prev = d_0 - m_0                                           # [B, N]
+    d_last = d_c[:, :, -1]                                       # [B, N]
+
+    same_as_last = (d_c == d_last.unsqueeze(-1)).unsqueeze(2)    # [B, N, 1, C]
+    P_out_diff = (P[:, :, :, -1:] - P).masked_fill(~same_as_last, -1e30)
+    w_out = torch.exp(P_out_diff) * same_as_last.to(cdt)         # [B, N, H, C]
+
+    no_reset_in_chunk = (d_last == d_prev).unsqueeze(-1)         # [B, N, 1]
+    A_k = torch.exp(P[:, :, :, -1]) * no_reset_in_chunk.to(cdt)  # [B, N, H]
+
+    same_as_prev = (d_c == d_prev.unsqueeze(-1)).unsqueeze(2)    # [B, N, 1, C]
+    P_in_safe = P.masked_fill(~same_as_prev, -1e30)
+    w_in = torch.exp(P_in_safe) * same_as_prev.to(cdt)           # [B, N, H, C]
+
+    k_weighted = k_c * w_out.unsqueeze(-1)                       # [B, N, H, C, Dh]
+
+    if _erase:
+        # 3. Erase system: A strictly lower, same doc only; one solve gives [U | Z]
+        b_c = beta.to(cdt).view(B, N, C, H).permute(0, 1, 3, 2)  # [B, N, H, C]
+        strict_mask = torch.tril(torch.ones((C, C), dtype=torch.bool, device=q.device), diagonal=-1)
+        valid_strict = (strict_mask.view(1, 1, 1, C, C) & same_doc_intra).to(cdt)
+        kk = torch.matmul(k_c, k_c.transpose(-1, -2))            # [B, N, H, C, C]
+        A_mat = b_c.unsqueeze(-1) * L * valid_strict * kk
+        eye = torch.eye(C, dtype=cdt, device=q.device)
+        rhs = torch.cat([v_c, (b_c * w_in).unsqueeze(-1) * k_c], dim=-1)  # [B, N, H, C, 2Dh]
+        sol = torch.linalg.solve_triangular(A_mat + eye, rhs, upper=False, unitriangular=True)
+        U_val = sol[..., :Dh]                                    # [B, N, H, C, Dh]
+        Z = sol[..., Dh:]                                        # [B, N, H, C, Dh]
+        q_read = q_c * w_in.unsqueeze(-1) - torch.matmul(qkL, Z) # [B, N, H, C, Dh]
+        S_erase = torch.matmul(k_weighted.transpose(-1, -2), Z)  # [B, N, H, Dh, Dh]
+    else:
+        U_val = v_c
+        q_read = q_c * w_in.unsqueeze(-1)
+
+    y_intra = torch.matmul(qkL, U_val)                           # [B, N, H, C, Dh]
+    U_chunk = torch.matmul(k_weighted.transpose(-1, -2), U_val)  # [B, N, H, Dh, Dh]
+
+    # 4. Inter-chunk scan over N chunks
+    if initial_state is None:
+        S = torch.zeros((B, H, Dh, Dh), dtype=cdt, device=q.device)
+    else:
+        S = initial_state.to(cdt)
+
+    y_inter_chunks = []
+    for c_idx in range(N):
+        y_inter_c = torch.matmul(q_read[:, c_idx], S)            # [B, H, C, Dh]
+        y_inter_chunks.append(y_inter_c)
+        S_new = A_k[:, c_idx].view(B, H, 1, 1) * S + U_chunk[:, c_idx]
+        if _erase:
+            S_new = S_new - torch.matmul(S_erase[:, c_idx], S)
+        S = S_new
+
+    y_inter = torch.stack(y_inter_chunks, dim=1)                 # [B, N, H, C, Dh]
+    y_total = (y_intra + y_inter).permute(0, 1, 3, 2, 4).contiguous().view(B, T, H, Dh)
+    return y_total.to(orig_dtype), S
+
+
+def ssd_recurrent_step_delta_v4(
+    q: torch.Tensor,
+    k: torch.Tensor,
+    v: torch.Tensor,
+    log_alpha: torch.Tensor,
+    beta: torch.Tensor,
+    reset_mask: torch.Tensor,
+    initial_state: Optional[torch.Tensor] = None,
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    """
+    Ground-truth step-by-step gated delta rule, literal form:
+      S_t = a_t S_{t-1} + b_t k_t^T (v_t - a_t k_t S_{t-1}),  y_t = q_t S_t
+    At reset_mask[:, t] == True, a_t = 0 removes both the decay and the erase read.
+    Computes in promote_types(q.dtype, float32).
+    """
+    B, T, H, Dh = q.shape
+    orig_dtype = q.dtype
+    cdt = torch.promote_types(orig_dtype, torch.float32)
+    q_f = q.to(cdt)
+    k_f = k.to(cdt)
+    v_f = v.to(cdt)
+    alpha_f = torch.exp(log_alpha.to(cdt))
+    beta_f = beta.to(cdt)
+
+    if initial_state is None:
+        S = torch.zeros((B, H, Dh, Dh), dtype=cdt, device=q.device)
+    else:
+        S = initial_state.to(cdt)
+
+    outputs = []
+    for t in range(T):
+        keep = (~reset_mask[:, t]).view(B, 1, 1, 1).to(cdt)
+        a_t = alpha_f[:, t].view(B, H, 1, 1) * keep
+        b_t = beta_f[:, t].view(B, H, 1, 1)
+        k_row = k_f[:, t].unsqueeze(-2)                                         # [B, H, 1, Dh]
+        S_dec = a_t * S
+        delta = v_f[:, t].unsqueeze(-2) - torch.matmul(k_row, S_dec)            # [B, H, 1, Dh]
+        S = S_dec + b_t * torch.matmul(k_row.transpose(-1, -2), delta)          # [B, H, Dh, Dh]
+        y_t = torch.matmul(q_f[:, t].unsqueeze(-2), S).squeeze(-2)              # [B, H, Dh]
         outputs.append(y_t)
 
     y = torch.stack(outputs, dim=1).to(orig_dtype)

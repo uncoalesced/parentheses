@@ -217,7 +217,7 @@ def evaluate(path, args) -> dict:
 # Windows are non-overlapping block_size chunks with document resets, so each
 # model gets exactly its own context length.
 
-BPB_LANGS = ("kan", "tam", "tel", "mal", "tcy", "kff", "kxv", "nit", "eng")
+BPB_LANGS = ("kan", "tam", "tel", "mal", "tcy", "kff", "kxv", "nit", "eng", "hin", "san")
 
 
 def load_tokenizer(ckpt):
@@ -242,8 +242,13 @@ def doc_stream(texts, lang, tok):
             score += [False] * len(tag) + [True] * len(body)
         else:
             body = tok.encode(t, add_special_tokens=False).ids + [tok.token_to_id("<|endoftext|>")]
-            ids += [tok.token_to_id(f"<{lang}>")] + body
-            score += [False] + [True] * len(body)
+            lang_id = tok.token_to_id(f"<{lang}>")
+            if lang_id is not None:
+                ids += [lang_id] + body
+                score += [False] + [True] * len(body)
+            else:
+                ids += body
+                score += [True] * len(body)
     return np.array(ids, dtype=np.int64), np.array(score), np.array(starts, dtype=np.int64)
 
 

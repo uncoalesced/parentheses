@@ -18,7 +18,13 @@ class DualCurriculumLoader:
         primary_dir: Path,
         secondary_dir: Optional[Path] = None,
         seq_len: int = 4096,
+        secondary_per_16: Optional[int] = None,
     ) -> None:
+        # None keeps the Session 3 step schedule; an int k draws exactly k of every 16 micro-steps
+        # from the secondary dir, spread evenly (Session 4+ replay, e.g. k=6 -> 37.5% processed_v5).
+        if secondary_per_16 is not None and not 0 <= secondary_per_16 <= 16:
+            raise ValueError(f"secondary_per_16 must be in 0..16, got {secondary_per_16}")
+        self.secondary_per_16 = secondary_per_16
         # Enforce 100% Apache-2.0 license guard on both directories at startup
         verify_apache_manifest(str(primary_dir))
         self.seq_len = seq_len
@@ -48,6 +54,9 @@ class DualCurriculumLoader:
         """
         if self.sec_train is None:
             return False
+        if self.secondary_per_16 is not None:
+            k, m = self.secondary_per_16, micro_step % 16
+            return (m + 1) * k // 16 > m * k // 16
         if step <= 4250:
             # 8 out of 16 micro-steps pull from processed_v5 (50.0%)
             return (micro_step % 2) == 1

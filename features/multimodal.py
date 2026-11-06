@@ -557,11 +557,18 @@ class SSMVisualProjector(nn.Module):
         initial_shapes = state_shapes(states)
         initial_bytes = state_memory_bytes(states)
 
+        # slab_v3 blocks return ((x, state), v0) and thread layer 0's values up the
+        # stack, the same contract Parentheses.step() follows.
+        slab_v3 = getattr(model.cfg, "slab_v3", False)
         for p_idx in range(N):
             x_p = embeds[:, p_idx, :]  # (B, n_embd)
             new_states = []
+            v0 = None
             for block, st in zip(model.blocks, states):
-                x_p, st = block.step(x_p, st)
+                if slab_v3:
+                    (x_p, st), v0 = block.step(x_p, st, v0=v0)
+                else:
+                    x_p, st = block.step(x_p, st)
                 new_states.append(st)
             states = new_states
 
@@ -1296,6 +1303,21 @@ def _self_test():
         assert state_shapes(states_16) == state_shapes(states_64)
         assert state_memory_bytes(states_16) == state_memory_bytes(states_64)
         assert all(s.abs().sum().item() > 0 for s in states_16)
+
+        # 2b. Same prefill on a slab_v3 model (tuple states, ((x, state), v0) block
+        # returns), and the image state must hand off to Parentheses.step() unchanged.
+        from dataclasses import replace
+        v3_cfg = replace(PRESETS["parentheses-0.9-130M-v3"], vocab_size=512, block_size=256,
+                         n_layer=3, n_head=2, n_embd=64)
+        v3_model = Parentheses(v3_cfg).eval()
+        v3_states = prefill_visual_state(v3_model, red_path, patch_size=16, grid_size=64)
+        assert state_shapes(v3_states) == state_shapes(v3_model.empty_states(1))
+        assert all(isinstance(s, tuple) and len(s) == 3 for s in v3_states)
+        assert all(torch.isfinite(s[0]).all() and s[0].abs().sum().item() > 0 for s in v3_states)
+        with torch.no_grad():
+            logits, after = v3_model.step(torch.tensor([3]), v3_states)
+        assert logits.shape == (1, 512) and torch.isfinite(logits).all()
+        assert state_memory_bytes(after) == state_memory_bytes(v3_states)
 
         # 3. PDF generation + extraction (FlateDecode compressed + Kannada Unicode)
         pdf_path = tmp_path / "test_doc.pdf"

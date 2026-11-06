@@ -42,6 +42,8 @@ from models.slab_v4_boundary import (
     causal_conv1d_v4,
     ssd_chunk_scan_v4,
     ssd_recurrent_step_v4,
+    ssd_chunk_scan_delta_v4,
+    ssd_recurrent_step_delta_v4,
 )
 
 
@@ -59,6 +61,8 @@ class SlabV4Config:
     tie_embeddings: bool = True
     ignore_index: int = -100
     slab_v4: bool = True
+    delta_rule: bool = False      # Gated delta-rule state update (opt-in ablation; no new params)
+    beta_mode: str = "2sig"       # beta = 2*sigmoid ("2sig") or sigmoid ("sig05"); no new params
 
     @property
     def head_dim(self) -> int:
@@ -104,6 +108,10 @@ class SlabV4Attention(nn.Module):
         self.n_head = cfg.n_head
         self.head_dim = cfg.n_embd // cfg.n_head
         self.chunk_size = getattr(cfg, "chunk_size", 64)
+        self.delta_rule = bool(getattr(cfg, "delta_rule", False))
+        beta_mode = getattr(cfg, "beta_mode", "2sig")
+        assert beta_mode in ("2sig", "sig05"), f"unknown beta_mode {beta_mode!r}"
+        self.beta_scale = 2.0 if beta_mode == "2sig" else 1.0
 
         # Channel 1: Token-Shift (mu-mixing parameter)
         self.mu = nn.Parameter(torch.full((self.n_embd,), 0.5))
@@ -180,13 +188,14 @@ class SlabV4Attention(nn.Module):
             v = mix * v + (1.0 - mix) * v0
 
         # Beta-Gated Selective Write: [B, T, H]
-        beta = 2.0 * torch.sigmoid(self.beta_proj(x_ctrl))
+        beta = self.beta_scale * torch.sigmoid(self.beta_proj(x_ctrl))
 
         # Decay gate: log_alpha <= 0 strictly: [B, T, H]
         log_alpha = -F.softplus(self.alpha_proj(x_ctrl))
 
-        # Channel 3: NaN-safe, seam-exact 4-regime chunked SSD scan
-        y, _ = ssd_chunk_scan_v4(
+        # Channel 3: NaN-safe, seam-exact 4-regime chunked SSD scan (additive or delta rule)
+        scan = ssd_chunk_scan_delta_v4 if self.delta_rule else ssd_chunk_scan_v4
+        y, _ = scan(
             q=q,
             k=k,
             v=v,
@@ -254,12 +263,13 @@ class SlabV4Attention(nn.Module):
             mix = torch.sigmoid(self.v_residual_lamb).view(1, 1, H, 1).to(v.dtype)
             v = mix * v + (1.0 - mix) * v0
 
-        beta = 2.0 * torch.sigmoid(self.beta_proj(x_ctrl)).unsqueeze(1)
+        beta = self.beta_scale * torch.sigmoid(self.beta_proj(x_ctrl)).unsqueeze(1)
         log_alpha = -F.softplus(self.alpha_proj(x_ctrl)).unsqueeze(1)
 
         reset_m = torch.tensor([[is_boundary]], device=x.device, dtype=torch.bool).expand(B, 1)
 
-        y, S_next = ssd_recurrent_step_v4(
+        step_fn = ssd_recurrent_step_delta_v4 if self.delta_rule else ssd_recurrent_step_v4
+        y, S_next = step_fn(
             q=q,
             k=k,
             v=v,

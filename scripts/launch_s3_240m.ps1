@@ -13,10 +13,10 @@ if (-not (Test-Path $PythonExe)) {
     $PythonExe = "python.exe"
 }
 
-$S2FinalCkpt = "I:\parentheses\checkpoints\parentheses-1.0-240M-s2\step_4000.pt"
+$S2FinalCkpt = "I:\parentheses\checkpoints\parentheses-1.0-240M-s2\step_4000_final.pt"
 $S2LocalFallback = Join-Path $RepoRoot "checkpoints\parentheses-1.0-240M-s2\latest.pt"
 
-$ResumeCkpt = if (Test-Path $S2FinalCkpt) { $S2FinalCkpt } else { $S2LocalFallback }
+$ResumeCkpt = if (Test-Path $S2LocalFallback) { $S2LocalFallback } else { $S2FinalCkpt }
 if (-not (Test-Path $ResumeCkpt)) {
     throw "[FAIL] Session 2 terminal checkpoint not found at $S2FinalCkpt or $S2LocalFallback"
 }
@@ -53,4 +53,9 @@ Write-Host "[*] Launching Parentheses 1.0-240M (slab_v4) Session 3 (Dual-Memmap 
     --grad-checkpointing `
     --max-steps 6001 `
     --log-every 1 `
-    --ckpt-every 250 2>&1 | Tee-Object -FilePath $outLog
+    --ckpt-every 100 2>&1 | Tee-Object -FilePath $outLog
+
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "[!] train.py exited with error code $LASTEXITCODE" -ForegroundColor Red
+    exit $LASTEXITCODE
+}

@@ -253,7 +253,7 @@ def main() -> None:
                 row = json.loads(line)
                 prompt = row.get("prompt", row.get("instruction", row.get("question", "")))
                 response = row.get("response", row.get("output", row.get("chosen", row.get("answer", ""))))
-                lang = row.get("lang", "eng")
+                lang = row.get("lang", row.get("language", "eng"))
                 status, ids_arr, mask_arr = encode_and_validate_document(
                     tok, prompt, response, lang=lang, max_seq_len=args.seq_len, token_id_map=token_id_map
                 )

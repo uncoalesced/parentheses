@@ -14,8 +14,10 @@ optional 8-bit optimizer.
 """
 
 import argparse
+import dataclasses
 import inspect
 import os
+from pathlib import Path
 import time
 
 import numpy as np
@@ -287,6 +289,13 @@ def main():
                         "Repeat per corpus, e.g. one per low-resource language.")
     p.add_argument("--secondary-data-dir", default=None,
                    help="Session 3 dual-memmap micro-batch interleaving secondary directory")
+    p.add_argument("--secondary-per-16", type=int, default=None,
+                   help="with --secondary-data-dir: draw exactly K of every 16 micro-steps from it "
+                        "(default: the Session 3 step schedule)")
+    p.add_argument("--delta-rule", action="store_true",
+                   help="slab_v4 presets: gated delta-rule state update (delta-rule A/B arms)")
+    p.add_argument("--beta-mode", default=None, choices=["2sig", "sig05"],
+                   help="slab_v4 presets: write gate 2*sigmoid (default) or sigmoid (0.5 at init)")
     p.add_argument("--out-dir", default="checkpoints")
     p.add_argument("--resume-from", default=None,
                    help="checkpoint .pt to resume from (for staged/batched runs). "
@@ -343,6 +352,12 @@ def main():
 
     cfg: ModelConfig = PRESETS[args.preset]
     is_slab_v4 = getattr(cfg, "slab_v4", False) or args.preset == "parentheses-1.0-240M"
+    if args.delta_rule or args.beta_mode:
+        if not is_slab_v4:
+            raise ValueError("--delta-rule / --beta-mode need a slab_v4 preset")
+        cfg = dataclasses.replace(cfg, delta_rule=args.delta_rule or cfg.delta_rule,
+                                  beta_mode=args.beta_mode or cfg.beta_mode)
+        print(f"[info] delta_rule={cfg.delta_rule} beta_mode={cfg.beta_mode}")
     if args.device == "cuda":
         # Windows lets CUDA spill into shared system RAM instead of raising OOM, which
         # runs ~10x slower with no error. Cap it so overflow is a real OOM the overnight
@@ -477,7 +492,8 @@ def main():
         from scripts.dual_loader import DualCurriculumLoader
         prim_dir = Path(args.data).parent if Path(args.data).is_file() else Path(args.data)
         sec_dir = Path(args.secondary_data_dir)
-        dual_loader = DualCurriculumLoader(prim_dir, sec_dir, seq_len=cfg.block_size)
+        dual_loader = DualCurriculumLoader(prim_dir, sec_dir, seq_len=cfg.block_size,
+                                           secondary_per_16=args.secondary_per_16)
         print(f"[info] DualCurriculumLoader active: interleaving {prim_dir.name} and {sec_dir.name} across {args.grad_accum} micro-steps")
 
     os.makedirs(args.out_dir, exist_ok=True)
@@ -765,11 +781,15 @@ def _self_test():
     x, y, rm = mixed_batch(data, [(rep, None, 1), (low, np.arange(0, 200, 2), 1)], block, batch, "cpu")
     assert (x[:2] < 1000).all() and (x[2] // 1000 == 1).all() and (x[3] >= 2000).all()
     assert rm[:3].all() and not rm[3].all(), "only the bounded corpus row should contain resets"
-    assert mixed_batch(data, [], block, batch, "cpu")[2] is None
+    x, _, rm = mixed_batch(data, [], block, batch, "cpu")
+    assert rm is not None and rm.shape == x.shape
 
-    # no mask: unchanged behaviour, y is x shifted by one
+    # no --boundaries: get_batch still returns a mask, all ones except at EOT (token 0) and the
+    # token right after it (the slab_v4 EOT reset); y is x shifted by one
     x, y, reset_mask = get_batch(data, block, batch, "cpu")
-    assert reset_mask is None, "no --boundaries must mean no reset_mask, not an all-ones one"
+    eot = (x == 0)
+    eot[:, 1:] |= (x[:, :-1] == 0)
+    assert torch.equal(reset_mask == 0, eot), "reset_mask must be 0 exactly at EOT and the token after it"
     assert x.shape == y.shape == (batch, block)
     assert torch.equal(x[:, 1:], y[:, :-1])
     assert (y == -1).sum() == 0

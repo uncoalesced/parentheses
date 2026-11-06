@@ -32,6 +32,9 @@ class ModelConfig:
     slab_v4: bool = False        # selective_linear only: Parentheses 1.0 (240M / slab_v4) upgrades
     #                              (Tri-Channel Boundary Reset, Wide-and-Shallow 16-layer, 1024 dim).
     #                              Beta-Gated Selective Write, and Layer-0 V0 Value Residual Highway).
+    delta_rule: bool = False     # slab_v4 only: gated delta-rule state update (BRIEF_DELTA_RULE_SLAB_V4).
+    beta_mode: str = "2sig"      # slab_v4 only: write gate beta = 2*sigmoid ("2sig") or sigmoid ("sig05",
+    #                              0.5 at init). Both added last with defaults, same pattern as above.
 
     @property
     def approx_params(self) -> int:
@@ -113,6 +116,12 @@ PRESETS = {
     "parentheses-1.0-240M": ModelConfig(vocab_size=32768, block_size=4096, n_layer=16, n_head=16, n_embd=1024,
                                         attn_type="selective_linear", slab_v2=True, slab_v3=True, slab_v4=True, tie_embeddings=True,
                                         bias=False, dropout=0.0),
+
+    # Delta-rule A/B scale (2026-11-04): slab_v4 at 8 layers x 512 dim, short context. Arms differ only by
+    # --delta-rule / --beta-mode, never by preset, so they share params and batches.
+    "slab-v4-ab-small": ModelConfig(vocab_size=32768, block_size=1024, n_layer=8, n_head=8, n_embd=512,
+                                    attn_type="selective_linear", slab_v2=True, slab_v3=True, slab_v4=True,
+                                    tie_embeddings=True, bias=False, dropout=0.0),
 
     # Long-term / Plan Two territory -- kept for reference, not a near-term
     # target on the RTX 5050 laptop. See docs/training-time-estimate.md.
