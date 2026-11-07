@@ -34,3 +34,11 @@ data/*.jsonl
 
 # Agent journals and briefs stay local
 .agents/
+
+# Licensed / unverified data and held-out eval keys (Joel 2026-11-07): never public
+data/eval_suites/
+data/dpo_240m_apache/
+data/val_candidates/
+data/curated/
+data/tokenizer/v3_32k/tokenizer.json.bak
+.ecc/

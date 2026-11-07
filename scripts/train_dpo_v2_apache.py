@@ -39,6 +39,7 @@ from scripts.license_guard import verify_apache_manifest
 
 # Special Token & Formatting Constants
 EOT_TOKEN_ID = 0
+PAD_TOKEN_ID = 1  # <|pad|>
 THINK_OPEN = "<think>"
 THINK_CLOSE = "</think>"
 
@@ -89,6 +90,10 @@ def extract_last_number(text: str) -> Optional[str]:
     return matches[-1].replace(",", "")
 
 
+# Prompt files use the repo's 3-letter tags (kan/tam/tel/mal); the purity table uses 2-letter keys.
+LANG_ALIASES: Dict[str, str] = {"kan": "kn", "tam": "ta", "tel": "te", "mal": "ml", "tcy": "kn"}
+
+
 def score_on_policy_candidate(
     text: str,
     token_ids: List[int],
@@ -97,11 +102,23 @@ def score_on_policy_candidate(
     ground_truth_num: Optional[str] = None,
     requires_think: bool = False,
     requires_abstention: bool = False,
+    ground_truth_text: Optional[str] = None,
 ) -> float:
     """
     Deterministic verifier reward in [-2.0, +2.0] for ranking on-policy completions.
     """
+    lang = LANG_ALIASES.get(lang, lang)
     score = 0.0
+
+    # Reading-QA gold answer (Belebele rows): reward answers containing most of the gold option's words,
+    # so script purity alone cannot win a pair.
+    if ground_truth_text:
+        gold = set(re.findall(r"\w+", ground_truth_text.lower()))
+        ans = set(re.findall(r"\w+", (text.split(THINK_CLOSE)[-1] if THINK_CLOSE in text else text).lower()))
+        if gold and len(gold & ans) / len(gold) >= 0.6:
+            score += 0.75
+        else:
+            score -= 0.25
 
     # 1. Repetition & Termination Check
     if has_ngram_loop(token_ids, n=4, max_repeats=3):
@@ -129,6 +146,10 @@ def score_on_policy_candidate(
             score -= 0.90
 
     # 3. Task-Specific Verification
+    # S8 target behaviour: no <tool_call> on plain code prompts (S6 greedy did it on 7/10 code probes).
+    if task_type == "code" and "<tool_call>" in text:
+        score -= 0.75
+
     if task_type == "math" and ground_truth_num is not None:
         pred_num = extract_last_number(text)
         if pred_num is not None and pred_num == str(ground_truth_num).replace(",", ""):
@@ -137,9 +158,15 @@ def score_on_policy_candidate(
             score -= 0.75
 
     if requires_abstention:
+        # Native markers are the phrases every S7.5 abstention SFT response uses (data/sft_v4_abstention_4000.jsonl,
+        # 800/800 per language), so a correct native abstention is not out-scored by an English one. The old
+        # Telugu marker was garbled (Devanagari + Kannada characters) and could never match.
         abstention_markers = [
-            "cannot verify", "not provided", "insufficient information", "cannot answer",
-            "ಮಾಹಿತಿ ಇಲ್ಲ", "ಗೊತ್ತಿಲ್ಲ", "தகவல் இல்லை", "सಮಾచారం లేదు", "വിവരങ്ങൾ ലഭ്യമല്ല"
+            "cannot verify", "not provided", "insufficient information", "cannot answer", "i cannot",
+            "ಮಾಹಿತಿ ಇಲ್ಲ", "ಗೊತ್ತಿಲ್ಲ", "ದೃಢೀಕರಿಸದ", "ಕಾಲ್ಪನಿಕ", "ದಾಖಲೆಗಳು ಲಭ್ಯವಿಲ್ಲ",
+            "தகவல் இல்லை", "உறுதிப்படுத்தப்படாத", "வழங்க இயலாது",
+            "సమాచారం లేదు", "ఆధారాలు లేవు", "ధృవీకరించబడని", "కల్పితమైన",
+            "വിവരങ്ങൾ ലഭ്യമല്ല", "ലഭ്യമല്ല", "നൽകാൻ കഴിയില്ല", "സ്ഥിരീകരിക്കാത്ത", "സാങ്കൽപ്പിക",
         ]
         lower_t = text.lower()
         if any(m in lower_t for m in abstention_markers):
@@ -161,10 +188,13 @@ def score_on_policy_candidate(
 # 2. Model Loading & Sequence Log-Prob Computation (Chunked for Low VRAM)
 # ---------------------------------------------------------------------------
 
-def load_slab_v4_checkpoint(ckpt_path: Path, device: str, dtype: torch.dtype = torch.bfloat16) -> Tuple[SlabV4Model, ModelConfig]:
+def load_slab_v4_checkpoint(ckpt_path: Path, device: str, dtype: torch.dtype = torch.float32) -> Tuple[SlabV4Model, ModelConfig]:
+    # fp32 by default: train.py keeps fp32 master weights, and AdamW steps on bf16 params at
+    # lr ~5e-7 round to zero (bf16 spacing near 0.02 is ~1e-4). Compute runs under bf16 autocast.
     ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False)
     cfg_raw = ckpt.get("cfg", ckpt.get("config", {}))
-    cfg = cfg_raw if isinstance(cfg_raw, ModelConfig) else ModelConfig(**cfg_raw)
+    # Any pickled config object is used as-is (it may be model.config.ModelConfig, not root config.ModelConfig).
+    cfg = ModelConfig(**cfg_raw) if isinstance(cfg_raw, dict) else cfg_raw
 
     model = SlabV4Model(cfg)
     state_dict = ckpt.get("model", ckpt.get("state_dict", ckpt))
@@ -220,6 +250,60 @@ def compute_response_logprob(
 # ---------------------------------------------------------------------------
 
 @torch.no_grad()
+def sample_candidates_recurrent(
+    model: SlabV4Model,
+    prompt_ids: List[int],
+    num_candidates: int,
+    max_new_tokens: int,
+    temperature: float,
+    top_p: float,
+    stop_ids: set,
+    device: str,
+) -> List[List[int]]:
+    """
+    Samples `num_candidates` completions in one batch through the O(1)-per-token recurrent step()
+    (the old path re-ran the full prefix every token: O(T^2)). Prompt prefill is fed token by token,
+    as in eval_60p_adversarial_suite.stream_slab_v4. Returns one id list per candidate; a list ends
+    with EOT only if the model emitted EOT.
+    """
+    B = num_candidates
+    states = model.empty_states(B, device=device)
+    ids = torch.tensor([prompt_ids] * B, dtype=torch.long, device=device)
+    for i in range(ids.size(1) - 1):
+        _, states = model.step(ids[:, i:i + 1], states)
+    curr = ids[:, -1:]
+    outs: List[List[int]] = [[] for _ in range(B)]
+    done = [False] * B
+    for _ in range(max_new_tokens):
+        logits, states = model.step(curr, states)
+        logits = logits.float() / max(temperature, 1e-4)
+        probs = F.softmax(logits, dim=-1)
+        sorted_probs, sorted_idx = torch.sort(probs, descending=True, dim=-1)
+        cum = torch.cumsum(sorted_probs, dim=-1)
+        cutoff = cum > top_p
+        cutoff[:, 1:] = cutoff[:, :-1].clone()
+        cutoff[:, 0] = False
+        sorted_probs = sorted_probs.masked_fill(cutoff, 0.0)
+        sorted_probs = sorted_probs / sorted_probs.sum(dim=-1, keepdim=True)
+        pick = torch.multinomial(sorted_probs, num_samples=1)
+        nxt = sorted_idx.gather(-1, pick)  # (B, 1)
+        for b in range(B):
+            if done[b]:
+                continue
+            t = int(nxt[b, 0].item())
+            if t in stop_ids:
+                done[b] = True
+                if t == EOT_TOKEN_ID:
+                    outs[b].append(t)
+                continue
+            outs[b].append(t)
+        if all(done):
+            break
+        curr = nxt
+    return outs
+
+
+@torch.no_grad()
 def generate_on_policy_pairs(
     sft_ckpt: Path,
     prompts_jsonl: Path,
@@ -231,11 +315,18 @@ def generate_on_policy_pairs(
     top_p: float = 0.92,
     min_score_margin: float = 0.35,
     device: str = "cuda",
+    seed: int = 20261107,
 ) -> int:
     verify_apache_manifest(str(prompts_jsonl.parent))
     tokenizer = Tokenizer.from_file(str(tokenizer_path))
-    model, _ = load_slab_v4_checkpoint(sft_ckpt, device=device, dtype=torch.bfloat16)
+    # fp32, no autocast: same numerics as eval_60p_adversarial_suite.py decoding.
+    model, _ = load_slab_v4_checkpoint(sft_ckpt, device=device, dtype=torch.float32)
     model.eval()
+    torch.manual_seed(seed)
+
+    # Same stop set as the 60-probe harness. EOT is the SFT turn terminator and is kept in the
+    # ids (so DPO trains "stop here"); <|user|>/<|system|> stops are dropped and count as unterminated.
+    stop_ids = {EOT_TOKEN_ID} | {tokenizer.token_to_id(t) for t in ("<|user|>", "<|system|>")} - {None}
 
     prompts: List[Dict[str, Any]] = []
     with prompts_jsonl.open("r", encoding="utf-8") as f:
@@ -245,6 +336,7 @@ def generate_on_policy_pairs(
 
     out_pairs_jsonl.parent.mkdir(parents=True, exist_ok=True)
     kept_pairs = 0
+    t_start = time.time()
 
     with out_pairs_jsonl.open("w", encoding="utf-8") as out_f:
         for idx, item in enumerate(prompts, start=1):
@@ -256,34 +348,12 @@ def generate_on_policy_pairs(
             req_think = bool(item.get("requires_think", THINK_OPEN in prompt_text))
             req_abstain = bool(item.get("requires_abstention", False))
 
+            all_gen = sample_candidates_recurrent(
+                model, prompt_ids, num_candidates, max_new_tokens, temperature, top_p, stop_ids, device
+            )
             candidates: List[Tuple[float, List[int], str]] = []
-            for _ in range(num_candidates):
-                curr_ids = list(prompt_ids)
-                gen_ids: List[int] = []
-                for _ in range(max_new_tokens):
-                    inp = torch.tensor([curr_ids[-4096:]], dtype=torch.long, device=device)
-                    with torch.amp.autocast(device_type="cuda", dtype=torch.bfloat16):
-                        out = model(inp)
-                        logits = (out[0] if isinstance(out, tuple) else out)[0, -1, :].float()
-
-                    logits = logits / max(temperature, 1e-4)
-                    probs = F.softmax(logits, dim=-1)
-                    sorted_probs, sorted_indices = torch.sort(probs, descending=True)
-                    cum_probs = torch.cumsum(sorted_probs, dim=-1)
-                    cutoff = cum_probs > top_p
-                    cutoff[..., 1:] = cutoff[..., :-1].clone()
-                    cutoff[..., 0] = False
-                    sorted_probs[cutoff] = 0.0
-                    sorted_probs = sorted_probs / sorted_probs.sum()
-
-                    sampled_idx = torch.multinomial(sorted_probs, num_samples=1).item()
-                    next_tok = int(sorted_indices[sampled_idx].item())
-                    gen_ids.append(next_tok)
-                    curr_ids.append(next_tok)
-                    if next_tok == EOT_TOKEN_ID:
-                        break
-
-                gen_text = tokenizer.decode(gen_ids)
+            for gen_ids in all_gen:
+                gen_text = tokenizer.decode([t for t in gen_ids if t != EOT_TOKEN_ID], skip_special_tokens=False)
                 sc = score_on_policy_candidate(
                     text=gen_text,
                     token_ids=gen_ids,
@@ -292,6 +362,7 @@ def generate_on_policy_pairs(
                     ground_truth_num=gt_num,
                     requires_think=req_think,
                     requires_abstention=req_abstain,
+                    ground_truth_text=item.get("ground_truth_text"),
                 )
                 candidates.append((sc, gen_ids, gen_text))
 
@@ -316,9 +387,11 @@ def generate_on_policy_pairs(
                 out_f.write(json.dumps(record, ensure_ascii=False) + "\n")
                 kept_pairs += 1
 
-            if idx % 50 == 0:
-                torch.cuda.empty_cache()
-                print(f"[Generate] Processed {idx}/{len(prompts)} prompts | Kept pairs: {kept_pairs}")
+            if idx % 25 == 0:
+                out_f.flush()
+                el = time.time() - t_start
+                print(f"[Generate] Processed {idx}/{len(prompts)} prompts | Kept pairs: {kept_pairs} | "
+                      f"{el:.0f}s elapsed, ~{el / idx * (len(prompts) - idx):.0f}s left", flush=True)
 
     del model
     torch.cuda.empty_cache()
@@ -350,6 +423,13 @@ def build_sequence_tensors(
     # Response mask is 0 on prompt tokens, 1 on assistant response tokens
     resp_mask = [0 if i < p_len else 1 for i in range(len(y_ids))]
 
+    # The chunked SSD scan needs T % 64 == 0. Right-pad with <|pad|> (id 1), masked out of the loss:
+    # the model is causal, so tokens after the response cannot change the response log-probs.
+    pad = (-len(x_ids)) % 64
+    x_ids = x_ids + [PAD_TOKEN_ID] * pad
+    y_ids = y_ids + [PAD_TOKEN_ID] * pad
+    resp_mask = resp_mask + [0] * pad
+
     x = torch.tensor([x_ids], dtype=torch.long, device=device)
     y = torch.tensor([y_ids], dtype=torch.long, device=device)
     m = torch.tensor([resp_mask], dtype=torch.uint8, device=device)
@@ -374,8 +454,10 @@ def precompute_reference_logprobs(
     tokenizer = Tokenizer.from_file(str(tokenizer_path)) if tokenizer_path and tokenizer_path.exists() else None
 
     print(f"[*] Loading frozen reference model from {sft_ckpt} to precompute log-probs...")
-    ref_model, _ = load_slab_v4_checkpoint(sft_ckpt, device=device, dtype=torch.bfloat16)
+    # Same fp32-weights + bf16-autocast path as the policy in train mode, so log-ratios start at ~0.
+    ref_model, _ = load_slab_v4_checkpoint(sft_ckpt, device=device, dtype=torch.float32)
     ref_model.eval()
+    dev_type = "cuda" if str(device).startswith("cuda") else "cpu"
 
     pairs: List[Dict[str, Any]] = []
     with pairs_jsonl.open("r", encoding="utf-8") as f:
@@ -394,7 +476,7 @@ def precompute_reference_logprobs(
         xc, yc, mc, rmc = build_sequence_tensors(p_ids, c_ids, seq_len, device)
         xr, yr, mr, rmr = build_sequence_tensors(p_ids, r_ids, seq_len, device)
 
-        with torch.amp.autocast(device_type="cuda", dtype=torch.bfloat16):
+        with torch.amp.autocast(device_type=dev_type, dtype=torch.bfloat16):
             c_sum, c_mean, _ = compute_response_logprob(ref_model, xc, yc, mc, rmc)
             r_sum, r_mean, _ = compute_response_logprob(ref_model, xr, yr, mr, rmr)
 
@@ -454,23 +536,35 @@ def train_dpo_with_nll_anchor(
     ref_table = np.load(ref_cache_npy, mmap_mode="r")
     assert len(ref_table) == len(pairs), "Mismatch between pairs JSONL and ref_logprobs.npy"
 
-    torch.cuda.empty_cache()
-    model, cfg = load_slab_v4_checkpoint(sft_ckpt, device=device, dtype=torch.bfloat16)
+    dev_type = "cuda" if str(device).startswith("cuda") else "cpu"
+    if dev_type == "cuda":
+        torch.cuda.empty_cache()
+    # fp32 master weights (bf16 compute via autocast); see load_slab_v4_checkpoint.
+    model, cfg = load_slab_v4_checkpoint(sft_ckpt, device=device, dtype=torch.float32)
     model.train()
+    # Belebele prompts reach ~1.5k tokens and chosen+rejected graphs coexist: checkpoint blocks (as S7.5 does).
+    model.gradient_checkpointing_enable()
 
-    # Use model's segregated optimizer groups if available, otherwise standard AdamW
-    if hasattr(model, "configure_optimizers"):
-        optimizer = model.configure_optimizers(weight_decay=0.01, learning_rate=lr, betas=(0.9, 0.95), device_type="cuda")
-    else:
-        optimizer = torch.optim.AdamW(model.parameters(), lr=lr, betas=(0.9, 0.95), weight_decay=0.01)
+    # Segregated groups: matrix / embeddings+norms / recurrent_dynamics (0.1x LR, applied below).
+    optimizer = model.configure_optimizers(
+        lr=lr, weight_decay=0.01, betas=(0.9, 0.95), use_fused=(dev_type == "cuda")
+    )
 
     out_dir.mkdir(parents=True, exist_ok=True)
     metrics_jsonl.parent.mkdir(parents=True, exist_ok=True)
+    metrics_jsonl.write_text("", encoding="utf-8")  # one run per metrics file
     saved_anchors: List[Path] = []
 
     warmup_steps = max(20, int(0.10 * max_steps))
     rng = np.random.default_rng(seed=20261031)
     num_pairs = len(pairs)
+
+    def _pair_len(it: Dict[str, Any]) -> int:
+        p = it.get("prompt_ids") or []
+        return len(p) + max(len(it.get("chosen_ids") or []), len(it.get("rejected_ids") or []))
+
+    longest_idx = max(range(num_pairs), key=lambda i: _pair_len(pairs[i]))
+    print(f"[Train] {num_pairs} pairs; longest pair idx {longest_idx} = {_pair_len(pairs[longest_idx])} tokens", flush=True)
 
     for step in range(1, max_steps + 1):
         t0 = time.perf_counter()
@@ -495,6 +589,9 @@ def train_dpo_with_nll_anchor(
         step_acc_accum = 0.0
 
         batch_indices = rng.integers(0, num_pairs, size=grad_accum)
+        if step == 1:
+            # Longest pair first, so the 2-step smoke run surfaces any OOM before the real run.
+            batch_indices[0] = longest_idx
 
         for micro_idx in batch_indices:
             item = pairs[int(micro_idx)]
@@ -511,7 +608,7 @@ def train_dpo_with_nll_anchor(
             ref_c_logp = torch.tensor([ref_table[int(micro_idx), col_c]], dtype=torch.float32, device=device)
             ref_r_logp = torch.tensor([ref_table[int(micro_idx), col_r]], dtype=torch.float32, device=device)
 
-            with torch.amp.autocast(device_type="cuda", dtype=torch.bfloat16):
+            with torch.amp.autocast(device_type=dev_type, dtype=torch.bfloat16):
                 pi_c_sum, pi_c_mean, nll_chosen = compute_response_logprob(model, xc, yc, mc, rmc)
                 pi_r_sum, pi_r_mean, _ = compute_response_logprob(model, xr, yr, mr, rmr)
 
@@ -541,7 +638,10 @@ def train_dpo_with_nll_anchor(
         optimizer.zero_grad(set_to_none=True)
 
         dt = time.perf_counter() - t0
-        vram_gb = torch.cuda.max_memory_reserved() / (1024 ** 3)
+        vram_gb = torch.cuda.max_memory_reserved() / (1024 ** 3) if dev_type == "cuda" else 0.0
+        if not all(math.isfinite(v) for v in (step_loss_accum, step_dpo_accum, step_nll_accum, grad_norm)):
+            raise RuntimeError(f"[FAIL] Non-finite DPO telemetry at step {step}: loss={step_loss_accum} "
+                               f"dpo={step_dpo_accum} nll={step_nll_accum} gnorm={grad_norm}")
 
         telemetry = {
             "step": step,
@@ -566,14 +666,17 @@ def train_dpo_with_nll_anchor(
         with metrics_jsonl.open("a", encoding="utf-8") as mf:
             mf.write(json.dumps(telemetry) + "\n")
 
-        if step % save_every == 0 or step == max_steps:
-            torch.cuda.empty_cache()
+        # A run shorter than save_every (the smoke test) saves nothing.
+        if step % save_every == 0 or (step == max_steps and max_steps >= save_every):
+            if dev_type == "cuda":
+                torch.cuda.empty_cache()
             ckpt_path = out_dir / f"step_{step:04d}.pt"
             tmp_path = out_dir / f"step_{step:04d}.pt.tmp"
             torch.save(
                 {
                     "model": model.state_dict(),
-                    "cfg": asdict(cfg) if hasattr(cfg, "__dataclass_fields__") else cfg.__dict__,
+                    # cfg object, not a dict: eval_60p / bpb_slab_v4 read cfg.n_embd and cfg.slab_v4.
+                    "cfg": cfg,
                     "step": step,
                     "dpo_telemetry": telemetry,
                     "license": "Apache-2.0",
@@ -664,7 +767,18 @@ def main() -> int:
     parser.add_argument("--beta", type=float, default=0.15)
     parser.add_argument("--nll-coeff", type=float, default=0.10)
     parser.add_argument("--seq-len", type=int, default=4096)
+    parser.add_argument("--device", default="cuda")
+    parser.add_argument("--num-candidates", type=int, default=4)
+    parser.add_argument("--max-new-tokens", type=int, default=256)
+    parser.add_argument("--min-score-margin", type=float, default=0.35)
+    parser.add_argument("--seed", type=int, default=20261107)
     args = parser.parse_args()
+
+    if args.mode != "swa3" and not args.sft_ckpt.exists():
+        raise FileNotFoundError(f"--sft-ckpt not found: {args.sft_ckpt}")
+    if str(args.device).startswith("cuda"):
+        # AGENTS.md: Windows silently spills past VRAM into system RAM at ~10x slower.
+        torch.cuda.set_per_process_memory_fraction(0.92)
 
     if args.mode == "generate":
         generate_on_policy_pairs(
@@ -672,6 +786,11 @@ def main() -> int:
             prompts_jsonl=args.prompts_jsonl,
             out_pairs_jsonl=args.pairs_jsonl,
             tokenizer_path=args.tokenizer,
+            num_candidates=args.num_candidates,
+            max_new_tokens=args.max_new_tokens,
+            min_score_margin=args.min_score_margin,
+            device=args.device,
+            seed=args.seed,
         )
     elif args.mode == "precompute-ref":
         precompute_reference_logprobs(
@@ -680,6 +799,7 @@ def main() -> int:
             ref_cache_npy=args.ref_cache,
             tokenizer_path=args.tokenizer,
             seq_len=args.seq_len,
+            device=args.device,
         )
     elif args.mode in ("train", "all"):
         if args.mode == "all" and not args.ref_cache.exists():
@@ -689,6 +809,7 @@ def main() -> int:
                 ref_cache_npy=args.ref_cache,
                 tokenizer_path=args.tokenizer,
                 seq_len=args.seq_len,
+                device=args.device,
             )
         anchors = train_dpo_with_nll_anchor(
             sft_ckpt=args.sft_ckpt,
@@ -704,6 +825,7 @@ def main() -> int:
             nll_coeff=args.nll_coeff,
             save_every=args.save_every,
             seq_len=args.seq_len,
+            device=args.device,
         )
         if args.mode == "all" and len(anchors) >= 3:
             merge_swa3_checkpoints(anchors[-3:], args.out_dir / "parentheses-1.0-240M-dpo-swa3-golden.pt")
