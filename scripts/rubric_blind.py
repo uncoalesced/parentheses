@@ -170,7 +170,9 @@ def unblind_summary(grades_path: Path, key_path: Path, summary_out: Path | None 
 def self_test() -> None:
     test_key = {"B000": "s4", "B001": "s5"}
     import tempfile
-    with tempfile.TemporaryDirectory() as td:
+    scratch_dir = REPO_ROOT / "out" / "tmp"
+    scratch_dir.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(dir=str(scratch_dir)) as td:
         kp = Path(td) / "key.json"
         gp = Path(td) / "grades.jsonl"
         sp = Path(td) / "summary.txt"

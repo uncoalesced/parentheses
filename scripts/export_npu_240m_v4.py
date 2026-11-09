@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+# Engineered by uncoalesced
 
 """
 scripts/export_npu_240m_v4.py
 
 Exports Parentheses 1.0-240M (slab_v4) into a strictly static-shape ONNX
-recurrent graph for ultra-low-power, sub-5W local inference on the AMD Ryzen AI
-(XDNA) NPU via DirectML or VitisAI.
+recurrent graph for ultra-low-power, sub-5W local inference on AMD Ryzen AI /
+DirectML environments.
 
 Architecture Invariants:
   - O(1) Constant-Memory Recurrent Step
@@ -16,18 +17,14 @@ Architecture Invariants:
   - Zero dynamic sequence resizing, zero KV-cache DMA thrashing
   - slab_v4: Token-Shift (mu-mix), Depthwise Causal Conv1d (K=4),
     Chunked SSD Scan (C=64), Beta-Gated Selective Write, V0 Value Highway
-
-Usage:
-  # Export step model from checkpoint to ONNX
-  python scripts/export_npu_240m_v4.py --checkpoint checkpoints/parentheses-1.0-240M-s7/step_14000_final.pt --verify
-
-  # Verify on DirectML
-  python scripts/export_npu_240m_v4.py --onnx out/npu/parentheses_240m_slab_v4_step.onnx --provider dml --verify
+  - Document Context Reset: is_boundary is fixed to False in the recurrent step graph;
+    callers reset sequence context between documents by passing zero-initialized state tensors.
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import sys
 import time
@@ -89,9 +86,12 @@ class SlabV4NPUStepWrapper(nn.Module):
         logits, next_state_list = self.model.step(token_id, state_list, is_boundary=False)
 
         # Repack into contiguous stacked tensors for zero-alloc NPU tiling
-        next_s = torch.stack([st[0] for st in next_state_list], dim=0)      # (16, 1, 16, 64, 64)
-        next_conv = torch.stack([st[1] for st in next_state_list], dim=0)   # (16, 1, 3, 3072)
-        next_shift = torch.stack([st[2] for st in next_state_list], dim=0)  # (16, 1, 1024)
+        # st[0]: S_next (1, H, Dh, Dh) -> (16, 1, 16, 64, 64)
+        # st[1]: conv_next (1, 3, 3*C) -> (16, 1, 3, 3072)
+        # st[2]: token_next (1, 1, C) -> squeeze(1) -> (1, C) -> stack -> (16, 1, 1024)
+        next_s = torch.stack([st[0] for st in next_state_list], dim=0)
+        next_conv = torch.stack([st[1] for st in next_state_list], dim=0)
+        next_shift = torch.stack([st[2].squeeze(1) for st in next_state_list], dim=0)
 
         return logits, next_s, next_conv, next_shift
 
@@ -146,74 +146,119 @@ def export_npu(
     file_size_mb = out_onnx_path.stat().st_size / 1e6
     print(f"      Export complete in {time.time() - t_exp:.2f}s ({file_size_mb:.2f} MB)")
 
+    parity_metrics = {}
     if verify:
-        print(f"\n[3/3] Verifying numerical parity against PyTorch reference...")
+        print(f"\n[3/3] Verifying numerical parity against PyTorch reference over 32 steps...")
         import onnxruntime as ort
 
-        prov_map = {
-            "dml": ["DmlExecutionProvider", "CPUExecutionProvider"],
-            "vitisai": ["VitisAIExecutionProvider", "CPUExecutionProvider"],
-            "cpu": ["CPUExecutionProvider"],
-        }
-        active_providers = prov_map.get(provider.lower(), ["CPUExecutionProvider"])
+        targets = ["cpu", "dml"] if provider == "both" else [provider]
+        test_tokens = [42, 17, 99, 3, 240, 7, 64, 11] * 4  # 32 tokens
 
-        sess_opts = ort.SessionOptions()
-        sess_opts.intra_op_num_threads = 2
-        sess_opts.inter_op_num_threads = 1
-        sess = ort.InferenceSession(str(out_onnx_path), sess_options=sess_opts, providers=active_providers)
-        print(f"      ONNX Runtime Session Active Providers: {sess.get_providers()}")
+        for prov_target in targets:
+            print(f"    Testing provider: {prov_target.upper()}...")
+            prov_map = {
+                "dml": ["DmlExecutionProvider", "CPUExecutionProvider"],
+                "vitisai": ["VitisAIExecutionProvider", "CPUExecutionProvider"],
+                "cpu": ["CPUExecutionProvider"],
+            }
+            active_providers = prov_map.get(prov_target.lower(), ["CPUExecutionProvider"])
 
-        # PyTorch reference pass
-        with torch.no_grad():
-            ref_logits, ref_s, ref_conv, ref_shift = wrapper(dummy_tok, dummy_s, dummy_conv, dummy_shift)
+            sess_opts = ort.SessionOptions()
+            sess_opts.intra_op_num_threads = 2
+            sess_opts.inter_op_num_threads = 1
+            sess = ort.InferenceSession(str(out_onnx_path), sess_options=sess_opts, providers=active_providers)
+            actual_provs = sess.get_providers()
+            print(f"      ONNX Runtime Active Providers: {actual_provs}")
+            if prov_target == "dml":
+                assert "DmlExecutionProvider" in actual_provs, f"DirectML requested but not active! Active: {actual_provs}"
 
-        # ORT pass
-        ort_inputs = {
-            "token_id": dummy_tok.numpy(),
-            "s_states": dummy_s.numpy(),
-            "conv_states": dummy_conv.numpy(),
-            "shift_states": dummy_shift.numpy(),
-        }
-        ort_outs = sess.run(None, ort_inputs)
-        ort_logits, ort_s, ort_conv, ort_shift = ort_outs
+            # Initialize states from PyTorch dummy tensors
+            py_s = dummy_s.clone()
+            py_cv = dummy_conv.clone()
+            py_sh = dummy_shift.clone()
 
-        # Compute numerical error deltas
-        logits_err = float(np.max(np.abs(ref_logits.numpy() - ort_logits)))
-        s_err = float(np.max(np.abs(ref_s.numpy() - ort_s)))
-        conv_err = float(np.max(np.abs(ref_conv.numpy() - ort_conv)))
-        shift_err = float(np.max(np.abs(ref_shift.numpy() - ort_shift)))
+            ort_st = [dummy_s.numpy(), dummy_conv.numpy(), dummy_shift.numpy()]
 
-        print(f"      - Logits Max Absolute Error:     {logits_err:.2e}")
-        print(f"      - S-State Max Absolute Error:    {s_err:.2e}")
-        print(f"      - Conv-State Max Absolute Error: {conv_err:.2e}")
-        print(f"      - Shift-State Max Absolute Error:{shift_err:.2e}")
+            max_logits_err = 0.0
+            max_s_err = 0.0
+            max_cv_err = 0.0
+            max_sh_err = 0.0
 
-        assert logits_err < 1e-4, f"Parity violation on logits: {logits_err}"
-        assert s_err < 1e-4, f"Parity violation on associative memory S: {s_err}"
-        print("      [PASS] Bitwise mathematical parity confirmed between PyTorch and ONNX Runtime!")
+            for step_idx, tok_val in enumerate(test_tokens):
+                t_tensor = torch.tensor([[tok_val]], dtype=torch.long)
+                with torch.no_grad():
+                    py_logits, py_s, py_cv, py_sh = wrapper(t_tensor, py_s, py_cv, py_sh)
 
-    return out_onnx_path
+                ort_inputs = {
+                    "token_id": np.array([[tok_val]], dtype=np.int64),
+                    "s_states": ort_st[0],
+                    "conv_states": ort_st[1],
+                    "shift_states": ort_st[2],
+                }
+                ort_outs = sess.run(None, ort_inputs)
+                ort_logits, ort_s, ort_cv, ort_sh = ort_outs
+
+                # Track errors
+                err_l = float(np.max(np.abs(py_logits.numpy() - ort_logits)))
+                err_s = float(np.max(np.abs(py_s.numpy() - ort_s)))
+                err_cv = float(np.max(np.abs(py_cv.numpy() - ort_cv)))
+                err_sh = float(np.max(np.abs(py_sh.numpy() - ort_sh)))
+
+                max_logits_err = max(max_logits_err, err_l)
+                max_s_err = max(max_s_err, err_s)
+                max_cv_err = max(max_cv_err, err_cv)
+                max_sh_err = max(max_sh_err, err_sh)
+
+                ort_st = [ort_s, ort_cv, ort_sh]
+
+            print(f"      32-Step Multi-Step Parity Summary for {prov_target.upper()}:")
+            print(f"      - Logits Max Absolute Error:     {max_logits_err:.2e}")
+            print(f"      - S-State Max Absolute Error:    {max_s_err:.2e}")
+            print(f"      - Conv-State Max Absolute Error: {max_cv_err:.2e}")
+            print(f"      - Shift-State Max Absolute Error:{max_sh_err:.2e}")
+
+            assert max_logits_err < 1e-4, f"Parity violation on logits ({prov_target}): {max_logits_err}"
+            assert max_s_err < 1e-4, f"Parity violation on associative memory S ({prov_target}): {max_s_err}"
+            assert max_cv_err < 1e-4, f"Parity violation on conv buffer ({prov_target}): {max_cv_err}"
+            assert max_sh_err < 1e-4, f"Parity violation on shift register ({prov_target}): {max_sh_err}"
+            print(f"      [PASS] Bitwise mathematical parity confirmed for {prov_target.upper()} over 32 steps (all errors < 1e-4)!")
+
+            parity_metrics[prov_target] = {
+                "active_providers": actual_provs,
+                "logits_max_err": max_logits_err,
+                "s_state_max_err": max_s_err,
+                "conv_state_max_err": max_cv_err,
+                "shift_state_max_err": max_sh_err,
+                "passed": True,
+            }
+
+    return {
+        "onnx_path": str(out_onnx_path),
+        "file_size_mb": round(file_size_mb, 2),
+        "parity_verified": verify,
+        "parity_metrics": parity_metrics,
+    }
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Export Parentheses 1.0-240M slab_v4 to AMD Ryzen AI NPU ONNX Graph")
+    parser = argparse.ArgumentParser(description="Export Parentheses 1.0-240M slab_v4 to AMD Ryzen AI DirectML ONNX Graph")
     parser.add_argument(
         "--checkpoint",
         type=str,
-        default="checkpoints/parentheses-1.0-240M-s7/step_14000_final.pt",
+        default="checkpoints/parentheses-1.0-240M-s8-golden/parentheses-1.0-240M-dpo-swa3-golden.pt",
         help="Path to .pt checkpoint",
     )
     parser.add_argument(
         "--out",
         type=str,
-        default="out/npu/parentheses_240m_slab_v4_step.onnx",
+        default="out/npu/parentheses_240m_v4_s8_step.onnx",
         help="Target ONNX export path",
     )
     parser.add_argument(
         "--provider",
         type=str,
-        default="dml",
-        choices=["dml", "vitisai", "cpu"],
+        default="both",
+        choices=["dml", "vitisai", "cpu", "both"],
         help="Execution provider to verify against",
     )
     parser.add_argument(
@@ -221,9 +266,21 @@ def main():
         action="store_true",
         help="Run parity verification against PyTorch",
     )
+    parser.add_argument(
+        "--json-out",
+        type=str,
+        default=None,
+        help="Optional path to write export and verification metrics JSON",
+    )
     args = parser.parse_args()
 
-    export_npu(Path(args.checkpoint), Path(args.out), verify=args.verify, provider=args.provider)
+    metrics = export_npu(Path(args.checkpoint), Path(args.out), verify=args.verify, provider=args.provider)
+    if args.json_out:
+        out_p = Path(args.json_out)
+        out_p.parent.mkdir(parents=True, exist_ok=True)
+        with open(out_p, "w", encoding="utf-8") as f:
+            json.dump(metrics, f, indent=2)
+        print(f"[+] Export report written to {out_p}")
 
 
 if __name__ == "__main__":
