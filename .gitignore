@@ -42,3 +42,8 @@ data/val_candidates/
 data/curated/
 data/tokenizer/v3_32k/tokenizer.json.bak
 .ecc/
+
+# S10 generated data and caches
+data/s10_gen/
+**/.ruff_cache/
+*.bak
