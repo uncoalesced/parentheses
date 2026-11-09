@@ -341,6 +341,9 @@ def main():
     p.add_argument("--optimizer-8bit", action="store_true")
     p.add_argument("--z-loss-coeff", type=float, default=0.0,
                    help="auxiliary Z-loss coefficient c_z to penalize logit drift (recommended 1e-4 for selective_linear CPT)")
+    p.add_argument("--eos-weight", type=float, default=1.0,
+                   help="slab_v4 only: multiply the loss on <|endoftext|> targets by this factor so SFT teaches the model "
+                        "to stop (S10 uses 3.0). 1.0 = unchanged.")
     p.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     p.add_argument("--self-test", action="store_true",
                    help="check batch sampling / SFT loss masking on fake data and exit")
@@ -348,6 +351,7 @@ def main():
 
     if args.self_test:
         _self_test()
+        _eos_weight_self_test()
         return
 
     cfg: ModelConfig = PRESETS[args.preset]
@@ -368,6 +372,9 @@ def main():
     if is_slab_v4:
         model = SlabV4Model(cfg).to(args.device)
         print(f"[info] {args.preset} (slab_v4): {model.num_params()/1e6:.1f}M params on {args.device}")
+        if args.eos_weight != 1.0:
+            model.eos_weight = float(args.eos_weight)
+            print(f"[info] eos_weight={model.eos_weight} (loss on <|endoftext|> targets scaled)")
     else:
         model = Parentheses(cfg).to(args.device)
         print(f"[info] {args.preset}: {model.num_params()/1e6:.1f}M params on {args.device}")
@@ -739,6 +746,36 @@ def main():
     path = os.path.join(args.out_dir, f"step_{final_step}_final.pt")
     save(path, final_step)
     print(f"[info] saved final checkpoint: {path}")
+
+
+def _eos_weight_self_test():
+    """--eos-weight: the weighted loss equals a hand computation, chunked == unchunked, and 1.0 changes nothing."""
+    from models.model_slab_v4 import SlabV4Config, SlabV4Model
+    torch.manual_seed(0)
+    V = 200
+    cfg = SlabV4Config(vocab_size=V, block_size=128, n_layer=2, n_head=4, n_embd=128, chunk_size=64, eot_token_id=0)
+    m = SlabV4Model(cfg).eval()
+    x = torch.randint(1, V, (2, 128))
+    y = torch.randint(1, V, (2, 128))
+    y[:, 10] = 0
+    y[:, 70] = 0
+    y[0, 5] = -100                                   # an ignored (prompt) position
+    with torch.no_grad():
+        logits, _ = m(x, y, return_logits=True)
+        flat_y = y.reshape(-1)
+        ce = torch.nn.functional.cross_entropy(logits.reshape(-1, V).float(), flat_y, ignore_index=-100, reduction="none")
+        valid, eot = flat_y != -100, flat_y == 0
+        base = m(x, y, return_logits=False, ce_rows=64)[1]
+        assert abs(base.item() - (ce[valid].sum() / valid.sum()).item()) < 1e-4, "eos_weight=1.0 must not change the loss"
+        m.eos_weight = 3.0
+        w = torch.where(eot, ce.new_tensor(3.0), ce.new_tensor(1.0))
+        want = (ce * w)[valid].sum() / (valid.sum() + 2.0 * (valid & eot).sum())
+        got_chunked = m(x, y, return_logits=False, ce_rows=64)[1]
+        got_full = m(x, y, return_logits=True)[1]
+        assert abs(got_chunked.item() - want.item()) < 1e-4, (got_chunked.item(), want.item())
+        assert abs(got_full.item() - want.item()) < 1e-4, (got_full.item(), want.item())
+        assert got_chunked.item() != base.item(), "weight 3.0 should differ from 1.0 when EOT targets exist"
+    print("[self-test] --eos-weight ok")
 
 
 def _self_test():

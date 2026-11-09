@@ -456,11 +456,22 @@ class SlabV4Model(nn.Module):
         h, t = x.reshape(-1, x.size(-1)), targets.reshape(-1)
         if ign == -100 and (t == -1).any():
             t = t.clone().masked_fill_(t == -1, -100)
-        part = lambda hh, tt: F.cross_entropy(self.head(hh).float(), tt, ignore_index=ign, reduction="sum")
+        # S10: eos_weight > 1 up-weights the loss on the <|endoftext|> target so the model learns to stop.
+        # It defaults to 1.0 (attribute absent), which keeps every older run byte-identical.
+        ew = float(getattr(self, "eos_weight", 1.0))
+        eot = int(getattr(self.cfg, "eot_token_id", 0))
+
+        def part(hh, tt):
+            ce = F.cross_entropy(self.head(hh).float(), tt, ignore_index=ign, reduction="none")
+            if ew != 1.0:
+                ce = ce * torch.where(tt == eot, ce.new_tensor(ew), ce.new_tensor(1.0))
+            return ce.sum()
+
         total = sum(checkpoint(part, h[i:i + rows], t[i:i + rows], use_reentrant=False)
                     for i in range(0, h.size(0), rows))
-        valid_targets = ((t != ign) & (t >= 0)).sum().clamp_min(1)
-        return total / valid_targets
+        valid = (t != ign) & (t >= 0)
+        denom = valid.sum() + (ew - 1.0) * (valid & (t == eot)).sum()
+        return total / denom.clamp_min(1)
 
     def forward(
         self,
@@ -513,11 +524,19 @@ class SlabV4Model(nn.Module):
             t_flat = targets.view(-1)
             if ign == -100 and (t_flat == -1).any():
                 t_flat = t_flat.clone().masked_fill_(t_flat == -1, -100)
-            loss = F.cross_entropy(
-                logits.view(-1, logits.size(-1)).float(),
-                t_flat,
-                ignore_index=ign,
-            )
+            ew = float(getattr(self, "eos_weight", 1.0))
+            if ew == 1.0:
+                loss = F.cross_entropy(
+                    logits.view(-1, logits.size(-1)).float(),
+                    t_flat,
+                    ignore_index=ign,
+                )
+            else:  # S10 eos_weight: same weighted mean as chunked_loss
+                eot = int(getattr(self.cfg, "eot_token_id", 0))
+                ce = F.cross_entropy(logits.view(-1, logits.size(-1)).float(), t_flat, ignore_index=ign, reduction="none")
+                valid = (t_flat != ign) & (t_flat >= 0)
+                w = torch.where(t_flat == eot, ce.new_tensor(ew), ce.new_tensor(1.0))
+                loss = (ce * w).sum() / (valid.sum() + (ew - 1.0) * (valid & (t_flat == eot)).sum()).clamp_min(1)
 
         return logits, loss
 
