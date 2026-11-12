@@ -167,6 +167,7 @@ The release package includes a bitwise-parity verified, static-shape ONNX recurr
 ### Weight Formats & Distribution:
 - **`model.safetensors` (967.2 MB, float32) on Hugging Face Hub:** Canonical certified golden reference weights. All benchmark scores and verification gates in this card were evaluated on this checkpoint.
 - **`model-bf16.safetensors` (483.6 MB, bfloat16) on GitHub Releases:** Lightweight half-precision export available as an optional asset on the [GitHub Release](https://github.com/uncoalesced/parentheses/releases/tag/v1.0.0-tanzanite) for lower download sizes and edge devices with constrained storage. *Note: the bf16 checkpoint is an optional reference export; all official benchmarks were measured in float32.*
+- **`model.pt` (1,014.2 MB, PyTorch native) on GitHub Releases:** Raw PyTorch state dictionary export provided for native PyTorch workflows.
 
 ```python
 import json
