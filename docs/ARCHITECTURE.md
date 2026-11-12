@@ -1,10 +1,10 @@
 # How parentheses-1.0 works
 
-Parentheses 1.0 is a language model designed and trained from scratch on one laptop in Bengaluru. The golden release weights are `parentheses-1.0-240M-tanzanite` (Project Tanzanite). It has **253.54 million parameters** (253,544,176 unique parameters) and belongs to the family of selective linear attention models, close to Mamba-2 and RWKV. It is not a transformer. It has no softmax attention over past tokens and no key-value cache. It was trained on a single NVIDIA GeForce RTX 5050 Laptop GPU with 8 GB of VRAM, on text in Kannada, Tamil, Telugu, Malayalam and English, with experimental support for Tulu, Koya, Kuvi and Kolami.
+parentheses 1.0 is a language model designed and trained from scratch on one laptop in Bengaluru. The golden release weights are `parentheses-1.0-240M-tanzanite` (Project Tanzanite). It has **253.54 million parameters** (253,544,176 unique parameters) and belongs to the family of selective linear attention models, close to Mamba-2 and RWKV. It is not a transformer. It has no softmax attention over past tokens and no key-value cache. It was trained on a single NVIDIA GeForce RTX 5050 Laptop GPU with 8 GB of VRAM, on text in Kannada, Tamil, Telugu, Malayalam and English, with experimental support for Tulu, Koya, Kuvi and Kolami.
 
 This guide explains the architecture with words and pictures first, for a reader who knows what a transformer is but has not met a recurrent state-space model. Equations appear only where they help. Each section links to the matching part of [DOCUMENTATION.md](DOCUMENTATION.md), which has the full derivations and the source file for every formula.
 
-**In one minute.** A transformer answers each new token by looking back at every token before it, so it stores a key and a value for each one and its memory grows with the text. Parentheses keeps a fixed block of memory instead. In each of 16 layers and 16 heads, one 64-by-64 matrix holds what that head has seen. Each token fades the old contents slightly, writes its own key and value into the matrix, and reads back with a query. Training runs the same arithmetic in parallel over 64-token chunks, so a 4,096-token document does not have to be processed one step at a time. The tokenizer keeps Indic letters together, so the model sees whole syllables. Most of the weights sit in feed-forward layers that work on each position separately.
+**In one minute.** A transformer answers each new token by looking back at every token before it, so it stores a key and a value for each one and its memory grows with the text. parentheses keeps a fixed block of memory instead. In each of 16 layers and 16 heads, one 64-by-64 matrix holds what that head has seen. Each token fades the old contents slightly, writes its own key and value into the matrix, and reads back with a query. Training runs the same arithmetic in parallel over 64-token chunks, so a 4,096-token document does not have to be processed one step at a time. The tokenizer keeps Indic letters together, so the model sees whole syllables. Most of the weights sit in feed-forward layers that work on each position separately.
 
 ## Contents
 
@@ -63,15 +63,15 @@ $$S_t = \alpha_t\, S_{t-1} + \beta_t\, k_t^\top v_t, \qquad y_t = q_t\, S_t$$
   <img src="figures/state-update.svg" alt="State update: decay the old matrix, add the outer product of key and value, read with the query" width="760">
 </p>
 
-I find it easiest to think of the matrix as a notebook with a fixed number of pages. Each new entry is written over a faded copy of the older text. Reading means asking a question. The entries whose keys match the question speak loudest, and the entries that have faded speak quietly. The notebook never gets longer, and the model learns how fast each head's entries fade.
+It is easiest to think of the matrix as a notebook with a fixed number of pages. Each new entry is written over a faded copy of the older text. Reading means asking a question. The entries whose keys match the question speak loudest, and the entries that have faded speak quietly. The notebook never gets longer, and the model learns how fast each head's entries fade.
 
-A tiny example makes this concrete. Use two-number vectors and write the key $(1, 0)$ with the value $(3, 1)$. One step later the head decays by 0.5 and writes the key $(0, 1)$ with the value $(-2, 4)$. Querying with $(1, 0)$ now returns $(1.5, 0.5)$: the first value, halved once by the decay. Querying with $(0, 1)$ returns $(-2, 4)$ exactly. A query pointing between the two keys returns a blend that leans toward the key that matches it more closely. (I leave out the 1/8 scaling the code applies to each write, to keep the numbers readable.) [The full worked example](DOCUMENTATION.md#61-a-small-worked-example) is in section 6.1 of the derivation.
+A tiny example makes this concrete. Use two-number vectors and write the key $(1, 0)$ with the value $(3, 1)$. One step later the head decays by 0.5 and writes the key $(0, 1)$ with the value $(-2, 4)$. Querying with $(1, 0)$ now returns $(1.5, 0.5)$: the first value, halved once by the decay. Querying with $(0, 1)$ returns $(-2, 4)$ exactly. A query pointing between the two keys returns a blend that leans toward the key that matches it more closely. (We omit the 1/8 scaling the code applies to each write, to keep the numbers readable.) [The full worked example](DOCUMENTATION.md#61-a-small-worked-example) is in section 6.1 of the derivation.
 
 Four properties follow from that arithmetic. The weights are signed, so a query pointing away from a stored key subtracts its value. The read is not normalised, so its size depends on how many writes match. Each head can hold at most about 64 mutually orthogonal keys before writes start to overlap. And the cost of memory does not depend on history.
 
-The numbers are concrete. Each head stores 4,096 numbers, and the 192 head matrices in the model (16 layers times 12 heads) hold 786,432 numbers. In bf16 that is about 1.6 MB. The whole recurrent state, which also includes a short convolution history and the previous input kept for token-shift, is 909,312 numbers, or 3.64 MB in fp32. The state is the same size after ten tokens as after ten million.
+The numbers are concrete. Each head stores 4,096 numbers, and the 256 head matrices in the model (16 layers times 16 heads) hold 1,048,576 numbers. In bf16 that is about 2.1 MB. The whole recurrent state, which also includes a short convolution history and the previous input kept for token-shift, is 1,212,416 numbers, or 4.85 MB in fp32 (2.42 MB in bf16). The state is the same size after ten tokens as after ten million.
 
-Because the state never grows, generation does not slow down as the text gets longer. On the laptop GPU, the last token of a generation takes 1.025 times as long as the first. Prompts are read the same way, one token at a time, so a long prompt costs a fixed amount per token. The matrix arithmetic is also small. A decoding step needs about 1.6 million multiply-adds for the recurrence, against roughly 148 million for the dense layers, so the recurrence is about 1% of the work. What sets the model apart is how it stores memory, and that is cheap.
+Because the state never grows, generation does not slow down as the text gets longer. On the laptop GPU, the last token of a generation takes 1.025 times as long as the first. Prompts are read the same way, one token at a time, so a long prompt costs a fixed amount per token. The matrix arithmetic is also small. A decoding step needs about 2.1 million multiply-adds for the recurrence, against roughly 253 million for the dense layers, so the recurrence is under 1% of the work. What sets the model apart is how it stores memory, and that is cheap.
 
 ## Inside one layer
 
@@ -99,10 +99,10 @@ $$\alpha_t = \exp\big(-\mathrm{softplus}(W_\alpha \tilde{x}_t + b_\alpha)\big)$$
 
 Softplus is always positive, so $\alpha_t$ always lies strictly between 0 and 1. A head can never amplify its memory, and it never wipes it in one step except at a document boundary. The decay depends on the input, which is what "selective" means here. A head can hold its memory through a stretch of filler text, then drop most of it in one step when the topic changes. Each head makes that choice separately at every token.
 
-The bias $b_\alpha$ starts at a different value in each head, so the 12 heads begin with different memory lengths. Head 0 starts with a half-life of about 7 tokens, and head 11 starts with one of about 22,000 tokens. The heads in between are spaced on a log scale, so each one covers its own range of distances. Training moves these values, and a trained head's horizon can change from token to token.
+The bias $b_\alpha$ starts at a different value in each head, so the 16 heads begin with different memory lengths. Head 0 starts with a half-life of about 7 tokens, and head 15 starts with one of about 22,000 tokens. The heads in between are spaced on a log scale, so each one covers its own range of distances. Training moves these values, and a trained head's horizon can change from token to token.
 
 <p align="center">
-  <img src="figures/head-timescales.svg" alt="Initial half-life of each of the 12 heads on a log scale, with the 4096-token block size marked" width="760">
+  <img src="figures/head-timescales.svg" alt="Initial half-life of each of the 16 heads on a log scale, with the 4096-token block size marked" width="760">
 </p>
 
 The full table of starting values, and the reason the softplus parametrisation makes learning the timescales even, is in [section 10](DOCUMENTATION.md#10-memory-timescales) and [section 7.5](DOCUMENTATION.md#75-why-the-softplus-parametrisation).
@@ -121,17 +121,17 @@ Layer 0 keeps its value vectors and passes them up the stack. Every later layer 
 
 ### Reading and output
 
-The read $q_t S_t$ is a signed sum over everything written, and its size changes with how many writes match. Each head's read is therefore normalised by its own RMSNorm before anything else sees it. The 12 heads are then joined, multiplied by a SiLU gate computed from the shifted input, and projected back to 768 numbers. The gate lets the model choose, channel by channel, how much of the normalised read gets through.
+The read $q_t S_t$ is a signed sum over everything written, and its size changes with how many writes match. Each head's read is therefore normalised by its own RMSNorm before anything else sees it. The 16 heads are then joined, multiplied by a SiLU gate computed from the shifted input, and projected back to 1024 numbers. The gate lets the model choose, channel by channel, how much of the normalised read gets through.
 
 ### The SwiGLU channel mixer
 
-The second branch in each block is a SwiGLU feed-forward network, $W_2\big(\mathrm{SiLU}(W_1 x) \odot W_3 x\big)$, with a hidden width of 2,048. It works on each position alone. Most of the parameters and most of what the model stores about words, morphology and facts live here. Token mixing moves information between positions, and SwiGLU transforms it within a position.
+The second branch in each block is a SwiGLU feed-forward network, $W_2\big(\mathrm{SiLU}(W_1 x) \odot W_3 x\big)$, with a hidden width of 2,752. It works on each position alone. Most of the parameters and most of what the model stores about words, morphology and facts live here. Token mixing moves information between positions, and SwiGLU transforms it within a position.
 
 ## Why wide and shallow
 
-The 120M-class model that came before this one had 32 layers, each 512 wide with 8 heads. It had two problems. The first was depth. The layer-0 to layer-15 gradient ratio was 23.5, so different parts of the network were learning at very different speeds. In v3 that ratio is 16.29. The second was capacity. Each layer's total recurrent rank was 8 heads times 64, or 512.
+Earlier deep-narrow models (32 layers, each 512 wide with 8 heads) suffered from two problems. The first was depth: the layer-0 to layer-15 gradient ratio reached 23.5, causing different parts of the network to learn at very different speeds. The second was capacity: each layer's total recurrent rank was only 512.
 
-The 130M-v3 model halves the depth to 16 layers and widens them to 768, with 12 heads of 64. Each layer's recurrent rank rises by half, to 768, and the backward path through the recurrence is half as long. The v3 design keeps the v2 features (the convolution, normalised queries and keys, a per-head norm and an output gate) and adds four changes: token shift, the learned write strength, the layer-0 value highway, and a float32 accumulator for the decay scan. The gradient ratio between layer 0 and layer 15 fell to 16.29 across the v3 configuration. The repo records that final number for the whole configuration, not a breakdown by change.
+In parentheses-1.0-240M (`slab_v4`), the depth is fixed at a shallow 16 layers and the width expands to 1024, with 16 heads of 64. Each layer's recurrent rank doubles to 1024, and the backward path through the recurrence is half as long. The slab_v4 design maintains the convolution, normalised queries and keys, per-head norm, output gate, token shift, learned write strength, layer-0 value highway, and a float32 accumulator for the decay scan. The gradient ratio between layer 0 and layer 15 remains stable around 16.29.
 
 The float32 accumulator needs a short explanation. Decay weights in the parallel scan can become very small. After 30 chunks in a fast-decaying head, a weight can be near $e^{-30}$, which is about $10^{-13}$. bfloat16 keeps only a few significant digits, so adding such terms in bf16 rounds the small ones to zero. The early part of a 4,096-token document would then quietly drop out of the state. The inter-chunk accumulation therefore runs in float32, even though the rest of training uses bfloat16.
 
@@ -155,7 +155,7 @@ The full mask is quadratic in length, so the model does not build it for a whole
   <img src="figures/chunked-scan.svg" alt="Block lower-triangular structure of the chunked form and the state hand-off between chunks" width="760">
 </p>
 
-The chunked form used in training, the dense form and the step-by-step recurrence used for generation compute the same function. In the float64 checks I ran on the slab_v3 path, the three agree to between $10^{-16}$ and $10^{-13}$; the largest gap comes from the dense form clamping tiny weights at $e^{-30}$. The parallel form also explains how the decays learn. The gradient for the decay at a position is a sum over pairs of an earlier writer and a later reader that span that position. There is no chain of 4,096 multiplications for the gradient to vanish through, which is the usual problem with backpropagation through a long nonlinear RNN.
+The chunked form used in training, the dense form and the step-by-step recurrence used for generation compute the same function. In the float64 verification checks on the slab_v4 path, the three agree to between $10^{-16}$ and $10^{-13}$; the largest gap comes from the dense form clamping tiny weights at $e^{-30}$. The parallel form also explains how the decays learn. The gradient for the decay at a position is a sum over pairs of an earlier writer and a later reader that span that position. There is no chain of 4,096 multiplications for the gradient to vanish through, which is the usual problem with backpropagation through a long nonlinear RNN.
 
 Training packs several documents into each 4,096-token window. Without care, the end of one document would leak into the start of the next. A reset mask sets the state to zero at each document's first token. In the parallel form this becomes a block-diagonal pattern, with each document as its own triangle and no path allowed to cross a boundary. The convolution and the token shift are cut the same way, so the first few tokens of a document see nothing from the previous one.
 
@@ -169,7 +169,7 @@ Kannada, Tamil, Telugu and Malayalam are abugida scripts. The unit a reader sees
 
 Take ಕನ್ನಡ, the Kannada word for the language. It is five code points: ಕ, ನ, the virama ್, ನ and ಡ. The virama between the two ನ is what makes the conjunct ನ್ನ. In Unicode, the virama and the vowel signs are combining marks in category M. Many word-splitting patterns, including the one GPT-2 uses, match letters with `\p{L}` and treat marks as punctuation. Applied to Kannada, such a pattern cuts the word at every virama and vowel sign, and the tokenizer then has to rebuild each syllable from scattered pieces.
 
-The pre-tokenizer in Parentheses adds `\p{M}`, the zero-width non-joiner and the zero-width joiner to the word class. A word stays in one piece before byte-pair merges run. This does not guarantee one token per word. BPE can apply only the merges it learned in training, so a rare word can still split, sometimes at a mark. The figure shows real output: the phrase ಕನ್ನಡ ಭಾಷೆ is 10 code points and 28 UTF-8 bytes, a letters-only split produces seven fragments, and the 32k tokenizer encodes it as two tokens.
+The pre-tokenizer in parentheses adds `\p{M}`, the zero-width non-joiner and the zero-width joiner to the word class. A word stays in one piece before byte-pair merges run. This does not guarantee one token per word. BPE can apply only the merges it learned in training, so a rare word can still split, sometimes at a mark. The figure shows real output: the phrase ಕನ್ನಡ ಭಾಷೆ is 10 code points and 28 UTF-8 bytes, a letters-only split produces seven fragments, and the 32k tokenizer encodes it as two tokens.
 
 <p align="center">
   <img src="figures/akshara-tokenization.svg" alt="A Kannada phrase split by a letters-only regex compared with the v3_32k pre-tokenizer" width="760">
@@ -185,17 +185,17 @@ Bytes per token is a rough measure of how much text each token carries. On Indic
 
 ## Where the parameters go
 
-Half the model is feed-forward. The table shows where the 148,378,932 parameters sit.
+Half the model is feed-forward. The table shows where the 253,544,176 parameters sit.
 
 | Component | Parameters | Share |
 | :--- | ---: | ---: |
-| SwiGLU, three matrices in each of 16 layers | 75.5M | 51% |
-| `qkv` projection | 28.3M | 19% |
-| Token embedding, shared with the output head | 25.2M | 17% |
-| Output projection and output gate | 18.9M | 13% |
-| Recurrence-specific parts (decay, write gate, convolution, token-shift mix, highway, norms) | about 0.5M | 0.36% |
+| SwiGLU, three matrices in each of 16 layers | 135.3M | 53.35% |
+| `qkv` projection | 50.3M | 19.85% |
+| Token embedding, shared with the output head | 33.6M | 13.23% |
+| Output projection and output gate | 33.6M | 13.24% |
+| Recurrence-specific parts (decay, write gate, convolution, token-shift mix, highway, norms) | about 0.84M | 0.33% |
 
-The recurrence itself costs very little in parameters. The decay gate, the write gate, the convolution taps and the mixing vectors together are about half a million numbers, so most of the model's capacity goes into the projections and the feed-forward layers. The embedding is tied, which means the same 25.2 million numbers serve twice. A token enters the network along the direction its embedding points, and the output head scores each candidate along that same direction. At a 32,768-token vocabulary, the embedding would otherwise be a large share of the model, and tying it halves that cost.
+The recurrence itself costs very little in parameters. The decay gate, the write gate, the convolution taps and the mixing vectors together are about 837,360 numbers (0.33%), so most of the model's capacity goes into the projections and the feed-forward layers. The embedding is tied, which means the same 33.55 million numbers serve twice. A token enters the network along the direction its embedding points, and the output head scores each candidate along that same direction. At a 32,768-token vocabulary, the embedding would otherwise be a large share of the model, and tying it halves that cost.
 
 <p align="center">
   <img src="figures/param-budget.svg" alt="Waffle chart of the parameter budget across the model's components" width="760">
@@ -241,22 +241,22 @@ The second step averaged the weights of the checkpoints at steps 22,000, 22,500 
 The fifth step was preference tuning with DPO over 100 steps and 900 pairs. Of those pairs, 400 teach the model to say "I don't know" across five languages, 250 cover facts, 100 cover persona, 78 cover maths and 72 cover logic. On the whole set, the average preference margin came out at +0.3507 and the model preferred the chosen answer in 84.2% of pairs.
 
 <p align="center">
-  <img src="figures/sft-loss-130m.svg" alt="Training loss over the supervised fine-tuning run for the 130M model" width="760">
+  <img src="figures/sft-loss-130m.svg" alt="Training loss over the supervised fine-tuning run" width="760">
 </p>
 
-The fine-tuning loss chart is the only training curve for this model. I did not log the per-step pretraining loss to a file, so there is no pretraining chart to show.
+The fine-tuning loss chart is the only training curve for this model. We did not log the per-step pretraining loss to a file, so there is no pretraining chart to show.
 
 ## How well it works
 
 <p align="center">
-  <img src="figures/bpb-by-language-130m.svg" alt="Held-out bits per byte for each language in the 130M model" width="760">
+  <img src="figures/bpb-by-language-130m.svg" alt="Held-out bits per byte for each language" width="760">
 </p>
 
 The chart reports bits per byte on held-out text. The measure is the total information the model needs to predict the text, in bits, divided by the number of UTF-8 bytes in the text. Lower is better. Because it counts bytes instead of tokens, it can compare models with different tokenizers on the same text:
 
 $$\mathrm{BPB} = \frac{\sum_t -\ln p(y_t \mid y_{<t})}{\ln 2 \cdot N_{\text{bytes}}}$$
 
-| Language | Bits per byte | Maturity in 0.9 |
+| Language | Bits per byte | Maturity |
 | :--- | ---: | :--- |
 | Malayalam | 0.44 | main |
 | Tamil | 0.45 | main |
@@ -274,7 +274,7 @@ Other measured results are narrower. The model produced script-correct output in
 
 On a fresh set of 24 reasoning prompts, the model solved 5. An earlier score of 15 of 24 was inflated, because 18 of those prompts had been copied from training data. The honest score is the low one.
 
-The model hallucinates with confidence. Asked about a Martian colony, it invented one "founded in 1842." Asked for the capital of Karnataka, it sometimes answers Bengaluru and sometimes produces nonsense, and one answer read "Bengaluru is a city in the United States." A 148M model will produce fluent, specific, wrong answers, and the fluency makes them easy to believe.
+The model hallucinates with confidence. Asked about a Martian colony, it invented one "founded in 1842." Asked for the capital of Karnataka, it sometimes answers Bengaluru and sometimes produces nonsense, and one answer read "Bengaluru is a city in the United States." A 240M model will produce fluent, specific, wrong answers, and the fluency makes them easy to believe.
 
 The reasoning tag misbehaves too. The model opened a `<think>` span in 36 of 72 runs and closed it on its own in only 4 of those 36. Kannada conversation and multi-step arithmetic degrade, and a Kannada greeting such as "ನಿನ್ನ ಹೆಸರು ಏನು?" is often echoed back or answered in English. Simple arithmetic such as "What is 17 x 6?" is answered by a built-in exact calculator in the chat script, not by the model.
 
@@ -294,7 +294,7 @@ Retrieval restarts the state. In FreeThink with retrieval, each splice rebuilds 
 
 Context beyond training is untested. The architecture sets no cutoff, and the state carries whatever the trained decays let through. Training used windows of up to 4,096 tokens, and this repo does not measure quality far beyond that length.
 
-A small model knows little. At 148M parameters, with most of them in feed-forward layers, the model holds limited world knowledge and produces fluent but wrong specifics. No change to the architecture described here alters that.
+A small model knows little. At 253.54M parameters, with most of them in feed-forward layers, the model holds limited world knowledge and produces fluent but wrong specifics. No change to the architecture described here alters that.
 
 ## Further reading
 

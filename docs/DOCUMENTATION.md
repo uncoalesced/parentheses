@@ -71,9 +71,9 @@ Run every command from the repository root. Paths below are relative to it.
 | `requirements-lock.txt` | Exact versions from the development environment (torch cu128 on Windows). |
 | `MODEL_CARD.md` | The model card, with YAML front matter. |
 | `RELEASE_NOTES.md` | Release notes. |
-| `DATA_LEDGER.md` | Disk accounting for the 0.9 line: what takes up space and what can be reclaimed. |
+| `TRAINING_DATA.md` | Canonical data ledger, source provenance, licensing taxonomy, and compliance verification. |
 | `LICENSE` | The code license (MIT). |
-| `LICENSE-MODEL` | Apache 2.0 text. It is not the licence of the 0.9 weights, which the Hugging Face model card lists as CC BY-NC 4.0. |
+| `LICENSE-MODEL` | Apache 2.0 text for parentheses-1.0-240M weights and architecture. |
 | `LICENSE_POLICY.md` | The rule for which training data future releases may use. |
 | `SECURITY.md` | The security policy. |
 
@@ -93,7 +93,7 @@ Without `--device cuda` the chat runs on the CPU. That works but is much slower.
 
 | Flag | Default | What it does |
 | :--- | :--- | :--- |
-| `--checkpoint PATH` | an old 120M path | A folder with `config.json`, `model.safetensors` and `tokenizer.json`, or a `.pt` training checkpoint. Pass it explicitly. |
+| `--checkpoint PATH` | `release/parentheses-1.0-240M-tanzanite` | A folder with `config.json`, `model.safetensors` and `tokenizer.json`, or a `.pt` training checkpoint. Pass it explicitly. |
 | `--device` | `cpu` | `cpu` or `cuda`. Apple `mps` is untested. |
 | `--format` (`--mode`) | `chat` | `chat` answers directly. `think` writes a reasoning block first. `freethink` runs an open-ended stream with retrieval. `base` continues raw text with no chat template. |
 | `--lang` | `auto` | `auto` detects the language of each prompt from its script. Other values: `eng`, `kan`, `tam`, `tel`, `mal`, `tcy`, `kff`, `kxv`, `nit`. Forcing a language sends every prompt to it, including English input. |
@@ -344,14 +344,14 @@ Each pre-token is mapped to its UTF-8 bytes. Every byte is one of 256 base symbo
 | ---: | :--- | :--- |
 | 0 | `<\|endoftext\|>` | document end, decode stop |
 | 1 | `<\|pad\|>` | padding |
-| 2–10 | `<kan>` `<tam>` `<tel>` `<mal>` `<tcy>` `<kff>` `<kxv>` `<nit>` `<eng>` | language tags |
+| 2 to 10 | `<kan>` `<tam>` `<tel>` `<mal>` `<tcy>` `<kff>` `<kxv>` `<nit>` `<eng>` | language tags |
 | 11 | `<esg>` | reserved, never present in training data |
 | 12 | `<\|system\|>` | system turn |
 | 13 | `<\|user\|>` | user turn |
 | 14 | `<\|assistant\|>` | assistant turn |
 | 15, 16 | `<think>`, `</think>` | reasoning span |
 | 17, 18 | `<tool_call>`, `</tool_call>` | tool call span |
-| 19–255 | `<\|reserved_n\|>` | unused |
+| 19 to 255 | `<\|reserved_n\|>` | unused |
 
 A language tag is an ordinary token with its own embedding. Placed near the start of a sequence, it writes a language-specific vector into every layer's state during the first few updates. It conditions the model. It does not switch anything: no part of the network routes on it.
 

@@ -51,10 +51,10 @@ Every language uses the same command; you add one flag to pick the language. Do 
 
 You need a few things on your machine before you begin.
 
-- Python 3.10 or newer. I test on Python 3.11, so that version is the safest choice.
+- Python 3.10 or newer. We test on Python 3.11, so that version is the safest choice.
 - Git, so you can download the code.
-- Free disk space: about 1.5 GB for the CPU route, or about 6 GB if you install a CUDA build of PyTorch in step 2. The weights themselves are about 347 MB.
-- A GPU is optional. The model is small, and a graphics card with 8 GB of memory is more than enough for chat. I develop on an RTX 5050 Laptop GPU with 8 GB.
+- Free disk space: about 1.5 GB for the CPU route, or about 6 GB if you install a CUDA build of PyTorch in step 2. The weights themselves are about 967 MB (float32) or 484 MB (bfloat16).
+- A GPU is optional. The model is small, and a graphics card with 8 GB of memory is more than enough for chat. We develop on an RTX 5050 Laptop GPU with 8 GB.
 
 Open a terminal in a folder where you want the project to live. On Windows, Windows Terminal is a better choice than the older console window, because it shows Indic letters more reliably.
 
@@ -118,7 +118,7 @@ AssertionError: Torch not compiled with CUDA enabled
 
 To fix it, open the PyTorch install selector at https://pytorch.org/get-started/locally/. Choose your operating system, choose Pip, and choose a CUDA version. The page then shows you an install command, and you should run that command exactly as it appears. Do not reuse a command from an older guide, because the page changes over time.
 
-If you have an RTX 50-series card, pick a CUDA version of 12.8 or newer, because older builds do not support the Blackwell architecture. I develop on a PyTorch build for CUDA 12.8.
+If you have an RTX 50-series card, pick a CUDA version of 12.8 or newer, because older builds do not support the Blackwell architecture. We develop on a PyTorch build for CUDA 12.8.
 
 If PyTorch is already installed as a CPU build, the new command may not replace it. Uninstall the old copy first.
 
@@ -149,7 +149,7 @@ python -c "import torch; print(torch.backends.mps.is_available())"
 If it prints `True`, run the chat with `--device mps`, or `--device auto`, which picks CUDA first, then MPS, then CPU.
 
 ```bash
-python scripts/chat.py --checkpoint checkpoints/parentheses-0.9-130M-v3 --device mps
+python scripts/chat.py --checkpoint release/parentheses-1.0-240M-tanzanite --device mps
 ```
 
 If it prints `False`, you are on an Intel Mac or an older PyTorch. Use `--device cpu`. The Mac build runs in float32. Speed on MPS has not been measured yet for this model, so compare it against `--device cpu` on your own machine.
@@ -194,16 +194,16 @@ The folder name matters. The `--checkpoint` flag in the next step has to point a
 Stay in the repository folder, the one that contains `scripts` and `requirements.txt`. Run this command to start the chat with the GPU.
 
 ```bash
-python scripts/chat.py --checkpoint checkpoints/parentheses-0.9-130M-v3 --device cuda
+python scripts/chat.py --checkpoint release/parentheses-1.0-240M-tanzanite --device cuda
 ```
 
 If you skipped step 2, or PyTorch cannot see your GPU, leave out `--device cuda`. The program then runs on the CPU. It works, but it is much slower.
 
 ```bash
-python scripts/chat.py --checkpoint checkpoints/parentheses-0.9-130M-v3
+python scripts/chat.py --checkpoint release/parentheses-1.0-240M-tanzanite
 ```
 
-The program first loads the model, which can take a moment, and then prints a short banner. The first line of the banner names the checkpoint folder, the parameter count (about 148 million), the attention type, the session language, the mode, and the device. You can ignore the step number in it. Check the device in that line. If it says `cpu` and you meant to use the GPU, you left out `--device cuda`. The next lines list the languages the program can route to, say whether the built-in system prompt is on, and list the commands you can use inside the chat. After that you see a green `>` prompt.
+The program first loads the model, which can take a moment, and then prints a short banner. The first line of the banner names the checkpoint folder, the parameter count (253.54 million), the attention type, the session language, the mode, and the device. You can ignore the step number in it. Check the device in that line. If it says `cpu` and you meant to use the GPU, you left out `--device cuda`. The next lines list the languages the program can route to, say whether the built-in system prompt is on, and list the commands you can use inside the chat. After that you see a green `>` prompt.
 
 Type a prompt and press Enter. Before the answer appears, a dim blue line shows where the program sent your prompt, for example:
 
@@ -217,7 +217,7 @@ The answer then streams in one piece at a time, in bold. When you use `--format 
 
 Simple arithmetic is handled differently. A question such as `What is 17 x 6?` is answered by a built-in calculator, not by the model, so the answer is exact.
 
-On the laptop GPU I use, the model writes about 27 tokens per second, so replies appear at a steady pace.
+On the laptop GPU we use, the model writes about 27 tokens per second, so replies appear at a steady pace.
 
 To quit, press Enter on an empty line, or press Ctrl+C. An empty line quits straight away, so a stray Enter ends the session. If that happens, run the same command again.
 
@@ -232,15 +232,15 @@ You can also force a language for a single message by typing a code such as `/ta
 The full command for Kannada is this.
 
 ```bash
-python scripts/chat.py --checkpoint checkpoints/parentheses-0.9-130M-v3 --device cuda --lang kan
+python scripts/chat.py --checkpoint release/parentheses-1.0-240M-tanzanite --device cuda --lang kan
 ```
 
 You can use auto instead. Leave out `--lang kan`, or pass `--lang auto`. Kannada script is detected automatically, so auto picks Kannada for Kannada text. Forcing `--lang kan` keeps every prompt in Kannada, including English words, so use the forced form when you want Kannada and auto when you mix languages. With `--lang kan`, typing `hi` is routed to Kannada and usually returns junk. Type `/eng hi` to send one message as English, or `/auto` to go back to detection.
 
-The original Kannada instruction I gave a tester used think mode, so you will see the model's reasoning block first.
+The original Kannada test instruction used think mode, so you will see the model's reasoning block first.
 
 ```bash
-python scripts/chat.py --checkpoint checkpoints/parentheses-0.9-130M-v3 --device cuda --lang kan --format think
+python scripts/chat.py --checkpoint release/parentheses-1.0-240M-tanzanite --device cuda --lang kan --format think
 ```
 
 An example prompt is ನಿನ್ನ ಹೆಸರು ಏನು? which means "what is your name?"
@@ -252,7 +252,7 @@ Expect limited quality. The Kannada prompt above often comes back echoed, or ans
 The full command for Tamil is this.
 
 ```bash
-python scripts/chat.py --checkpoint checkpoints/parentheses-0.9-130M-v3 --device cuda --lang tam
+python scripts/chat.py --checkpoint release/parentheses-1.0-240M-tanzanite --device cuda --lang tam
 ```
 
 Auto works for Tamil too, because Tamil script is detected directly. Use the forced form if you want every prompt kept in Tamil.
@@ -266,7 +266,7 @@ Expect Tamil that predicts well on held-out text, with a bits-per-byte score of 
 The full command for Telugu is this.
 
 ```bash
-python scripts/chat.py --checkpoint checkpoints/parentheses-0.9-130M-v3 --device cuda --lang tel
+python scripts/chat.py --checkpoint release/parentheses-1.0-240M-tanzanite --device cuda --lang tel
 ```
 
 Don't rely on auto for Telugu. Auto often sends Telugu to Kolami by mistake, because two of its Kolami marker words (`అని` and `మరి`) are everyday Telugu words. Force `--lang tel`, and check that the routing line says `tel`.
@@ -280,7 +280,7 @@ Expect Telugu script in the output, and answers that can be wrong.
 The full command for Malayalam is this.
 
 ```bash
-python scripts/chat.py --checkpoint checkpoints/parentheses-0.9-130M-v3 --device cuda --lang mal
+python scripts/chat.py --checkpoint release/parentheses-1.0-240M-tanzanite --device cuda --lang mal
 ```
 
 Auto works for Malayalam, because Malayalam script is detected directly. Use the forced form if you want every prompt kept in Malayalam.
@@ -294,7 +294,7 @@ Expect the best predictions of the nine languages on held-out text, with a bits-
 The full command for English is this.
 
 ```bash
-python scripts/chat.py --checkpoint checkpoints/parentheses-0.9-130M-v3 --device cuda --lang eng
+python scripts/chat.py --checkpoint release/parentheses-1.0-240M-tanzanite --device cuda --lang eng
 ```
 
 Auto already picks English for text that has no Indic script, so the default works. Use the forced form if you want to be certain.
@@ -316,7 +316,7 @@ This guide has no tested sample prompt for these four languages, so type a short
 The full command for Tulu is this.
 
 ```bash
-python scripts/chat.py --checkpoint checkpoints/parentheses-0.9-130M-v3 --device cuda --lang tcy
+python scripts/chat.py --checkpoint release/parentheses-1.0-240M-tanzanite --device cuda --lang tcy
 ```
 
 Tulu is written here in the Kannada script. Auto sends Kannada-script text to Kannada unless one of the Tulu marker words appears, so force `--lang tcy` for Tulu.
@@ -328,7 +328,7 @@ Expect rough output. Tulu scores 1.09 bits per byte on held-out text, and it is 
 The full command for Koya is this.
 
 ```bash
-python scripts/chat.py --checkpoint checkpoints/parentheses-0.9-130M-v3 --device cuda --lang kff
+python scripts/chat.py --checkpoint release/parentheses-1.0-240M-tanzanite --device cuda --lang kff
 ```
 
 Koya is written here in the Odia script. Auto picks Koya for Odia-script text unless Kuvi marker words appear, so force `--lang kff` to be safe.
@@ -340,7 +340,7 @@ Expect rough output. Koya scores 1.55 bits per byte, and its validation set hold
 The full command for Kuvi is this.
 
 ```bash
-python scripts/chat.py --checkpoint checkpoints/parentheses-0.9-130M-v3 --device cuda --lang kxv
+python scripts/chat.py --checkpoint release/parentheses-1.0-240M-tanzanite --device cuda --lang kxv
 ```
 
 Kuvi is also written in the Odia script. Auto picks Kuvi only when Kuvi marker words appear, and otherwise sends Odia-script text to Koya. Force `--lang kxv` for Kuvi.
@@ -352,7 +352,7 @@ Expect rough output. Kuvi scores 1.57 bits per byte, and its validation set hold
 The full command for Kolami is this.
 
 ```bash
-python scripts/chat.py --checkpoint checkpoints/parentheses-0.9-130M-v3 --device cuda --lang nit
+python scripts/chat.py --checkpoint release/parentheses-1.0-240M-tanzanite --device cuda --lang nit
 ```
 
 Kolami is written here in the Telugu script. Auto picks Kolami when it sees certain marker words, but two of those (`అని` and `మరి`) are also everyday Telugu, so auto confuses the two in both directions. Force `--lang nit` for Kolami.
@@ -367,7 +367,7 @@ The `--format` flag sets the mode for the whole session. You can also switch the
 
 Chat is the default, and the best place to start. It wraps your message in a chat format and asks the model for a direct answer.
 
-Think mode asks the model to write a reasoning block inside think tags before the answer. The block appears dimmed in cyan, and the answer follows in bold. The reasoning is not reliable. In my test runs the model opened a think block in 36 of 72 cases, and it closed the block by itself in only 4 of those 36. Use think mode to see what the model tries to do, not to trust its reasoning.
+Think mode asks the model to write a reasoning block inside think tags before the answer. The block appears dimmed in cyan, and the answer follows in bold. The reasoning is not reliable. In test runs the model opened a think block in 36 of 72 cases, and it closed the block by itself in only 4 of those 36. Use think mode to see what the model tries to do, not to trust its reasoning.
 
 Freethink mode runs an open-ended stream. Instead of stopping after one answer, the model keeps writing from your prompt, and it can pull in retrieved text as it goes. Treat it as an experiment.
 
@@ -398,7 +398,7 @@ Every option below is a flag you can add to the `python scripts/chat.py` command
 
 | Flag | Default | What it does |
 |---|---|---|
-| `--checkpoint PATH` | An old 120M checkpoint path | The folder with `config.json`, `model.safetensors` and `tokenizer.json`. Always pass this flag. |
+| `--checkpoint PATH` | `release/parentheses-1.0-240M-tanzanite` | The folder with `config.json`, `model.safetensors` and `tokenizer.json`. Always pass this flag. |
 | `--device` | `cpu` | Where the model runs. Use `cuda` on an NVIDIA GPU. `mps` is untested. |
 | `--lang` | `auto` | The session language: `auto`, `eng`, `kan`, `tam`, `tel`, `mal`, `tcy`, `kff`, `kxv` or `nit`. |
 | `--format` (alias `--mode`) | `chat` | The mode: `chat`, `think`, `freethink` or `base`. |
@@ -419,7 +419,7 @@ If you want to call the model from your own script, run the script from the repo
 ```python
 from scripts.chat import DEFAULT_SYSTEM_PROMPT, load_model_and_tokenizer, reply
 
-model, tok, cfg, _ = load_model_and_tokenizer("checkpoints/parentheses-0.9-130M-v3", device="cuda")
+model, tok, cfg, _ = load_model_and_tokenizer("release/parentheses-1.0-240M-tanzanite", device="cuda")
 answer = reply(
     model,
     "Write a short Python function that adds two numbers.",
@@ -447,11 +447,11 @@ from tokenizers import Tokenizer
 from model.backbone import Parentheses
 from model.config import PRESETS
 
-model = Parentheses(PRESETS["parentheses-0.9-130M-v3"])
-sd = safetensors.torch.load_file("checkpoints/parentheses-0.9-130M-v3/model.safetensors")
+model = Parentheses(PRESETS["parentheses-1.0-240M"])
+sd = safetensors.torch.load_file("release/parentheses-1.0-240M-tanzanite/model.safetensors")
 model.load_state_dict(sd, strict=False)
 model.eval()
-tok = Tokenizer.from_file("checkpoints/parentheses-0.9-130M-v3/tokenizer.json")
+tok = Tokenizer.from_file("release/parentheses-1.0-240M-tanzanite/tokenizer.json")
 ```
 
 The output head is tied to the embedding inside `Parentheses`, so no extra step is needed for that. Be careful with `strict=False`, though. It hides any tensor that fails to load, and that is the bug described in the troubleshooting section. The helper function above prints a warning in that case, so prefer it unless you need the lower-level control.
@@ -484,7 +484,7 @@ First, make sure you have the latest code. Earlier versions of `scripts/chat.py`
 
 Second, look at the startup output for a line that starts with `[chat] WARNING:` and says that some checkpoint tensors were not loaded. If you see that line, the weights did not load properly, and the output will be degraded. Pull the latest code first. If the warning still appears after that, the files in your checkpoint folder do not match the config.
 
-Third, check the download. `model.safetensors` should be about 347 MB. A partial download can give odd output or fail to load. Download the three files again, and check that all of them are present in the folder.
+Third, check the download. `model.safetensors` should be about 967 MB. A partial download can give odd output or fail to load. Download the three files again, and check that all of them are present in the folder.
 
 ### The answer comes back in the wrong language
 
@@ -506,20 +506,20 @@ On Windows Command Prompt, use `set PYTHONIOENCODING=utf-8` instead.
 
 ### FileNotFoundError that names config.json
 
-The `--checkpoint` path points at a folder that exists, but the folder does not contain `config.json`. This often happens when the files landed one folder deeper than expected, for example `parentheses-0.9-130M-v3/parentheses-0.9-130M-v3/config.json`. Open the folder and check that the three files sit directly inside it. Run the command from the repository folder, so the relative path resolves.
+The `--checkpoint` path points at a folder that exists, but the folder does not contain `config.json`. This often happens when the files landed one folder deeper than expected, for example `parentheses-1.0-240M-tanzanite/parentheses-1.0-240M-tanzanite/config.json`. Open the folder and check that the three files sit directly inside it. Run the command from the repository folder, so the relative path resolves.
 
 ### FileNotFoundError that names step_12035_final.pt
 
-You left out `--checkpoint`, so the program fell back to its default, an old 120M checkpoint that is not part of this release. Add the flag.
+You left out `--checkpoint`, so the program fell back to its default, an older checkpoint path that is not part of this release. Add the flag.
 
 ```bash
-python scripts/chat.py --checkpoint checkpoints/parentheses-0.9-130M-v3 --device cuda
+python scripts/chat.py --checkpoint release/parentheses-1.0-240M-tanzanite --device cuda
 ```
 
 ## What to expect
 
-parentheses-0.9 is a 148 million parameter preview. It is a recurrent model, and it is not a transformer. It writes the scripts of the five main languages reliably. In testing, 40 of 40 outputs in those languages kept their script. Its chat and mathematics are weak. It writes fluent sentences that are often wrong, and it invents details with confidence. In one test it described a Martian colony founded in 1842, which never happened. On a fresh honest-reasoning suite of 24 prompts it scored 5 out of 24. Kannada conversation and multi-step arithmetic also degrade. Simple arithmetic is handled by the built-in calculator, so those answers are exact. Do not rely on its answers for anything that matters.
+parentheses-1.0-240M (tanzanite) is a 253.54 million parameter recurrent model. It is not a transformer. It writes the scripts of the five main languages reliably. In testing, 40 of 40 outputs in those languages kept their script. Its chat and mathematics are weak. It writes fluent sentences that are often wrong, and it invents details with confidence. In one test it described a Martian colony founded in 1842, which never happened. On a fresh honest-reasoning suite of 24 prompts it scored 5 out of 24. Kannada conversation and multi-step arithmetic also degrade. Simple arithmetic is handled by the built-in calculator, so those answers are exact. Do not rely on its answers for anything that matters.
 
 The project's direction and plans are in [ROADMAP.md](ROADMAP.md). The design of the model is explained in [ARCHITECTURE.md](ARCHITECTURE.md). For the project overview, see [the README](../README.md).
 
-If setup fails on a machine I have not tried, the most useful report is your operating system, your GPU, and the full error text. I have run this on one Windows laptop with an RTX 5050, so reports from other systems help me the most.
+If setup fails on a machine we have not tried, the most useful report is your operating system, your GPU, and the full error text. We have run this on an RTX 5050 GPU, so reports from other systems help us the most.
