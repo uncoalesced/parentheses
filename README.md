@@ -37,7 +37,7 @@ Engineered by uncoalesced
   <a href="docs/ROADMAP.md">Roadmap</a> •
   <a href="docs/DOCUMENTATION.md">Documentation</a> •
   <a href="MODEL_CARD.md">Model Card</a> •
-  <a href="https://huggingface.co/uncoalesced/parentheses-1.0-240M">Hugging Face</a>
+  <a href="https://huggingface.co/uncoalesced-org/parentheses-1.0-240M">Hugging Face</a>
 </p>
 
 ---
@@ -62,10 +62,10 @@ pip install -r requirements.txt
 
 **2. Download the certified golden weights**
 
-Open the [Hugging Face page](https://huggingface.co/uncoalesced/parentheses-1.0-240M) or use the command line:
+Open the [Hugging Face page](https://huggingface.co/uncoalesced-org/parentheses-1.0-240M) or use the command line:
 
 ```bash
-hf download uncoalesced/parentheses-1.0-240M config.json model.safetensors tokenizer.json --local-dir release/parentheses-1.0-240M-tanzanite
+hf download uncoalesced-org/parentheses-1.0-240M config.json model.safetensors tokenizer.json --local-dir release/parentheses-1.0-240M-tanzanite
 ```
 
 *Note on weights: `model.safetensors` (967 MB, float32) is the canonical tested reference checkpoint hosted on Hugging Face. A lightweight `model-bf16.safetensors` (483 MB) is available as an optional asset on GitHub Releases (untested and not benchmarked).*

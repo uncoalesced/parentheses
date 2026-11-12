@@ -156,10 +156,10 @@ If it prints `False`, you are on an Intel Mac or an older PyTorch. Use `--device
 
 ## 3. Download the weights
 
-The GitHub repository holds the code, but not the model weights. You get the weights from the Hugging Face model page at https://huggingface.co/uncoalesced/parentheses-1.0-240M-tanzanite. You need three files.
+The GitHub repository holds the code, but not the model weights. You get the weights from the Hugging Face model page at https://huggingface.co/uncoalesced-org/parentheses-1.0-240M. You need three files.
 
 - `config.json` holds the model's settings.
-- `model.safetensors` holds the weights (about 507 MB).
+- `model.safetensors` holds the weights (about 967 MB in float32).
 - `tokenizer.json` tells the program how to split text into tokens.
 
 The same page also lists `tokenizer_config.json` and a README. You do not need either of them.
@@ -171,7 +171,7 @@ Option A is the browser route. Open the model page, click the Files and versions
 Option B is the command line route. The `hf` command comes with the Hugging Face Hub library, which `pip install -r requirements.txt` installed for you. It creates the folder and downloads the files in one step.
 
 ```bash
-hf download uncoalesced/parentheses-1.0-240M-tanzanite config.json model.safetensors tokenizer.json --local-dir release/parentheses-1.0-240M-tanzanite
+hf download uncoalesced-org/parentheses-1.0-240M config.json model.safetensors tokenizer.json --local-dir release/parentheses-1.0-240M-tanzanite
 ```
 
 When you are done, the folder should look like this.
