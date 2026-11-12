@@ -6,7 +6,8 @@ import time
 import urllib.request
 from pathlib import Path
 
-os.environ['HF_HOME'] = r'F:\Lingual_Data\raw\hf\cache'
+if "HF_HOME" not in os.environ and Path(r"F:\Lingual_Data\raw\hf\cache").exists():
+    os.environ['HF_HOME'] = r'F:\Lingual_Data\raw\hf\cache'
 
 import torch
 import safetensors.torch

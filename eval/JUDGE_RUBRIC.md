@@ -25,6 +25,3 @@ One line from `out/queries_v1_<run>.jsonl`. It has the query fields (`id lang bu
 {"id": "kan-ins-003", "judge": "gemini-3.8-flash", "fluency": 3, "language": 5, "instruction": 2, "accuracy": null, "stopping": 2, "tool_choice": null, "comment": "<= 25 words, why"}
 ```
 Save as `out/judged_<run>_<judge>.jsonl`. Judges never edit the outputs file.
-
-## Disagreement
-Claude merges the judges' files. An item is flagged for Joel when any key differs by 2 or more between judges. The human subset (~60 items: Tulu, Kannada, English) overrides the LLM judges where they overlap.
