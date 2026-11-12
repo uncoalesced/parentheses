@@ -10,16 +10,7 @@
 
 ## 1. Architectural Mandate & System Invariants
 
-> [!IMPORTANT]
-> **CRITICAL ARCHITECTURAL MANDATE (Mamba-2 / RWKV / Selective Linear Attention SSD):**
-> Parentheses is **NOT a Transformer / GPT model**. Do **NOT** treat this codebase as a standard Transformer!
-> It does **NOT** use quadratic causal self-attention ($O(T^2)$ Softmax attention matrices) or standard Transformer KV-caches.
-> Parentheses is a **from-scratch Recurrent / State Space Duality (SSD) model** belonging to the **Mamba-2 / RWKV / Selective Linear Attention** family:
-> - **In Training (Parallel Form):** Chunked associative linear attention / semi-separable state space duality with linear $O(T)$ complexity.
-> - **In Inference / Step (Recurrent Form):** Constant $O(1)$ recurrent memory state updates:
->   $$S_t = \alpha_t S_{t-1} + \beta_t (k_t \otimes v_t), \quad y_t = q_t S_t$$
->   Fixed state size, zero growing KV-cache, zero sequence Softmax.
-> Every dataset builder, boundary packer, tokenizer, annealing pool, and SFT/DPO alignment stage **MUST** strictly operate under this linear-recurrent/SSM paradigm.
+Parentheses is a from-scratch Recurrent / State Space Duality (SSD) model belonging to the Mamba-2 / RWKV / Selective Linear Attention family. Every dataset builder, boundary packer, tokenizer, annealing pool, and SFT/DPO alignment stage operates under this linear-recurrent/SSM paradigm.
 
 ---
 

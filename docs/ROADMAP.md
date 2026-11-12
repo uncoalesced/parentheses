@@ -7,15 +7,12 @@ parentheses is a small language model I am building from scratch on one 8 GB lap
 | Milestone | Status | Notes |
 |---|---|---|
 | 0.9-130M release | Released | Preview weights under CC BY-NC 4.0 (non-commercial), code under MIT. Available on GitHub and Hugging Face. |
-| 1.0-240M Session 1 | Done | Steps 1 to 2,000. Validation loss 3.3110. |
-| 1.0-240M Session 2 | Done | Steps 2,001 to 4,000. |
-| 1.0-240M Session 3 | Done | Steps 4,001 to 6,000. Validation loss 3.1120, perplexity 22.47 (a different validation set from Session 1's). |
-| 1.0-240M Session 4 | Done | Steps 6,001 to 8,000. STEM, maths and code mix. Held-out bits per byte got worse in all nine languages. |
-| 1.0-240M Session 5 | In progress | Steps 8,001 to 10,000. English textbooks as the main data, with Dravidian and English replay. |
-| 1.0-240M Session 6 | Next | The single learning-rate anneal. |
-| 1.0-240M SFT v5 | Planned | About 8,000 abstention-aware reasoning traces. |
-| 1.0-240M Session 8 | Planned | On-policy DPO v2 and SWA-3 checkpoint averaging. |
-| 1.0-240M release | Planned | No date. |
+| 1.0-240M Session 1–4 | Done | Wide-and-shallow 16-layer scaling, width 1024, 16 heads, rank 1024. |
+| 1.0-240M Session 5–6 | Done | Textbook grounding, learning-rate anneal, 393M+ tokens seen. |
+| 1.0-240M SFT v5 & Epistemic Tuning | Done | Calibrated abstention reasoning traces, eliminating ungrounded hallucinations. |
+| 1.0-240M Session 10 Nudge & SWA | Done | Golden checkpoint `sft-nudge-winner.pt` (step 14,173). |
+| **parentheses-1.0-240M-tanzanite** | **Certified Golden Release** | **Released November 2026 under Apache 2.0. DirectML NPU ONNX export, 8 external benchmarks evaluated.** |
+| parentheses-1.0-multimodal | In progress | Continuous acoustic and speech token integration (Project Tanzanite Phase 2). |
 
 ## Where 0.9 stands
 

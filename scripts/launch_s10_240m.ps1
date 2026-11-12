@@ -84,7 +84,7 @@ try {
         --out-dir $OutDir `
         --batch-size 1 `
         --grad-accum 16 `
-        --ce-rows 2048 `
+        --ce-rows 512 `
         --lr $BaseLR `
         --warmup-steps 30 `
         @DecayArgs `

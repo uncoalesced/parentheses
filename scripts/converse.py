@@ -31,6 +31,7 @@ if str(REPO_ROOT) not in sys.path:
 
 from models.model_slab_v4 import SlabV4Model
 from scripts.eval_60p_adversarial_suite import load_model, stream_slab_v4
+from scripts import term_ui as ui
 
 DEFAULT_S8 = REPO_ROOT / "checkpoints" / "parentheses-1.0-240M-s8-golden" / "parentheses-1.0-240M-dpo-swa3-golden.pt"
 DEFAULT_S6 = REPO_ROOT / "checkpoints" / "parentheses-1.0-240M-s6" / "step_12000.pt"
@@ -127,14 +128,14 @@ def converse_turn(
     model: SlabV4Model,
     tokenizer: Tokenizer,
     prompt: str,
-    name: str = "Parentheses 1.0-240M",
+    name: str = "parentheses",
     lang: str = "eng",
     temp: float = 0.0,
     max_tokens: int = 256,
     rep_penalty: float = 1.15,
     device: str = "cuda",
+    show_think: bool = True,
 ) -> None:
-    print(f"\n[{name}] Generating response...")
     res = generate_response(
         model,
         tokenizer,
@@ -146,16 +147,11 @@ def converse_turn(
         device=device,
     )
 
-    if res["think"]:
-        print("\n  [Reasoning / <think>]:")
-        for line in res["think"].split("\n"):
-            print(f"    {line}")
-
-    print("\n  [Response]:")
-    for line in res["response"].split("\n"):
-        print(f"    {line}")
-
-    print(f"\n  ({res['tokens']} tokens | {res['tok_per_sec']:.1f} tok/s | {res['elapsed_sec']:.2f}s)\n")
+    ui.model_header(name)
+    if res["think"] and show_think:
+        ui.thinking(res["think"])
+    ui.response(res["response"])
+    ui.stats(res["tokens"], res["tok_per_sec"], res["elapsed_sec"])
 
 
 def main():
@@ -170,7 +166,9 @@ def main():
     parser.add_argument("--max-tokens", type=int, default=256, help="Maximum generated tokens")
     parser.add_argument("--rep-penalty", type=float, default=1.15, help="Repetition penalty")
     parser.add_argument("--device", type=str, default="cuda", choices=["cuda", "cpu"])
+    parser.add_argument("--plain", action="store_true", help="Disable colors and styling")
     args = parser.parse_args()
+    ui.set_plain(args.plain)
 
     if args.compare:
         print(f"[*] Loading S6 Anchor Checkpoint: {args.s6_checkpoint}")
@@ -194,31 +192,38 @@ def main():
         return
 
     # Single model mode
-    print(f"[*] Loading Checkpoint: {args.checkpoint}")
-    model, tok, _ = load_model(Path(args.checkpoint), device=args.device)
+    ui.banner({"checkpoint": Path(args.checkpoint).name, "device": args.device, "lang": args.lang})
+    with ui.Spinner("loading weights"):
+        model, tok, _ = load_model(Path(args.checkpoint), device=args.device)
 
     if args.prompt:
-        print(f"\nUser: {args.prompt}")
+        print(ui.fg(ui.ACCENT, "( you ) ", bold=True) + ui.fg(ui.DIM, "› ") + args.prompt)
         converse_turn(model, tok, args.prompt, lang=args.lang, temp=args.temp, max_tokens=args.max_tokens, rep_penalty=args.rep_penalty, device=args.device)
         return
 
     if args.interactive:
-        print("\n" + "=" * 70)
-        print(" Interactive Conversation with Parentheses 1.0-240M (slab_v4)")
-        print(" Type 'exit' or 'quit' to end session.")
-        print("=" * 70 + "\n")
-
+        show_think = True
         while True:
             try:
-                user_msg = input("You > ").strip()
+                user_msg = ui.user_prompt().strip()
                 if not user_msg:
                     continue
-                if user_msg.lower() in ("exit", "quit"):
-                    print("Goodbye!")
+                cmd = user_msg.lower()
+                if cmd in ("exit", "quit", "/exit", "/quit"):
+                    ui.note("goodbye.")
                     break
-                converse_turn(model, tok, user_msg, lang=args.lang, temp=args.temp, max_tokens=args.max_tokens, rep_penalty=args.rep_penalty, device=args.device)
-            except KeyboardInterrupt:
-                print("\nSession interrupted.")
+                if cmd == "/clear":
+                    os.system("cls" if os.name == "nt" else "clear")
+                    ui.banner({"checkpoint": Path(args.checkpoint).name, "device": args.device, "lang": args.lang})
+                    continue
+                if cmd == "/think":
+                    show_think = not show_think
+                    ui.note(f"reasoning display {'on' if show_think else 'off'}")
+                    continue
+                converse_turn(model, tok, user_msg, lang=args.lang, temp=args.temp, max_tokens=args.max_tokens, rep_penalty=args.rep_penalty, device=args.device, show_think=show_think)
+            except (KeyboardInterrupt, EOFError):
+                print()
+                ui.note("session ended.")
                 break
 
 

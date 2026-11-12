@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1060 460" width="1060" height="460" role="img">
+<rect width="1060" height="460" fill="#333333"/>
+<text x="40.0" y="38.0" fill="#FDFFFC" font-family="'JetBrains Mono', 'IBM Plex Mono', monospace" font-size="18" font-weight="600" text-anchor="start">internal independent test: uncoalesced validation suite</text>
+<text x="40.0" y="60.0" fill="#9A9B99" font-family="'JetBrains Mono', 'IBM Plex Mono', monospace" font-size="12" font-weight="400" text-anchor="start">conducted solely for parentheses across 300 held-out prompts &#183; verifying script fidelity, honesty, and recurrence</text>
+<rect x="40" y="90" width="470" height="70" rx="6" fill="#292929" stroke="#444444" stroke-width="1"/>
+<text x="56" y="116" fill="#FDFFFC" font-family="'JetBrains Mono', monospace" font-size="13" font-weight="600">clean-stop rate</text>
+<text x="56" y="136" fill="#9A9B99" font-family="'JetBrains Mono', monospace" font-size="11">target &#8805; 90.0%</text>
+<text x="415" y="124" fill="#F19143" font-family="'JetBrains Mono', monospace" font-size="17" font-weight="700" text-anchor="end">95.7%</text>
+<rect x="428" y="107" width="66" height="22" rx="4" fill="#232F1A" stroke="#748E54" stroke-width="1"/>
+<text x="461" y="122" fill="#748E54" font-family="'JetBrains Mono', monospace" font-size="11" font-weight="700" text-anchor="middle">PASSED</text>
+<rect x="56" y="148" width="438" height="3" rx="1.5" fill="#3D3D3D"/>
+<rect x="56" y="148" width="419" height="3" rx="1.5" fill="#F19143"/>
+<rect x="40" y="172" width="470" height="70" rx="6" fill="#292929" stroke="#444444" stroke-width="1"/>
+<text x="56" y="198" fill="#FDFFFC" font-family="'JetBrains Mono', monospace" font-size="13" font-weight="600">tool/tag isolation</text>
+<text x="56" y="218" fill="#9A9B99" font-family="'JetBrains Mono', monospace" font-size="11">0.0% leak (&#8804; 2.0%)</text>
+<text x="415" y="206" fill="#F19143" font-family="'JetBrains Mono', monospace" font-size="17" font-weight="700" text-anchor="end">100.0%</text>
+<rect x="428" y="189" width="66" height="22" rx="4" fill="#232F1A" stroke="#748E54" stroke-width="1"/>
+<text x="461" y="204" fill="#748E54" font-family="'JetBrains Mono', monospace" font-size="11" font-weight="700" text-anchor="middle">PASSED</text>
+<rect x="56" y="230" width="438" height="3" rx="1.5" fill="#3D3D3D"/>
+<rect x="56" y="230" width="438" height="3" rx="1.5" fill="#F19143"/>
+<rect x="40" y="254" width="470" height="70" rx="6" fill="#292929" stroke="#444444" stroke-width="1"/>
+<text x="56" y="280" fill="#FDFFFC" font-family="'JetBrains Mono', monospace" font-size="13" font-weight="600">dravidian script purity</text>
+<text x="56" y="300" fill="#9A9B99" font-family="'JetBrains Mono', monospace" font-size="11">target &#8805; 85.0%</text>
+<text x="415" y="288" fill="#F19143" font-family="'JetBrains Mono', monospace" font-size="17" font-weight="700" text-anchor="end">100.0%</text>
+<rect x="428" y="271" width="66" height="22" rx="4" fill="#232F1A" stroke="#748E54" stroke-width="1"/>
+<text x="461" y="286" fill="#748E54" font-family="'JetBrains Mono', monospace" font-size="11" font-weight="700" text-anchor="middle">PASSED</text>
+<rect x="56" y="312" width="438" height="3" rx="1.5" fill="#3D3D3D"/>
+<rect x="56" y="312" width="438" height="3" rx="1.5" fill="#F19143"/>
+<rect x="40" y="336" width="470" height="70" rx="6" fill="#292929" stroke="#444444" stroke-width="1"/>
+<text x="56" y="362" fill="#FDFFFC" font-family="'JetBrains Mono', monospace" font-size="13" font-weight="600">dravidian format fidelity</text>
+<text x="56" y="382" fill="#9A9B99" font-family="'JetBrains Mono', monospace" font-size="11">target &#8805; 85.0%</text>
+<text x="415" y="370" fill="#F19143" font-family="'JetBrains Mono', monospace" font-size="17" font-weight="700" text-anchor="end">96.3%</text>
+<rect x="428" y="353" width="66" height="22" rx="4" fill="#232F1A" stroke="#748E54" stroke-width="1"/>
+<text x="461" y="368" fill="#748E54" font-family="'JetBrains Mono', monospace" font-size="11" font-weight="700" text-anchor="middle">PASSED</text>
+<rect x="56" y="394" width="438" height="3" rx="1.5" fill="#3D3D3D"/>
+<rect x="56" y="394" width="421" height="3" rx="1.5" fill="#F19143"/>
+<rect x="550" y="90" width="470" height="70" rx="6" fill="#292929" stroke="#444444" stroke-width="1"/>
+<text x="566" y="116" fill="#FDFFFC" font-family="'JetBrains Mono', monospace" font-size="13" font-weight="600">epistemic honesty (traps)</text>
+<text x="566" y="136" fill="#9A9B99" font-family="'JetBrains Mono', monospace" font-size="11">target &#8805; 90.0%</text>
+<text x="925" y="124" fill="#F19143" font-family="'JetBrains Mono', monospace" font-size="17" font-weight="700" text-anchor="end">94.0%</text>
+<rect x="938" y="107" width="66" height="22" rx="4" fill="#232F1A" stroke="#748E54" stroke-width="1"/>
+<text x="971" y="122" fill="#748E54" font-family="'JetBrains Mono', monospace" font-size="11" font-weight="700" text-anchor="middle">PASSED</text>
+<rect x="566" y="148" width="438" height="3" rx="1.5" fill="#3D3D3D"/>
+<rect x="566" y="148" width="411" height="3" rx="1.5" fill="#F19143"/>
+<rect x="550" y="172" width="470" height="70" rx="6" fill="#292929" stroke="#444444" stroke-width="1"/>
+<text x="566" y="198" fill="#FDFFFC" font-family="'JetBrains Mono', monospace" font-size="13" font-weight="600">zero false refusals</text>
+<text x="566" y="218" fill="#9A9B99" font-family="'JetBrains Mono', monospace" font-size="11">0.0% refusal (&#8804; 2.0%)</text>
+<text x="925" y="206" fill="#F19143" font-family="'JetBrains Mono', monospace" font-size="17" font-weight="700" text-anchor="end">100.0%</text>
+<rect x="938" y="189" width="66" height="22" rx="4" fill="#232F1A" stroke="#748E54" stroke-width="1"/>
+<text x="971" y="204" fill="#748E54" font-family="'JetBrains Mono', monospace" font-size="11" font-weight="700" text-anchor="middle">PASSED</text>
+<rect x="566" y="230" width="438" height="3" rx="1.5" fill="#3D3D3D"/>
+<rect x="566" y="230" width="438" height="3" rx="1.5" fill="#F19143"/>
+<rect x="550" y="254" width="470" height="70" rx="6" fill="#292929" stroke="#444444" stroke-width="1"/>
+<text x="566" y="280" fill="#FDFFFC" font-family="'JetBrains Mono', monospace" font-size="13" font-weight="600">multilingual BPB drift</text>
+<text x="566" y="300" fill="#9A9B99" font-family="'JetBrains Mono', monospace" font-size="11">anchor validated (&#8804; 0.06)</text>
+<text x="925" y="288" fill="#F19143" font-family="'JetBrains Mono', monospace" font-size="17" font-weight="700" text-anchor="end">+0.012</text>
+<rect x="938" y="271" width="66" height="22" rx="4" fill="#232F1A" stroke="#748E54" stroke-width="1"/>
+<text x="971" y="286" fill="#748E54" font-family="'JetBrains Mono', monospace" font-size="11" font-weight="700" text-anchor="middle">PASSED</text>
+<rect x="566" y="312" width="438" height="3" rx="1.5" fill="#3D3D3D"/>
+<rect x="566" y="312" width="394" height="3" rx="1.5" fill="#F19143"/>
+<rect x="550" y="336" width="470" height="70" rx="6" fill="#292929" stroke="#444444" stroke-width="1"/>
+<text x="566" y="362" fill="#FDFFFC" font-family="'JetBrains Mono', monospace" font-size="13" font-weight="600">16k recurrent stability</text>
+<text x="566" y="382" fill="#9A9B99" font-family="'JetBrains Mono', monospace" font-size="11">16,384 tokens scan</text>
+<text x="925" y="370" fill="#F19143" font-family="'JetBrains Mono', monospace" font-size="17" font-weight="700" text-anchor="end">100.0%</text>
+<rect x="938" y="353" width="66" height="22" rx="4" fill="#232F1A" stroke="#748E54" stroke-width="1"/>
+<text x="971" y="368" fill="#748E54" font-family="'JetBrains Mono', monospace" font-size="11" font-weight="700" text-anchor="middle">PASSED</text>
+<rect x="566" y="394" width="438" height="3" rx="1.5" fill="#3D3D3D"/>
+<rect x="566" y="394" width="438" height="3" rx="1.5" fill="#F19143"/>
+<line x1="40" y1="425" x2="1020" y2="425" stroke="#4B4B4B" stroke-width="1"/>
+<text x="40.0" y="442" fill="#9A9B99" font-family="'JetBrains Mono', monospace" font-size="11" text-anchor="start">internal independent test conducted by uncoalesced solely for parentheses &#183; certified golden release</text>
+</svg>

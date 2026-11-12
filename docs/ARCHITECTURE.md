@@ -1,10 +1,10 @@
-# How parentheses-0.9 works
+# How parentheses-1.0 works
 
-Parentheses 0.9 is a language model I designed and trained myself on one laptop in Bengaluru. The released weights are `parentheses-0.9-130M-v3`, which I call the 130M model. It has 148.38 million parameters and belongs to the family of selective linear attention models, close to Mamba-2 and RWKV. It is not a transformer. It has no softmax attention over past tokens and no key-value cache. I trained it on a single NVIDIA GeForce RTX 5050 Laptop GPU with 8 GB of VRAM, on text in Kannada, Tamil, Telugu, Malayalam and English. It also has experimental support for Tulu, Koya, Kuvi and Kolami.
+Parentheses 1.0 is a language model designed and trained from scratch on one laptop in Bengaluru. The golden release weights are `parentheses-1.0-240M-tanzanite` (Project Tanzanite). It has **253.54 million parameters** (253,544,176 unique parameters) and belongs to the family of selective linear attention models, close to Mamba-2 and RWKV. It is not a transformer. It has no softmax attention over past tokens and no key-value cache. It was trained on a single NVIDIA GeForce RTX 5050 Laptop GPU with 8 GB of VRAM, on text in Kannada, Tamil, Telugu, Malayalam and English, with experimental support for Tulu, Koya, Kuvi and Kolami.
 
 This guide explains the architecture with words and pictures first, for a reader who knows what a transformer is but has not met a recurrent state-space model. Equations appear only where they help. Each section links to the matching part of [DOCUMENTATION.md](DOCUMENTATION.md), which has the full derivations and the source file for every formula.
 
-**In one minute.** A transformer answers each new token by looking back at every token before it, so it stores a key and a value for each one and its memory grows with the text. Parentheses keeps a fixed block of memory instead. In each of 16 layers and 12 heads, one 64-by-64 matrix holds what that head has seen. Each token fades the old contents slightly, writes its own key and value into the matrix, and reads back with a query. Training runs the same arithmetic in parallel over 64-token chunks, so a 4,096-token document does not have to be processed one step at a time. The tokenizer keeps Indic letters together, so the model sees whole syllables. Most of the weights sit in feed-forward layers that work on each position separately. The model is small and often wrong, and the later sections say where and how.
+**In one minute.** A transformer answers each new token by looking back at every token before it, so it stores a key and a value for each one and its memory grows with the text. Parentheses keeps a fixed block of memory instead. In each of 16 layers and 16 heads, one 64-by-64 matrix holds what that head has seen. Each token fades the old contents slightly, writes its own key and value into the matrix, and reads back with a query. Training runs the same arithmetic in parallel over 64-token chunks, so a 4,096-token document does not have to be processed one step at a time. The tokenizer keeps Indic letters together, so the model sees whole syllables. Most of the weights sit in feed-forward layers that work on each position separately.
 
 ## Contents
 
@@ -25,22 +25,21 @@ This guide explains the architecture with words and pictures first, for a reader
 
 | Property | Value |
 | :--- | :--- |
-| Name | `parentheses-0.9-130M-v3` (the 130M model) |
-| Parameters | 148,378,932 |
-| Family | selective linear attention, state space duality (Mamba-2 and RWKV lineage) |
+| Name | `parentheses-1.0-240M-tanzanite` (Project Tanzanite, Certified Golden) |
+| Parameters | 253,544,176 unique parameters |
+| Family | Selective linear attention, state space duality (`slab_v4`) |
 | Layers | 16, each with a token-mixing branch and a SwiGLU branch |
-| Heads | 12 per layer, 64 dimensions each |
-| Model width | 768 |
+| Heads | 16 per layer, 64 dimensions each (rank 1024) |
+| Model width | 1024 |
 | Vocabulary | 32,768 byte-level BPE entries, with Indic combining marks kept inside words |
 | Position encoding | none |
 | Embeddings | tied between input and output |
 | Context in one training pass | 4,096 tokens |
 | Context while generating | not fixed by the architecture, and the memory does not grow |
-| Recurrent state | 909,312 numbers, or 3.64 MB in fp32 |
+| Recurrent state | 1,212,416 floats, or 4.85 MB in fp32 (2.42 MB in bf16) |
 | Training hardware | one RTX 5050 Laptop GPU, 8 GB VRAM |
-| Generation speed | about 27 tokens per second on that GPU |
 | Code licence | MIT |
-| Weights licence | CC BY-NC 4.0 (non-commercial) |
+| Weights licence | Apache 2.0 |
 
 <p align="center">
   <img src="figures/block.svg" alt="One Parentheses block: residual spine, token mixing with matrix state, and SwiGLU" width="760">
@@ -50,9 +49,9 @@ The model is a stack of 16 blocks with the same shape and their own weights. A r
 
 ## Memory that doesn't grow
 
-A transformer that generates text keeps a key vector and a value vector for every token it has already seen, in every layer. That store is the KV cache. It grows by one entry per token, so a long conversation costs more memory and more time at each step. For a transformer of the same depth and width, the cache takes 98,304 bytes per token in fp32. That is about 403 MB at 4,096 tokens and about 3.2 GB at 32,768 tokens. It overtakes Parentheses' fixed state after 37 tokens.
+A transformer that generates text keeps a key vector and a value vector for every token it has already seen, in every layer. That store is the KV cache. It grows by one entry per token, so a long conversation costs more memory and more time at each step. For a transformer of the same depth (16) and width (1024), the cache takes 131,072 bytes per token in fp32. That is about 537 MB at 4,096 tokens, 2.15 GB at 16,384 tokens, and about 4.29 GB at 32,768 tokens. It overtakes Parentheses' fixed state after just 38 tokens.
 
-Parentheses keeps no cache. In each head it keeps one 64-by-64 matrix $S$, and that matrix is the whole of the head's memory. Each token does two things to it. It decays the old contents by a factor $\alpha_t$ between 0 and 1, and it writes its key $k_t$ and value $v_t$ into the matrix as an outer product, scaled by a write strength $\beta_t$ between 0 and 2. A query $q_t$ then reads the matrix:
+Parentheses keeps no growing cache. In each head it keeps one 64-by-64 matrix $S$, and that matrix is the whole of the head's memory. Each token does two things to it. It decays the old contents by a factor $\alpha_t$ between 0 and 1, and it writes its key $k_t$ and value $v_t$ into the matrix as an outer product, scaled by a write strength $\beta_t$ between 0 and 2. A query $q_t$ then reads the matrix:
 
 $$S_t = \alpha_t\, S_{t-1} + \beta_t\, k_t^\top v_t, \qquad y_t = q_t\, S_t$$
 

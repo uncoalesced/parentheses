@@ -1,6 +1,6 @@
-# Setting up parentheses-0.9
+# Setting up parentheses-1.0-240M-tanzanite
 
-By the end of this page you will have parentheses-0.9 running in a terminal, ready to chat in Kannada, Tamil, Telugu, Malayalam or English. The steps take about 10 minutes, plus a download of about 350 MB for the model weights. It runs on an ordinary CPU, but it is much faster on an NVIDIA GPU, so step 2 is worth doing if you have one.
+By the end of this page you will have parentheses-1.0-240M running in a terminal, ready to chat in Kannada, Tamil, Telugu, Malayalam or English. The steps take about 10 minutes, plus a download of the model weights (~500 MB). It runs on an ordinary CPU, but it is much faster on an NVIDIA GPU, so step 2 is worth doing if you have one.
 
 ## Legend
 
@@ -136,40 +136,56 @@ python -c "import torch; print(torch.cuda.is_available())"
 
 The command should print `True`. If it prints `False`, PyTorch cannot see the GPU. Keep going with the CPU commands for now, and come back to this step later.
 
+### On a Mac with Apple Silicon (M1, M2, M3, M4)
+
+Apple Silicon has no NVIDIA GPU, so `--device cuda` does not apply. The chat program can use the Apple GPU through PyTorch's Metal backend, called `mps`. Use a recent macOS and the standard PyTorch from `pip install -r requirements.txt`. Do not use `requirements-lock.txt`, because it is a Windows CUDA freeze.
+
+Check that the Metal backend is visible.
+
+```bash
+python -c "import torch; print(torch.backends.mps.is_available())"
+```
+
+If it prints `True`, run the chat with `--device mps`, or `--device auto`, which picks CUDA first, then MPS, then CPU.
+
+```bash
+python scripts/chat.py --checkpoint checkpoints/parentheses-0.9-130M-v3 --device mps
+```
+
+If it prints `False`, you are on an Intel Mac or an older PyTorch. Use `--device cpu`. The Mac build runs in float32. Speed on MPS has not been measured yet for this model, so compare it against `--device cpu` on your own machine.
+
 ## 3. Download the weights
 
-The GitHub repository holds the code, but not the model weights. You get the weights from the Hugging Face model page at https://huggingface.co/uncoalesced/parentheses-v0.9-130M-v3. You need three files.
+The GitHub repository holds the code, but not the model weights. You get the weights from the Hugging Face model page at https://huggingface.co/uncoalesced/parentheses-1.0-240M-tanzanite. You need three files.
 
 - `config.json` holds the model's settings.
-- `model.safetensors` holds the weights, and it is about 347 MB.
+- `model.safetensors` holds the weights (about 507 MB).
 - `tokenizer.json` tells the program how to split text into tokens.
 
 The same page also lists `tokenizer_config.json` and a README. You do not need either of them.
 
 There are two ways to get the files.
 
-Option A is the browser route. Open the model page, click the Files and versions tab, and download the three files. Create a folder called `checkpoints/parentheses-0.9-130M-v3` inside the repository folder, and save the three files into it.
+Option A is the browser route. Open the model page, click the Files and versions tab, and download the three files. Create a folder called `release/parentheses-1.0-240M-tanzanite` inside the repository folder, and save the three files into it.
 
 Option B is the command line route. The `hf` command comes with the Hugging Face Hub library, which `pip install -r requirements.txt` installed for you. It creates the folder and downloads the files in one step.
 
 ```bash
-hf download uncoalesced/parentheses-v0.9-130M-v3 config.json model.safetensors tokenizer.json --local-dir checkpoints/parentheses-0.9-130M-v3
+hf download uncoalesced/parentheses-1.0-240M-tanzanite config.json model.safetensors tokenizer.json --local-dir release/parentheses-1.0-240M-tanzanite
 ```
 
 When you are done, the folder should look like this.
 
 ```text
 parentheses/
-  checkpoints/
-    parentheses-0.9-130M-v3/
+  release/
+    parentheses-1.0-240M-tanzanite/
       config.json
       model.safetensors
       tokenizer.json
   scripts/chat.py
   requirements.txt
 ```
-
-Check that `model.safetensors` is close to 347 MB. A partial download is a common cause of strange output, and the troubleshooting section covers it.
 
 The folder name matters. The `--checkpoint` flag in the next step has to point at this folder exactly. If you choose a different name, change the flag to match.
 

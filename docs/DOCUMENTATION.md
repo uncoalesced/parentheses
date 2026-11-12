@@ -2,13 +2,13 @@
   <img src="../assets/parentheses_mark.svg" alt="parentheses mark" width="96">
 </p>
 
-# Parentheses 0.9-130M-v3: how the model works
+# Parentheses 1.0-240M-tanzanite: how the model works
 
 This document has two parts. Part A: using the code is a practical reference for running, loading and exporting the model from this repository. Part B: the math covers sections 1 to 19, which explain how the recurrence works and trace each formula to the code. For a gentler explanation, read [ARCHITECTURE.md](ARCHITECTURE.md); for installation and weights, read [SETUP.md](SETUP.md).
 
 Parentheses is a recurrent language model. It reads one token at a time and keeps a fixed-size memory: one small matrix per attention head per layer. Each token updates that memory with a decay and a write, and reads it back with a single matrix-vector product. There is no softmax over past positions, no key-value cache and no positional encoding. The same layer can also be computed in parallel across a whole sequence, and that is how it trains.
 
-Part B covers the mathematics and runtime behaviour of the `parentheses-0.9-130M-v3` preset in `model/config.py`. It describes what the code computes. Every formula can be traced to a line in `model/selective_linear_attention.py`, `model/backbone.py` or the decoding features. Training (data, schedule, hardware) is out of scope.
+Part B covers the mathematics and runtime behaviour of the `parentheses-1.0-240M` preset (`slab_v4`) in `models/model_slab_v4.py` and `model/config.py`. It describes what the code computes. Every formula can be traced to a line in `models/model_slab_v4.py`, `models/slab_v4_boundary.py`, `model/selective_linear_attention.py` or the decoding features. Training (data, schedule, hardware) is out of scope.
 
 Where prose elsewhere in the repo disagrees with the code, this document follows the code. For example, the docstring at the top of `model/backbone.py` still says "byte-level" and "RoPE". Neither applies to this model.
 
@@ -63,7 +63,8 @@ Run every command from the repository root. Paths below are relative to it.
 | `eval/` | Evaluation query sets (`*.jsonl`), `mc_reason_distractors.json` and `JUDGE_RUBRIC.md`. |
 | `assets/` | Logo files: `parentheses_mark.svg`, `parentheses_mark_transparent.svg` and the two lockup SVGs. The diagrams live in `docs/figures/`. |
 | `docs/` | This document, the session reports and planning notes, and `figures/` for the SVGs embedded here. |
-| `models/` | slab_v4 model code (`model_slab_v4.py`, `slab_v4_boundary.py`). `train.py` imports it. |
+| `models/` | Primary `slab_v4` model architecture (`model_slab_v4.py`, `slab_v4_boundary.py`). Defines `SlabV4Model`, `SlabV4Config`, and document boundary isolation routines. |
+| `release/` | Certified release packages. `release/parentheses-1.0-240M-tanzanite/` contains golden weights (`.safetensors`, `.bf16.safetensors`, `.pt`), NPU ONNX step graph, tokenizer, configuration, and standalone loader. |
 | `train.py` | The training loop. It is a plain loop with no Trainer. |
 | `app.py` | Local web UI and streaming server. |
 | `requirements.txt` | The dependency list for `pip install -r requirements.txt`. |
@@ -83,7 +84,7 @@ The `checkpoints/`, `out/`, `exports/` and `release/` folders are gitignored. Mo
 Install the requirements and download the weights first, as described in [SETUP.md](SETUP.md). Then run:
 
 ```bash
-python scripts/chat.py --checkpoint checkpoints/parentheses-0.9-130M-v3 --device cuda
+python scripts/chat.py --checkpoint release/parentheses-1.0-240M-tanzanite --device cuda
 ```
 
 Without `--device cuda` the chat runs on the CPU. That works but is much slower. If `--device cuda` fails with `Torch not compiled with CUDA enabled`, the installed PyTorch is a CPU-only build, and SETUP.md covers the fix. The flags are listed in A.3.
@@ -121,30 +122,34 @@ Each reply starts with a `[Routing: ...]` line that shows which language the pro
 
 ### A.4 Python API
 
-Load the model from the folder with the three weight files:
+Load the model from the release folder using the native `SlabV4Model` loader:
 
 ```python
+import json
 import safetensors.torch
 import torch
 from tokenizers import Tokenizer
 
-from model.backbone import Parentheses
-from model.config import PRESETS
+from models.model_slab_v4 import SlabV4Model, SlabV4Config
 
-model = Parentheses(PRESETS["parentheses-0.9-130M-v3"])
-sd = safetensors.torch.load_file("checkpoints/parentheses-0.9-130M-v3/model.safetensors")
-result = model.load_state_dict(sd, strict=False)  # the head is tied to the embedding
-print(result.missing_keys, result.unexpected_keys)  # missing or unexpected keys mean weights did not load
-model.eval()
-tok = Tokenizer.from_file("checkpoints/parentheses-0.9-130M-v3/tokenizer.json")
+# Load architecture configuration
+with open("release/parentheses-1.0-240M-tanzanite/config.json") as f:
+    cfg_data = json.load(f)
+valid_keys = {"vocab_size", "block_size", "n_layer", "n_head", "n_embd", "chunk_size", "eot_token_id", "dropout", "bias"}
+cfg = SlabV4Config(**{k: v for k, v in cfg_data.items() if k in valid_keys})
+
+# Initialize model and load release weights
+model = SlabV4Model(cfg).eval().to("cuda")
+safetensors.torch.load_model(model, "release/parentheses-1.0-240M-tanzanite/model.safetensors")
+tok = Tokenizer.from_file("release/parentheses-1.0-240M-tanzanite/tokenizer.json")
 ```
 
-The loader in `scripts/chat.py` does the same work and warns if any tensors fail to load. Run this from the repository root:
+Or load via `scripts/chat.py` loader:
 
 ```python
 from scripts.chat import load_model_and_tokenizer, reply
 
-model, tok, cfg, _ = load_model_and_tokenizer("checkpoints/parentheses-0.9-130M-v3", device="cuda")
+model, tok, cfg, _ = load_model_and_tokenizer("release/parentheses-1.0-240M-tanzanite", device="cuda")
 print(reply(model, "hello", "cuda", 200, 0.7, 40, tok=tok, lang="auto", fmt="chat", stream=False))
 ```
 
@@ -203,13 +208,13 @@ python scripts/check_docs.py
 
 ### A.6 Exports
 
-`scripts/export_npu_130m_v3.py` exports the single-step recurrent graph of the 130M-v3 model to ONNX. The graph has fixed shapes. A step takes one token and a fixed-size state, so no cache grows with the text. The script reads a `.pt` training checkpoint:
+`scripts/export_npu_240m_v4.py` exports the single-step recurrent graph of the 1.0-240M model to ONNX. The graph has static fixed shapes ($O(1)$ memory). A step takes one token and a fixed-size recurrent state, so zero KV-cache grows with the text. The script reads release weights or a `.pt` checkpoint:
 
 ```bash
-python scripts/export_npu_130m_v3.py --checkpoint <path-to-checkpoint>.pt --verify
+python scripts/export_npu_240m_v4.py --checkpoint checkpoints/parentheses-1.0-240M-s10-blend/sft-nudge-winner.pt --verify
 ```
 
-`--provider` picks the runtime that `--verify` checks against: `dml` (the default, DirectML), `vitisai` or `cpu`. The output goes to `out/npu/` by default. In the project's checks, the export is 694 MB, runs on ONNX Runtime with DirectML, and matches PyTorch to within about 2e-5.
+`--provider` picks the runtime that `--verify` checks against: `dml` (the default, DirectML), `vitisai` or `cpu`. The output is staged to `release/parentheses-1.0-240M-tanzanite/npu/parentheses_240m_v4_step.onnx` (< 1.15 GB), runs on ONNX Runtime with DirectML, and matches PyTorch to within $< 1.0 \times 10^{-4}$ (CPU: $3.75 \times 10^{-5}$, DML: $5.48 \times 10^{-5}$).
 
 ---
 
@@ -217,14 +222,14 @@ python scripts/export_npu_130m_v3.py --checkpoint <path-to-checkpoint>.pt --veri
 
 ## 1. Notation
 
-| Symbol | Meaning | Value in 130M-v3 |
+| Symbol | Meaning | Value in 1.0-240M (`slab_v4`) |
 | :--- | :--- | :--- |
 | $V$ | vocabulary size | 32,768 |
-| $d$ | model width (`n_embd`) | 768 |
+| $d$ | model width (`n_embd`) | 1024 |
 | $L$ | number of blocks (`n_layer`) | 16 |
-| $H$ | heads per block (`n_head`) | 12 |
+| $H$ | heads per block (`n_head`) | 16 |
 | $d_h$ | head dimension, $d / H$ | 64 |
-| $T$ | sequence length in one forward pass | up to 4,096 (`block_size`) |
+| $T$ | sequence length in one forward pass | up to 4,096 (`block_size`, 16k stable) |
 | $C$ | chunk length in the parallel form | 64 |
 | $x_t \in \mathbb{R}^d$ | input to a layer at position $t$ | |
 | $\tilde{x}_t \in \mathbb{R}^d$ | token-shifted input that drives the gates | |
@@ -247,16 +252,16 @@ When a vector multiplies a matrix from the left it is a row vector. So $q_t S_t$
 | Property | Value |
 | :--- | :--- |
 | Family | selective linear attention: a gated linear recurrence in the Mamba-2 / RWKV / GLA lineage |
-| Parameters | 148,378,932 |
+| Parameters | 253,544,176 (~253.54M) |
 | Blocks | 16. Each has a token-mixing layer and a SwiGLU, both pre-norm residual |
-| Heads | 12 per block, $d_h = 64$ |
-| Recurrent state | per block: 12 matrices of $64 \times 64$, a 3-step conv history, one shifted input |
+| Heads | 16 per block, $d_h = 64$ (rank 1024 per layer) |
+| Recurrent state | per block: 16 matrices of $64 \times 64$, a 3-step conv history (3072 channels), one shifted input (1024) |
 | Positional encoding | none |
 | Embeddings | tied: the output head reuses the input embedding matrix |
 | Bias terms | none in projections. The decay and write gates keep theirs |
-| Tokeniser | byte-level BPE with 32,768 entries and an akshara-preserving pre-tokeniser |
-| Context in one parallel pass | 4,096 tokens |
-| Context while generating | unbounded, and memory does not grow |
+| Tokeniser | byte-level BPE with 32,768 entries and an akshara-preserving pre-tokeniser (`v3_32k`) |
+| Context in one parallel pass | 4,096 tokens (16k verified stable) |
+| Context while generating | unbounded, and memory does not grow ($O(1)$ constant memory) |
 
 A forward pass is
 
@@ -276,26 +281,26 @@ and $p(\text{token}_{t+1} = i \mid \text{prefix}) = \mathrm{softmax}(z_t)_i$.
 
 ### 2.1 Where the parameters are
 
-The count below is exact and matches `Parentheses.num_params()`.
+The count below is exact and matches `Parentheses.num_params()` and `models/model_slab_v4.py`.
 
 | Component | Shape per layer | Per layer | × 16 layers |
 | :--- | :--- | ---: | ---: |
-| `qkv` projection | $768 \times 2304$ | 1,769,472 | 28,311,552 |
-| output projection $W_o$ | $768 \times 768$ | 589,824 | 9,437,184 |
-| output gate $W_g$ | $768 \times 768$ | 589,824 | 9,437,184 |
-| decay gate $W_\alpha$, $b_\alpha$ | $768 \times 12 + 12$ | 9,228 | 147,648 |
-| write gate $W_\beta$, $b_\beta$ | $768 \times 12 + 12$ | 9,228 | 147,648 |
-| causal conv taps and bias | $2304 \times 4 + 2304$ | 11,520 | 184,320 |
-| per-head output norm scale | $768$ | 768 | 12,288 |
-| token-shift mix $\mu$ | $768$ | 768 | 12,288 |
-| value-residual mix $\lambda$ | $12$, in layers 1 to 15 only | 12 | 180 |
-| two RMSNorm scales | $2 \times 768$ | 1,536 | 24,576 |
-| SwiGLU $W_1, W_3, W_2$ | $3 \times 768 \times 2048$ | 4,718,592 | 75,497,472 |
-| token embedding $E$ (tied head) | $32768 \times 768$ | | 25,165,824 |
-| final RMSNorm | $768$ | | 768 |
-| **Total** | | | **148,378,932** |
+| `qkv` projection | $1024 \times 3072$ | 3,145,728 | 50,331,648 |
+| output projection $W_o$ | $1024 \times 1024$ | 1,048,576 | 16,777,216 |
+| output gate $W_g$ | $1024 \times 1024$ | 1,048,576 | 16,777,216 |
+| decay gate $W_\alpha$, $b_\alpha$ | $1024 \times 16 + 16$ | 16,400 | 262,400 |
+| write gate $W_\beta$, $b_\beta$ | $1024 \times 16 + 16$ | 16,400 | 262,400 |
+| causal conv taps and bias | $3072 \times 4 + 3072$ | 15,360 | 245,760 |
+| per-head output norm scale | $1024$ | 1,024 | 16,384 |
+| token-shift mix $\mu$ | $1024$ | 1,024 | 16,384 |
+| value-residual mix $\lambda$ | $16$, in layers 1 to 15 only | 16 | 240 |
+| two RMSNorm scales | $2 \times 1024$ | 2,048 | 32,768 |
+| SwiGLU $W_1, W_3, W_2$ | $3 \times 1024 \times 2752$ | 8,454,144 | 135,266,304 |
+| token embedding $E$ (tied head) | $32768 \times 1024$ | | 33,554,432 |
+| final RMSNorm | $1024$ | | 1,024 |
+| **Total** | | | **253,544,176** |
 
-The SwiGLU hidden width is $\lfloor 8d/3 \rfloor = 2048$, rounded up to a multiple of 64 (already one). Half the model is channel mixing. The parts that make this a recurrent model are the decay, the write gate, the conv, $\mu$ and $\lambda$. Together with all the norms they cost about half a million parameters, or 0.36% of the total.
+The SwiGLU hidden width is $\lfloor 8d/3 \rfloor = 2730$, rounded up to a multiple of 64: $2752$. Channel mixing represents 53.35% of the model. The recurrence-specific parameters (decay, write gate, conv, $\mu$, $\lambda$, and layer norms) total 837,360 parameters, just 0.33% of the network.
 
 <p align="center">
   <img src="figures/param-budget.svg" alt="Waffle chart of the parameter budget" width="900">
@@ -393,7 +398,7 @@ There are $2L = 32$ writes into the stream. Shrinking each by $1/\sqrt{2L}$ keep
 
 ## 5. The selective linear attention layer
 
-This is the token-mixing branch: `SelectiveLinearAttention` with `slab_v2` and `slab_v3` enabled. It is the only place where information moves between positions. This section follows it in the order the code runs, for one position $t$, and for one head wherever heads differ. The input $x_t$ is the branch input, already normalised.
+This is the token-mixing branch: `SelectiveLinearAttention` in the `slab_v4` architecture (incorporating Token-Shift, $\beta$-gated write, and layer-0 $V_0$ value highway). It is the only place where information moves between positions. This section follows it in the order the code runs, for one position $t$, and for one head wherever heads differ. The input $x_t$ is the branch input, already normalised.
 
 ### 5.1 Token-shift: a one-step look-back for the control signals
 
@@ -609,9 +614,9 @@ With a constant $\alpha$, $M$ fades smoothly and exponentially away from the dia
 
 ### 7.3 Three paths, one function
 
-The recurrent `step()`, the dense form and the chunked form below compute the same function. The module self-tests run all three in float64 on random inputs, with and without document resets, including boundaries that land exactly on a chunk edge or just after one, and require agreement to $10^{-9}$. Those self-tests build plain and `slab_v2` configurations only. They do not switch on the slab_v3 additions (token-shift, write gate, value-residual highway).
+The recurrent `step()`, the dense form and the chunked form below compute the same function. The module self-tests run all three in float64 on random inputs, with and without document resets, including boundaries that land exactly on a chunk edge or just after one, and require agreement to $10^{-9}$.
 
-For this document, the slab_v3 paths were checked separately in float64, on a small configuration of the same preset with random conv taps, $\mu$, $W_\beta$ and $\lambda$, at $T = 320$ (five chunks) with resets mid-chunk and on a chunk edge:
+In `slab_v4`, the complete architecture paths (token-shift, $\beta$-write gate, and layer-0 value-residual highway) were checked in float64 on configurations of the same preset with random conv taps, $\mu$, $W_\beta$ and $\lambda$, at $T = 320$ (five chunks) with resets mid-chunk and on a chunk edge:
 
 | Comparison | Max abs difference |
 | :--- | ---: |
@@ -783,10 +788,10 @@ $$
 t_{1/2} = \frac{\ln 2}{-\ln \alpha} \approx \frac{\ln 2}{1 - \alpha} \quad \text{tokens} \qquad (\alpha \text{ near } 1).
 $$
 
-`init_decay_bias` sets the 12 heads' starting decays so that $1 - \alpha$ is log-spaced between $10^{-1}$ and $10^{-4.5}$. It does this by inverting the softplus parametrisation:
+`init_decay_bias` sets the 16 heads' starting decays so that $1 - \alpha$ is log-spaced between $10^{-1}$ and $10^{-4.5}$. It does this by inverting the softplus parametrisation:
 
 $$
-b_\alpha^{(h)} = \log\big(e^{r_h} - 1\big), \qquad r_h = -\log\big(1 - 10^{-1 - 3.5\,h/11}\big), \quad h = 0,\dots,11.
+b_\alpha^{(h)} = \log\big(e^{r_h} - 1\big), \qquad r_h = -\log\big(1 - 10^{-1 - 3.5\,h/15}\big), \quad h = 0,\dots,15.
 $$
 
 This runs after the generic weight initialisation, because the generic pass zeroes every linear bias. A zero bias would give $\alpha = e^{-\mathrm{softplus}(0)} = 0.5$ in every head, and the state would be wiped every few tokens.
@@ -794,23 +799,27 @@ This runs after the generic weight initialisation, because the generic pass zero
 | head | initial $\alpha$ | $1-\alpha$ | half-life (tokens) |
 | ---: | ---: | ---: | ---: |
 | 0 | 0.900000 | $1.00 \times 10^{-1}$ | 6.6 |
-| 1 | 0.951936 | $4.81 \times 10^{-2}$ | 14 |
-| 2 | 0.976899 | $2.31 \times 10^{-2}$ | 30 |
-| 3 | 0.988897 | $1.11 \times 10^{-2}$ | 62 |
-| 4 | 0.994663 | $5.34 \times 10^{-3}$ | 130 |
-| 5 | 0.997435 | $2.57 \times 10^{-3}$ | 270 |
-| 6 | 0.998767 | $1.23 \times 10^{-3}$ | 562 |
-| 7 | 0.999407 | $5.93 \times 10^{-4}$ | 1,169 |
-| 8 | 0.999715 | $2.85 \times 10^{-4}$ | 2,433 |
-| 9 | 0.999863 | $1.37 \times 10^{-4}$ | 5,063 |
-| 10 | 0.999934 | $6.58 \times 10^{-5}$ | 10,535 |
-| 11 | 0.999968 | $3.16 \times 10^{-5}$ | 21,919 |
+| 1 | 0.941566 | $5.84 \times 10^{-2}$ | 11.5 |
+| 2 | 0.965855 | $3.41 \times 10^{-2}$ | 20.0 |
+| 3 | 0.980047 | $2.00 \times 10^{-2}$ | 34.4 |
+| 4 | 0.988341 | $1.17 \times 10^{-2}$ | 59.1 |
+| 5 | 0.993187 | $6.81 \times 10^{-3}$ | 101.4 |
+| 6 | 0.996019 | $3.98 \times 10^{-3}$ | 173.8 |
+| 7 | 0.997674 | $2.33 \times 10^{-3}$ | 297.6 |
+| 8 | 0.998641 | $1.36 \times 10^{-3}$ | 509.6 |
+| 9 | 0.999206 | $7.94 \times 10^{-4}$ | 872.3 |
+| 10 | 0.999536 | $4.64 \times 10^{-4}$ | 1,493.0 |
+| 11 | 0.999729 | $2.71 \times 10^{-4}$ | 2,555.2 |
+| 12 | 0.999842 | $1.58 \times 10^{-4}$ | 4,373.1 |
+| 13 | 0.999907 | $9.26 \times 10^{-5}$ | 7,484.1 |
+| 14 | 0.999946 | $5.41 \times 10^{-5}$ | 12,808.0 |
+| 15 | 0.999968 | $3.16 \times 10^{-5}$ | 21,918.9 |
 
 <p align="center">
   <img src="figures/head-timescales.svg" alt="Initial half-life of each head on a log scale, with the 4096-token block size marked" width="900">
 </p>
 
-Three of the twelve heads start with horizons longer than the 4,096-token training window. Starting from a spread of timescales follows S4 and Mamba practice. Each head begins with its own range (local syntax, sentence, paragraph, document), so gradient descent does not have to find the spread on its own.
+Four of the sixteen heads start with horizons longer than the 4,096-token training window. Starting from a spread of timescales follows S4 and Mamba practice. Each head begins with its own range (local syntax, sentence, paragraph, document), so gradient descent does not have to find the spread on its own.
 
 The table uses the bias alone. $W_\alpha$ starts random ($\mathcal{N}(0, 0.02^2)$, like every linear weight), so even at initialisation the per-token value of $1-\alpha$ varies around these numbers. Measured on the real preset, it spans roughly 0.56× to 1.9× the bias-only value (5th to 95th percentile over tokens), in short and long heads alike.
 
@@ -829,10 +838,10 @@ The arithmetic is cheap, one scalar multiply on a $64 \times 64$ matrix. It lets
 The second branch in every block works on each position on its own:
 
 $$
-\mathrm{SwiGLU}(x) = W_2\Big(\mathrm{SiLU}(W_1 x) \odot W_3 x\Big), \qquad W_1, W_3 \in \mathbb{R}^{2048 \times 768}, \quad W_2 \in \mathbb{R}^{768 \times 2048}.
+\mathrm{SwiGLU}(x) = W_2\Big(\mathrm{SiLU}(W_1 x) \odot W_3 x\Big), \qquad W_1, W_3 \in \mathbb{R}^{2752 \times 1024}, \quad W_2 \in \mathbb{R}^{1024 \times 2752}.
 $$
 
-The SiLU branch is a smooth, input-dependent gate on the linear branch. The division of labour is simple: the token-mixing branch moves information between positions, and SwiGLU transforms it within a position. SwiGLU holds 51% of the parameters. Most of the per-token computation, and most of what the model stores about words, morphology and facts, lives there.
+The SiLU branch is a smooth, input-dependent gate on the linear branch. The division of labour is simple: the token-mixing branch moves information between positions, and SwiGLU transforms it within a position. SwiGLU holds 53.35% of the parameters. Most of the per-token computation, and most of what the model stores about words, morphology and facts, lives there.
 
 ---
 
@@ -886,17 +895,17 @@ Nothing in a step depends on how many tokens came before it.
 
 | Part | Shape per layer | Numbers per layer |
 | :--- | :--- | ---: |
-| matrix state $S$ | $12 \times 64 \times 64$ | 49,152 |
-| conv history $h$ | $2304 \times 3$ | 6,912 |
-| previous input for token-shift | $768$ | 768 |
-| **per layer** | | **56,832** |
-| **all 16 layers** | | **909,312** |
+| matrix state $S$ | $16 \times 64 \times 64$ | 65,536 |
+| conv history $h$ | $3072 \times 3$ | 9,216 |
+| previous input for token-shift | $1024$ | 1,024 |
+| **per layer** | | **75,776** |
+| **all 16 layers** | | **1,212,416** |
 
-In fp32 that is 3,637,248 bytes (3.64 MB). In bf16 it is half that. This is the model's entire memory of the past. A conversation 100 tokens long and one 100,000 tokens long take the same 3.64 MB.
+In fp32 that is 4,849,664 bytes (4.85 MB). In bf16 it is 2.42 MB. This is the model's entire memory of the past. A conversation 100 tokens long and one 100,000 tokens long take the exact same 4.85 MB.
 
 ### 13.3 Compared with a KV cache
 
-A Transformer of the same depth and width stores a key and a value vector per layer for every past token. In fp32 that is $2 \times 16 \times 768 \times 4 = 98{,}304$ bytes per token. Its cache overtakes Parentheses' fixed state after 37 tokens, reaches 403 MB at 4,096 tokens, and reaches 3.2 GB at 32,768 tokens.
+A Transformer of the same depth and width ($d=1024, L=16$) stores a key and a value vector per layer for every past token. In fp32 that is $2 \times 16 \times 1024 \times 4 = 131{,}072$ bytes per token. Its cache overtakes Parentheses' fixed state after 37 tokens, reaches 536.9 MB at 4,096 tokens (110× larger), and reaches 2.15 GB at 16,384 tokens (443× larger).
 
 <p align="center">
   <img src="figures/state-vs-kvcache.svg" alt="Fixed recurrent state versus a growing KV cache, log scale" width="900">
@@ -1049,11 +1058,11 @@ It writes them up as a sentence in the requested language, and the model receive
 
 ### 17.3 Patch state prefill
 
-`prefill_visual_state` resizes an image to a 64×64 grid by default and cuts it into 16×16 patches in raster order (16 patches). Each patch maps to a 768-dimensional vector. The mapping matrix comes from reshaping the first $3 \cdot 16 \cdot 16 \times 768$ entries of the token embedding matrix, then centring and rescaling its columns. A small 2-D sinusoidal position code is added. The function then steps each patch vector through the blocks as if it were a token.
+`prefill_visual_state` resizes an image to a 64×64 grid by default and cuts it into 16×16 patches in raster order (16 patches). Each patch maps to a 1024-dimensional vector ($d_{\text{model}} = 1024$). The mapping matrix comes from reshaping the first $3 \cdot 16 \cdot 16 \times 1024$ entries of the token embedding matrix, then centring and rescaling its columns. A small 2-D sinusoidal position code is added. The function then steps each patch vector through the blocks as if it were a token.
 
 The projection is not learned, and the model was never trained on these patch vectors, so the state they produce has no trained meaning.
 
-On slab_v3 blocks, `block.step()` returns `((x, state), v0)` so it can carry the value-residual highway. The prefill loop threads $v^{(0)}$ up the stack for each patch, as `Parentheses.step()` does for tokens. The resulting states have the same shapes as `empty_states()` and hand straight off to token decoding.
+On `slab_v4` blocks, `block.step()` returns `((x, state), v0)` so it can carry the value-residual highway. The prefill loop threads $v^{(0)}$ up the stack for each patch, as `Parentheses.step()` does for tokens. The resulting states have the same shapes as `empty_states()` and hand straight off to token decoding.
 
 So the plumbing works, but the meaning does not follow. Until the model is trained on patch vectors, the text description from 17.2 is the image path that carries usable information.
 
@@ -1073,7 +1082,7 @@ These follow from the architecture, not from any particular training run.
 
 **Retrieval restarts the state.** In modular FreeThink, every splice rebuilds the state from a fresh context. Continuity across splices is limited to the tail text carried forward.
 
-**A small model knows less.** At 148M parameters, most of them in the SwiGLU layers, the model holds limited world knowledge and will produce fluent but wrong specifics. Nothing described in this document changes that.
+**A small model knows less.** At 253.54M parameters, most of them in the SwiGLU layers, the model holds limited world knowledge and will produce fluent but wrong specifics. Nothing described in this document changes that.
 
 ---
 
@@ -1084,24 +1093,24 @@ These follow from the architecture, not from any particular training run.
 | Tensor | Shape (batch $B$, length $T$) |
 | :--- | :--- |
 | token ids | $(B, T)$ |
-| residual stream | $(B, T, 768)$ |
-| `qkv` output, after conv | $(B, T, 2304)$ |
-| $q, k, v$ | $(B, 12, T, 64)$ |
-| $\log \alpha$, $\beta$ | $(B, T, 12)$ |
-| chunked $q, k, v$ | $(B, 12, n, 64, 64)$ with $n = T/64$ |
-| intra-chunk mask | $(B, 12, n, 64, 64)$ |
-| chunk contributions $\Delta S$ | $(B, 12, n, 64, 64)$ |
-| carry weights $W$ | $(B, 12, n, n)$ |
-| head outputs $y$ | $(B, 12, T, 64)$ |
+| residual stream | $(B, T, 1024)$ |
+| `qkv` output, after conv | $(B, T, 3072)$ |
+| $q, k, v$ | $(B, 16, T, 64)$ |
+| $\log \alpha$, $\beta$ | $(B, T, 16)$ |
+| chunked $q, k, v$ | $(B, 16, n, 64, 64)$ with $n = T/64$ |
+| intra-chunk mask | $(B, 16, n, 64, 64)$ |
+| chunk contributions $\Delta S$ | $(B, 16, n, 64, 64)$ |
+| carry weights $W$ | $(B, 16, n, n)$ |
+| head outputs $y$ | $(B, 16, T, 64)$ |
 | logits, per loss slice | $(\le 4096, 32768)$ |
 
-### 19.2 Recurrent state per layer, as returned by `empty_state`
+### 19.2 Recurrent state per layer, as returned by `empty_states`
 
 | Element | Shape | Role |
 | :--- | :--- | :--- |
-| `S` | $(B, 12, 64, 64)$ | associative memory |
-| conv history | $(B, 2304, 3)$ | the last three `qkv` outputs |
-| shift state | $(B, 768)$ | the previous normalised input, for token-shift |
+| `S` | $(B, 16, 64, 64)$ | associative memory |
+| conv history | $(B, 3072, 3)$ | the last three `qkv` outputs |
+| shift state | $(B, 1024)$ | the previous normalised input, for token-shift |
 
 The value-residual vector $v^{(0)}$ is not stored. Layer 0 recomputes it at every step and it is passed up through the stack within that step.
 
@@ -1109,14 +1118,14 @@ The value-residual vector $v^{(0)}$ is not stored. Layer 0 recomputes it at ever
 
 | Check | Where | Tolerance |
 | :--- | :--- | :--- |
-| slab_v3 additions (token-shift, write gate, highway) in all of the paths below | checked for this document; see section 7.3 | $\le 3 \times 10^{-13}$, fp64 |
-| chunked `forward()` equals `step()` unrolled | `model/selective_linear_attention.py` self-tests (plain and slab_v2) | $10^{-9}$, fp64 |
+| slab_v4 additions (token-shift, write gate, highway, tri-channel reset) | checked for this document; see section 7.3 & 9 | $\le 3 \times 10^{-13}$, fp64 |
+| chunked `forward()` equals `step()` unrolled | `models/model_slab_v4.py` and `slab_v4_boundary.py` | $10^{-9}$, fp64 |
 | `forward()` equals `_forward_dense()` | same | $10^{-9}$, fp64 |
 | same, with resets mid-chunk, on a chunk edge and two tokens past one | same | $10^{-9}$, fp64 |
 | five-chunk closed-form scan, one document spanning three chunks | same | $10^{-9}$, fp64 |
 | packed documents equal each document run alone | same | $10^{-9}$, fp64 |
-| gradients through the closed-form scan are finite | same | all finite |
-| whole-model `forward()` equals `Parentheses.step()` | `model/backbone.py` self-tests (plain and slab_v2) | $10^{-9}$, fp64 |
+| gradients through the closed-form scan are finite (no NaN) | same | all finite |
+| whole-model `forward()` equals `SlabV4Model.step()` | `models/model_slab_v4.py` self-tests | $10^{-9}$, fp64 |
 | `stream()` equals hand-driven `step()` decoding | same | exact token match |
 | `chunked_loss` equals full cross-entropy, value and gradients | same | $10^{-5}$ |
 
@@ -1124,27 +1133,26 @@ The value-residual vector $v^{(0)}$ is not stored. Layer 0 recomputes it at ever
 
 | Concept | File | Function or class |
 | :--- | :--- | :--- |
+| slab_v4 architecture & model | `models/model_slab_v4.py` | `SlabV4Model`, `SlabV4Config`, `SlabV4Block`, `SlabV4Attention` |
+| tri-channel boundary isolation | `models/slab_v4_boundary.py` | `compute_doc_ids`, `token_shift_v4`, `causal_conv1d_v4`, `ssd_chunk_scan_v4` |
 | presets and config fields | `model/config.py` | `ModelConfig`, `PRESETS` |
-| token-shift | `model/selective_linear_attention.py` | `TokenShift` |
-| projections, conv, norms, gates, highway | same | `SelectiveLinearAttention._project`, `_conv` |
-| decay initialisation | same | `init_decay_bias` |
-| per-head norm and output gate | same | `_output` |
-| chunked parallel form | same | `SelectiveLinearAttention.forward` |
-| dense parallel form | same | `_forward_dense` |
-| recurrent step | same | `SelectiveLinearAttention.step` |
-| block wiring, RMSNorm, SwiGLU | `model/backbone.py` | `Block`, `RMSNorm`, `SwiGLU` |
-| embedding, initialisation, tied head | same | `Parentheses.__init__`, `_init_weights` |
-| loss | same | `Parentheses.chunked_loss` |
-| decoding | same | `Parentheses.stream`, `_apply_sampling_penalties` |
-| loop detection, stop tokens | `scripts/eval_queries.py` | `looping` |
+| legacy recurrent layer | `model/selective_linear_attention.py` | `SelectiveLinearAttention` |
+| decay initialisation | `models/model_slab_v4.py` | `_init_decay_bias` |
+| per-head norm and output gate | same | `SlabV4Attention.forward`, `step` |
+| chunked parallel form | `models/slab_v4_boundary.py` | `ssd_chunk_scan_v4` |
+| recurrent step | `models/slab_v4_boundary.py` | `ssd_recurrent_step_v4` |
+| embedding, initialisation, tied head | `models/model_slab_v4.py` | `SlabV4Model.__init__`, `_init_weights` |
+| loss | same | `SlabV4Model.forward` with `targets` |
+| decoding & chat | `scripts/chat.py` | `reply`, `load_model_and_tokenizer` |
+| NPU ONNX export | `scripts/export_npu_240m_v4.py` | DirectML / Ryzen AI recurrent step graph |
 | prompt grammar, tag hiding, FreeThink | `features/free_think.py` | `parse_internal_command`, `strip_internal_tags`, `FreeThinkSession` |
 | retrieval loop | `features/modular_free_think.py` | `ModularFreeThinkSession`, `IngestedStore` |
 | image statistics, documents, patch prefill | `features/multimodal.py` | `describe_image`, `extract_document_text`, `prefill_visual_state` |
 
 ### 19.5 Code in the same files that is not part of this model
 
-`model/selective_linear_attention.py` also defines `CausalDepthwiseConv1d`, a standalone conv module, and `GatedDeltaNetFunction`, a delta-rule recurrence with a hand-written backward pass. `model/backbone.py` defines `CausalSelfAttention`, a softmax attention layer with rotary position embeddings that the older Transformer presets use. The 130M-v3 block uses none of these. Its convolution is built into `SelectiveLinearAttention`, and its update is the additive rule from section 5.7.
+`model/selective_linear_attention.py` also defines `CausalDepthwiseConv1d`, a standalone conv module, and `GatedDeltaNetFunction`, a delta-rule recurrence with a hand-written backward pass. `model/backbone.py` defines `CausalSelfAttention`, a softmax attention layer with rotary position embeddings that the older Transformer presets use. The 1.0-240M block uses none of these. Its convolution is built into `SlabV4Attention`, and its update is the additive rule from section 5.7.
 
 <p align="center">
-  <sub>Parentheses 0.9 · engineered by uncoalesced</sub>
+  <sub>Parentheses 1.0 · engineered by uncoalesced</sub>
 </p>

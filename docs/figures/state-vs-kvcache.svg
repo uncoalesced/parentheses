@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 560" width="980" height="560" role="img">
 <rect width="980" height="560" fill="#333333"/>
 <text x="36.0" y="46.0" fill="#FDFFFC" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="20" font-weight="600" text-anchor="start">Memory while generating: fixed state vs a growing KV cache</text>
-<text x="36.0" y="72.0" fill="#9A9B99" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="13" font-weight="400" text-anchor="start">fp32 · same depth (16) and width (768) · the Transformer line is hypothetical, for scale</text>
+<text x="36.0" y="72.0" fill="#9A9B99" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="13" font-weight="400" text-anchor="start">fp32 · same depth (16) and width (1024) · the Transformer line is hypothetical, for scale</text>
 <polyline points="120.0,470.0 920.0,470.0" fill="none" stroke="#4B4B4B" stroke-width="1" stroke-linejoin="round" stroke-linecap="round"/>
 <text x="108.0" y="474.0" fill="#9A9B99" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="12" font-weight="400" text-anchor="end">1 MB</text>
 <polyline points="120.0,380.0 920.0,380.0" fill="none" stroke="#4B4B4B" stroke-width="1" stroke-linejoin="round" stroke-linecap="round"/>
@@ -22,11 +22,11 @@
 <circle cx="220.0" cy="235.6" r="6.0" fill="#FDFFFC"/>
 <circle cx="520.0" cy="181.4" r="6.0" fill="#FDFFFC"/>
 <circle cx="920.0" cy="154.3" r="6.0" fill="#FDFFFC"/>
-<text x="910.0" y="138.3" fill="#FDFFFC" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="13" font-weight="600" text-anchor="end">KV cache: 98.3 KB per token</text>
-<polyline points="120.0,419.5 920.0,419.5" fill="none" stroke="#F19143" stroke-width="4" stroke-linejoin="round" stroke-linecap="round"/>
-<circle cx="220.0" cy="419.5" r="7.0" fill="#F19143"/>
-<circle cx="520.0" cy="419.5" r="7.0" fill="#F19143"/>
-<circle cx="920.0" cy="419.5" r="7.0" fill="#F19143"/>
-<text x="920.0" y="445.5" fill="#F19143" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="13" font-weight="600" text-anchor="end">Parentheses state: 3.64 MB at any length</text>
-<text x="130.0" y="140.0" fill="#F5B884" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="13" font-weight="600" text-anchor="start">the cache passes the state after 37 tokens</text>
+<text x="910.0" y="138.3" fill="#FDFFFC" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="13" font-weight="600" text-anchor="end">KV cache: 131.1 KB per token</text>
+<polyline points="120.0,408.3 920.0,408.3" fill="none" stroke="#F19143" stroke-width="4" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="220.0" cy="408.3" r="7.0" fill="#F19143"/>
+<circle cx="520.0" cy="408.3" r="7.0" fill="#F19143"/>
+<circle cx="920.0" cy="408.3" r="7.0" fill="#F19143"/>
+<text x="920.0" y="434.3" fill="#F19143" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="13" font-weight="600" text-anchor="end">Parentheses state: 4.85 MB at any length</text>
+<text x="130.0" y="140.0" fill="#F5B884" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="13" font-weight="600" text-anchor="start">the cache passes the state after 38 tokens</text>
 </svg>

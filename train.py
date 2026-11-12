@@ -341,6 +341,8 @@ def main():
     p.add_argument("--optimizer-8bit", action="store_true")
     p.add_argument("--z-loss-coeff", type=float, default=0.0,
                    help="auxiliary Z-loss coefficient c_z to penalize logit drift (recommended 1e-4 for selective_linear CPT)")
+    p.add_argument("--abort-below-loss", type=float, default=None,
+                   help="instantly abort training if 5-step moving mean loss drops below this threshold to arrest memorization")
     p.add_argument("--eos-weight", type=float, default=1.0,
                    help="slab_v4 only: multiply the loss on <|endoftext|> targets by this factor so SFT teaches the model "
                         "to stop (S10 uses 3.0). 1.0 = unchanged.")
@@ -622,6 +624,7 @@ def main():
     min_ratio = args.min_lr / args.lr
     t0 = time.time()
     final_step = args.max_steps - 1
+    recent_losses = []
     for step in range(start_step, args.max_steps):
         if args.deadline is not None and time.time() > args.deadline:
             final_step = step - 1
@@ -727,6 +730,17 @@ def main():
                     rec["val_ppl"] = round(val_ppl_val, 2)
                 with open(os.path.join("out", "session1_240m_metrics.jsonl"), "a", encoding="utf-8") as jf:
                     jf.write(json.dumps(rec) + "\n")
+
+        recent_losses.append(loss_accum)
+        if len(recent_losses) > 5:
+            recent_losses.pop(0)
+        if args.abort_below_loss is not None and len(recent_losses) >= 5:
+            moving_loss = sum(recent_losses) / len(recent_losses)
+            if moving_loss < args.abort_below_loss:
+                path = os.path.join(args.out_dir, f"step_{step}_aborted.pt")
+                save(path, step)
+                print(f"[ABORT] 5-step moving mean loss {moving_loss:.4f} dropped below threshold {args.abort_below_loss:.4f}. Saved {path} and exiting cleanly.", flush=True)
+                break
 
         if step > 0 and step % args.ckpt_every == 0:
             path = os.path.join(args.out_dir, f"step_{step}.pt")

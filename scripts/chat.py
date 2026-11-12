@@ -874,9 +874,25 @@ def build_arg_parser(default_ckpt: str) -> argparse.ArgumentParser:
     p.add_argument("--max-new-tokens", type=int, default=300)
     p.add_argument("--temperature", type=float, default=0.7)
     p.add_argument("--top-k", type=int, default=40)
-    p.add_argument("--device", default="cpu")
+    p.add_argument("--device", default="cpu",
+                   help="cpu (default), cuda (NVIDIA), mps (Apple Silicon GPU), or auto (cuda > mps > cpu)")
     p.add_argument("--self-test", action="store_true")
     return p
+
+
+def resolve_device(requested: str) -> str:
+    """Map --device to an available torch device. 'auto' picks cuda > mps > cpu."""
+    if requested == "auto":
+        if torch.cuda.is_available():
+            return "cuda"
+        if torch.backends.mps.is_available():
+            return "mps"
+        return "cpu"
+    if requested == "mps" and not torch.backends.mps.is_available():
+        raise SystemExit("[chat] --device mps requested but MPS is not available (needs Apple Silicon and a macOS PyTorch build).")
+    if requested.startswith("cuda") and not torch.cuda.is_available():
+        raise SystemExit(f"[chat] --device {requested} requested but CUDA is not available (CPU-only PyTorch build?).")
+    return requested
 
 
 def main():
@@ -898,6 +914,7 @@ def main():
         _self_test()
         return
 
+    args.device = resolve_device(args.device)
     model, tok, cfg, step = load_model_and_tokenizer(args.checkpoint, device=args.device)
     session_lang = args.lang
     session_images = list(args.image)

@@ -251,8 +251,14 @@ def main():
     parser.add_argument(
         "--out",
         type=str,
-        default="out/npu/parentheses_240m_v4_s8_step.onnx",
+        default=None,
         help="Target ONNX export path",
+    )
+    parser.add_argument(
+        "--out-dir",
+        type=str,
+        default=None,
+        help="Optional directory to stage ONNX graph, metadata, and parity report",
     )
     parser.add_argument(
         "--provider",
@@ -264,7 +270,14 @@ def main():
     parser.add_argument(
         "--verify",
         action="store_true",
+        default=True,
         help="Run parity verification against PyTorch",
+    )
+    parser.add_argument(
+        "--no-verify",
+        action="store_false",
+        dest="verify",
+        help="Skip parity verification",
     )
     parser.add_argument(
         "--json-out",
@@ -274,13 +287,47 @@ def main():
     )
     args = parser.parse_args()
 
-    metrics = export_npu(Path(args.checkpoint), Path(args.out), verify=args.verify, provider=args.provider)
-    if args.json_out:
-        out_p = Path(args.json_out)
-        out_p.parent.mkdir(parents=True, exist_ok=True)
-        with open(out_p, "w", encoding="utf-8") as f:
+    if args.out_dir:
+        out_dir = Path(args.out_dir)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        out_onnx_path = out_dir / "parentheses_240m_v4_step.onnx"
+        json_out_path = Path(args.json_out) if args.json_out else (out_dir / "parity_report.json")
+    elif args.out:
+        out_onnx_path = Path(args.out)
+        json_out_path = Path(args.json_out) if args.json_out else None
+    else:
+        out_onnx_path = Path("out/npu/parentheses_240m_v4_step.onnx")
+        json_out_path = Path(args.json_out) if args.json_out else None
+
+    metrics = export_npu(Path(args.checkpoint), out_onnx_path, verify=args.verify, provider=args.provider)
+    if json_out_path:
+        json_out_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(json_out_path, "w", encoding="utf-8") as f:
             json.dump(metrics, f, indent=2)
-        print(f"[+] Export report written to {out_p}")
+        print(f"[+] Export report written to {json_out_path}")
+
+    # If out_dir is provided, also write onnx_metadata.json
+    if args.out_dir:
+        metadata = {
+            "model_type": "parentheses_slab_v4_recurrent_step",
+            "architecture": "State Space Duality (SSD) / Selective Linear Attention",
+            "parameters": 253544176,
+            "layers": 16,
+            "d_model": 1024,
+            "n_head": 16,
+            "head_dim": 64,
+            "chunk_size": 64,
+            "recurrent_state_shape": [16, 1, 16, 64, 64],
+            "conv_state_shape": [16, 1, 3, 3072],
+            "shift_state_shape": [16, 1, 1024],
+            "execution_providers": ["DmlExecutionProvider", "CPUExecutionProvider", "VitisAIExecutionProvider"],
+            "target_hardware": "AMD Ryzen AI NPU (XDNA) / DirectML / Windows AI",
+            "complexity": "O(1) Memory Constant Step Inference",
+        }
+        meta_path = Path(args.out_dir) / "onnx_metadata.json"
+        with open(meta_path, "w", encoding="utf-8") as f:
+            json.dump(metadata, f, indent=2)
+        print(f"[+] ONNX metadata written to {meta_path}")
 
 
 if __name__ == "__main__":
