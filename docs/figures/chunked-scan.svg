@@ -585,7 +585,7 @@
 <polyline points="339.0,114.0 339.0,484.0" fill="none" stroke="#9A9B99" stroke-width="1" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="3 4"/>
 <polyline points="64.0,389.0 434.0,389.0" fill="none" stroke="#9A9B99" stroke-width="1" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="3 4"/>
 <rect x="70.0" y="506.0" width="14.0" height="14.0" rx="3" fill="#F19143"/>
-<text x="92.0" y="518.0" fill="#FDFFFC" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="12" font-weight="400" text-anchor="start">intra: (Q Kᵀ/√d ⊙ M_intra) V</text>
+<text x="92.0" y="518.0" fill="#FDFFFC" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="12" font-weight="400" text-anchor="start">intra: (Q Kᵀ ⊙ L) (β ⊙ V)</text>
 <rect x="70.0" y="530.0" width="14.0" height="14.0" rx="3" fill="#AF703D"/>
 <text x="92.0" y="542.0" fill="#FDFFFC" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="12" font-weight="400" text-anchor="start">inter: (Q S_in) ⊙ exp(Λ)</text>
 <text x="520.0" y="136.0" fill="#FDFFFC" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="15" font-weight="600" text-anchor="start">state hand-off between chunks</text>
@@ -607,12 +607,12 @@
 <rect x="854.0" y="170.0" width="72.0" height="54.0" rx="10" fill="#3C3C3C" stroke="#F19143" stroke-width="1.6"/>
 <text x="890.0" y="194.0" fill="#FDFFFC" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="12" font-weight="600" text-anchor="middle">chunk 3</text>
 <text x="890.0" y="212.0" fill="#9A9B99" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="12" font-weight="400" text-anchor="middle">dS[3]</text>
-<text x="520.0" y="280.0" fill="#FDFFFC" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="15" font-weight="600" text-anchor="start">S_in[c] = Σ_j&lt;c W[c, j] · dS[j]</text>
-<text x="520.0" y="308.0" fill="#FDFFFC" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="15" font-weight="600" text-anchor="start">W[c, j] = exp(LA[c−1] − LA[j])</text>
-<text x="520.0" y="342.0" fill="#9A9B99" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="13" font-weight="400" text-anchor="start">dS[j] = (K_j ⊙ decay-to-end)ᵀ V_j / √d</text>
-<text x="520.0" y="364.0" fill="#9A9B99" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="13" font-weight="400" text-anchor="start">LA = cumulative sum of chunk log-decays</text>
-<text x="520.0" y="386.0" fill="#9A9B99" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="13" font-weight="400" text-anchor="start">one n×n matrix + one einsum, no Python loop</text>
+<text x="520.0" y="280.0" fill="#FDFFFC" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="15" font-weight="600" text-anchor="start">S_in[c+1] = A[c] · S_in[c] + dS[c]</text>
+<text x="520.0" y="308.0" fill="#FDFFFC" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="15" font-weight="600" text-anchor="start">A[c] = exp(sum of log-decays in chunk c)</text>
+<text x="520.0" y="342.0" fill="#9A9B99" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="13" font-weight="400" text-anchor="start">dS[c] = (K_c ⊙ decay-to-end)ᵀ (β ⊙ V_c)</text>
+<text x="520.0" y="364.0" fill="#9A9B99" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="13" font-weight="400" text-anchor="start">L = exp of within-chunk log-decay differences, masked</text>
+<text x="520.0" y="386.0" fill="#9A9B99" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="13" font-weight="400" text-anchor="start">one short loop over chunks carries S in float32</text>
 <rect x="520.0" y="420.0" width="420.0" height="70.0" rx="10" fill="#3C3C3C" stroke="#4B4B4B" stroke-width="1.5"/>
-<text x="536.0" y="448.0" fill="#F5B884" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="12" font-weight="400" text-anchor="start">W and dS are accumulated in FP32: bf16 keeps</text>
-<text x="536.0" y="470.0" fill="#F5B884" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="12" font-weight="400" text-anchor="start">8 mantissa bits and loses weights near e^−10 … e^−30</text>
+<text x="536.0" y="448.0" fill="#F5B884" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="12" font-weight="400" text-anchor="start">S and dS are accumulated in FP32: bf16 keeps</text>
+<text x="536.0" y="470.0" fill="#F5B884" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="12" font-weight="400" text-anchor="start">7 mantissa bits and loses weights near e^−10 … e^−30</text>
 </svg>

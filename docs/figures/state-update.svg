@@ -218,7 +218,7 @@
 <rect x="581.0" y="324.0" width="12.0" height="12.0" rx="2" fill="#FDFFFC" fill-opacity="0.3"/>
 <rect x="603.0" y="319.0" width="22.0" height="22.0" rx="4" fill="#333333" stroke="#FDFFFC" stroke-width="1.6"/>
 <rect x="608.0" y="324.0" width="12.0" height="12.0" rx="2" fill="#FDFFFC" fill-opacity="0.12"/>
-<text x="522.0" y="368.0" fill="#FDFFFC" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="14" font-weight="600" text-anchor="middle">k_t v_tᵀ / √d</text>
+<text x="522.0" y="368.0" fill="#FDFFFC" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="14" font-weight="600" text-anchor="middle">β_t · k_t v_tᵀ</text>
 <circle cx="660.0" cy="238.0" r="15.0" fill="#F19143"/>
 <text x="660.0" y="244.0" fill="#333333" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace" font-size="17" font-weight="700" text-anchor="middle">=</text>
 <rect x="700.0" y="130.0" width="22.0" height="22.0" rx="4" fill="#333333" stroke="#FDFFFC" stroke-width="1.6"/>

@@ -165,7 +165,7 @@ def tokenizer(out: Path):
             ax.add_patch(FancyBboxPatch((i + 0.11, y - 0.39), w, 0.78,
                                         boxstyle="round,pad=0,rounding_size=0.09", color=col))
         ax.text(full + 1.3, y, f"{val:.2f}", color=PORCELAIN, fontsize=15, weight="bold", va="center")
-    ax.text(-3.3, 3.55, "same vocab size, vowel signs and viramas kept attached: about 2.9x more Indic text per token",
+    ax.text(-3.3, 3.55, "vowel signs and viramas kept attached: 2.9x (48k) and 2.7x (32k) more Indic text per token than GPT-style",
             color=MUTED, fontsize=10.5)
     fig.savefig(out, facecolor=GRAPHITE)
     plt.close(fig)
