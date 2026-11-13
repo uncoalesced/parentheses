@@ -59,7 +59,7 @@ pip install torch transformers
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 repo = "uncoalesced-org/parentheses-1.0-240M"
-tok = AutoTokenizer.from_pretrained(repo)
+tok = AutoTokenizer.from_pretrained(repo, trust_remote_code=True)
 model = AutoModelForCausalLM.from_pretrained(repo, trust_remote_code=True).eval()
 
 print(model.chat(tok, "Write a Python function that returns the factorial of n.", lang="eng"))

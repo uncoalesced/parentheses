@@ -6,7 +6,7 @@ Self-contained inference port of `models/model_slab_v4.py` and
 It needs only `torch` and `transformers`, so it loads with:
 
     from transformers import AutoModelForCausalLM, AutoTokenizer
-    tok = AutoTokenizer.from_pretrained("uncoalesced-org/parentheses-1.0-240M")
+    tok = AutoTokenizer.from_pretrained("uncoalesced-org/parentheses-1.0-240M", trust_remote_code=True)
     model = AutoModelForCausalLM.from_pretrained(
         "uncoalesced-org/parentheses-1.0-240M", trust_remote_code=True
     )

@@ -179,7 +179,7 @@ import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 repo = "uncoalesced-org/parentheses-1.0-240M"
-tok = AutoTokenizer.from_pretrained(repo)
+tok = AutoTokenizer.from_pretrained(repo, trust_remote_code=True)
 model = AutoModelForCausalLM.from_pretrained(repo, trust_remote_code=True)
 model = model.to("cuda" if torch.cuda.is_available() else "cpu").eval()
 

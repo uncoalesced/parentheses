@@ -40,7 +40,7 @@ EOT = 0
 
 @pytest.fixture(scope="module")
 def hf():
-    tok = transformers.AutoTokenizer.from_pretrained(str(STAGE))
+    tok = transformers.AutoTokenizer.from_pretrained(str(STAGE), trust_remote_code=True)
     model = transformers.AutoModelForCausalLM.from_pretrained(str(STAGE), trust_remote_code=True).eval()
     return model, tok
 
@@ -59,6 +59,19 @@ def _ids(length: int, seed: int = 0):
     ids = torch.randint(256, 32768, (1, length), generator=g)
     ids[0, length // 3] = EOT  # a document boundary inside the sequence
     return ids
+
+
+def test_documented_loading_is_warning_free(caplog):
+    """The loading lines shown in the README and model card must not log a model-type warning.
+
+    Without trust_remote_code, AutoTokenizer cannot resolve the custom config class and
+    falls back to a bare base config, which logs "instantiate a model of type ``".
+    """
+    import logging
+    with caplog.at_level(logging.WARNING):
+        transformers.AutoTokenizer.from_pretrained(str(STAGE), trust_remote_code=True)
+        transformers.AutoConfig.from_pretrained(str(STAGE), trust_remote_code=True)
+    assert not [r for r in caplog.records if "instantiate a model of type" in r.getMessage()]
 
 
 def test_class_and_param_count(hf):
@@ -163,7 +176,7 @@ def test_loads_outside_the_repository():
         "import importlib.util\n"
         "assert importlib.util.find_spec('models') is None, 'repo source must not be importable'\n"
         f"p = r'{STAGE}'\n"
-        "tok = AutoTokenizer.from_pretrained(p)\n"
+        "tok = AutoTokenizer.from_pretrained(p, trust_remote_code=True)\n"
         "m = AutoModelForCausalLM.from_pretrained(p, trust_remote_code=True).eval()\n"
         "print('PARAMS', sum(x.numel() for x in m.parameters()))\n"
         "print('OUT', m.chat(tok, 'Write a Python function that returns the factorial of n.', temperature=0.0, max_new_tokens=40))\n"
