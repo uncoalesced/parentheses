@@ -138,21 +138,44 @@ The command should print `True`. If it prints `False`, PyTorch cannot see the GP
 
 ### On a Mac with Apple Silicon (M1, M2, M3, M4)
 
-Apple Silicon has no NVIDIA GPU, so `--device cuda` does not apply. The chat program can use the Apple GPU through PyTorch's Metal backend, called `mps`. Use a recent macOS and the standard PyTorch from `pip install -r requirements.txt`. Do not use `requirements-lock.txt`, because it is a Windows CUDA freeze.
+Status: untested on real Mac hardware. The inference code is plain PyTorch and should run on the Apple GPU through PyTorch's Metal backend, called `mps`, but nobody has confirmed that on a real Mac yet. CPU on a Mac is the safe fallback.
+
+Apple Silicon has no NVIDIA GPU, so `--device cuda` does not apply. Use Python 3.11 in a virtual environment, and install the inference-only requirements. Do not use `requirements.txt` (it pulls training-only packages such as bitsandbytes) or `requirements-lock.txt` (a Windows CUDA freeze with a Windows-only path in it).
+
+```bash
+python3.11 -m venv .venv
+source .venv/bin/activate
+pip install --upgrade pip
+pip install -r requirements-inference.txt
+```
+
+If `python3.11` is missing, install it with `brew install python@3.11` or from python.org. The default PyPI PyTorch wheel for macOS already includes the Metal backend.
 
 Check that the Metal backend is visible.
 
 ```bash
-python -c "import torch; print(torch.backends.mps.is_available())"
+python -c "import torch; print(torch.__version__, torch.backends.mps.is_available())"
 ```
 
-If it prints `True`, run the chat with `--device mps`, or `--device auto`, which picks CUDA first, then MPS, then CPU.
+Some PyTorch operations are not implemented on Metal. Set this before running anything, so PyTorch quietly runs those few on the CPU instead of stopping with an error.
 
 ```bash
-python scripts/chat.py --checkpoint release/parentheses-1.0-240M-tanzanite --device mps
+export PYTORCH_ENABLE_MPS_FALLBACK=1
 ```
 
-If it prints `False`, you are on an Intel Mac or an older PyTorch. Use `--device cpu`. The Mac build runs in float32. Speed on MPS has not been measured yet for this model, so compare it against `--device cpu` on your own machine.
+After you download the weights in step 3, run the Mac self-test. It loads the model, generates 16 tokens on the CPU and on `mps`, checks that both agree, prints tokens per second, and ends with a `PASS` or `FAIL` line and a report block you can send back.
+
+```bash
+python scripts/mac_selftest.py
+```
+
+Then chat with `--device auto`, which picks CUDA first, then MPS, then CPU.
+
+```bash
+python scripts/chat.py --checkpoint release/parentheses-1.0-240M-tanzanite --device auto
+```
+
+If the check printed `False`, you are on an Intel Mac or an older PyTorch. Use `--device cpu`. Use the float32 `model.safetensors`; the bf16 export is untested on every device. Speed on MPS has not been measured for this model, so compare it against `--device cpu` with the self-test.
 
 ## 3. Download the weights
 

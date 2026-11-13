@@ -77,10 +77,12 @@ git clone https://github.com/uncoalesced/parentheses.git
 cd parentheses
 pip install -r requirements.txt
 hf download uncoalesced-org/parentheses-1.0-240M config.json model.safetensors tokenizer.json tokenizer_config.json --local-dir release/parentheses-1.0-240M-tanzanite
-python scripts/chat.py --checkpoint release/parentheses-1.0-240M-tanzanite --device cuda
+python scripts/chat.py --checkpoint release/parentheses-1.0-240M-tanzanite --device auto
 ```
 
-Type a prompt and press Enter; an empty line exits. Use `--device cpu` without a GPU, or `--device mps` on Apple Silicon (untested). Add `--lang kan` to force Kannada; by default the script is detected per prompt. On Windows with an RTX 50-series card, install a PyTorch build for CUDA 12.8 or newer ([setup guide](docs/SETUP.md#2-make-pytorch-see-your-gpu)).
+> **On an Apple Silicon Mac (M1–M4)?** Follow [docs/APPLE_SILICON.md](docs/APPLE_SILICON.md). It covers a Mac-specific install and a one-command self-test.
+
+Type a prompt and press Enter; an empty line exits. `--device auto` picks CUDA, then Apple Silicon `mps`, then CPU. Use `--device cpu` to force CPU. Add `--lang kan` to force Kannada; by default the script is detected per prompt. On Windows with an RTX 50-series card, install a PyTorch build for CUDA 12.8 or newer ([setup guide](docs/SETUP.md#2-make-pytorch-see-your-gpu)).
 
 ### On an NPU (DirectML)
 

@@ -1,0 +1,25 @@
+# Inference-only dependencies for Parentheses 1.0-240M (Tanzanite).
+# Works on macOS (Apple Silicon, MPS backend), Linux and Windows.
+#
+#   python3.11 -m venv .venv
+#   source .venv/bin/activate          # Windows: .venv\Scripts\activate
+#   pip install -r requirements-inference.txt
+#
+# This covers scripts/chat.py, scripts/mac_selftest.py and
+# release/parentheses-1.0-240M-tanzanite/load_example.py.
+# Training needs requirements.txt instead. Do NOT use requirements-lock.txt
+# on a Mac: it is a Windows/CUDA freeze.
+#
+# On macOS, the default PyPI torch wheel already includes the MPS (Metal) backend.
+# On Windows/Linux, this installs the CPU build of torch unless you install a
+# CUDA build first (see docs/SETUP.md).
+
+torch>=2.2
+numpy
+tokenizers
+safetensors
+tqdm
+huggingface_hub   # provides the `hf download` command used to fetch the weights
+
+# Optional: only for the Hugging Face AutoModel route (trust_remote_code=True).
+# transformers
