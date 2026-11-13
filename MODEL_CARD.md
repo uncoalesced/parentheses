@@ -249,6 +249,6 @@ print(tokenizer.decode(output_tokens))
 
 ## 8. License & Provenance
 
-- **Architecture & Code:** [MIT License](LICENSE)
-- **Model Weights:** [Apache 2.0](LICENSE-MODEL)
+- **Architecture & Code:** [MIT License](https://github.com/uncoalesced/parentheses/blob/main/LICENSE)
+- **Model Weights:** [Apache 2.0](https://github.com/uncoalesced/parentheses/blob/main/LICENSE-MODEL)
 - **Engineering:** uncoalesced
