@@ -8,7 +8,7 @@ parentheses is a small language model developed from scratch on one 8 GB laptop 
 |---|---|---|
 | 0.9-130M release | Released | Preview weights under CC BY-NC 4.0 (non-commercial), code under MIT. Available on GitHub and Hugging Face. |
 | 1.0-240M Session 1 to 4 | Done | Wide-and-shallow 16-layer scaling, width 1024, 16 heads, rank 1024. |
-| 1.0-240M Session 5 to 6 | Done | Textbook grounding, learning-rate anneal, 393M+ tokens seen. |
+| 1.0-240M Session 5 to 6 | Done | Textbook grounding, learning-rate anneal, 786M tokens seen across Sessions 1 to 6. |
 | 1.0-240M SFT v5 & Epistemic Tuning | Done | Calibrated abstention reasoning traces, eliminating ungrounded hallucinations. |
 | 1.0-240M Session 10 Nudge & SWA | Done | Release checkpoint `sft-nudge-winner.pt` (step 14,173). |
 | **parentheses-1.0-240M-tanzanite** | **Released** | **Released November 2026. Weights Apache 2.0, code MIT. DirectML NPU ONNX export, 9 external benchmarks evaluated. Available at https://huggingface.co/uncoalesced-org/parentheses-1.0-240M.** |
