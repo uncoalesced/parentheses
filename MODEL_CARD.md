@@ -28,6 +28,7 @@ tags:
 - hallucination-detection
 model_name: parentheses-1.0-240M (Project Tanzanite)
 pipeline_tag: text-generation
+library_name: transformers
 inference: false
 ---
 
@@ -50,8 +51,8 @@ parentheses-1.0-240M is a compact, recurrent State Space Model (SSM) engineered 
 | **Context Length (`block_size`)** | **4,096 tokens** | Document-reset aware; verified stable across 16,384 tokens recurrent generation. |
 | **Vocabulary Size (`vocab_size`)** | **32,768** | Byte-Level BPE (`v3_32k`) with akshara-preserving regex and 256 special token slots. |
 | **Memory Footprint (Inference)** | **4.85 MB (fp32)** | Exactly 1,212,416 floats. Does **not** grow with sequence length ($\mathcal{O}(1)$). |
-| **Target Edge Platform** | Sub-5W operation | DirectML / AMD Ryzen AI NPU static-shape ONNX graph (< 1.15 GB). |
-| **Code & Weights License** | **Apache 2.0** | Permissive commercial and research use. |
+| **Target Edge Platform** | DirectML / AMD Ryzen AI NPU | Static-shape ONNX recurrent step graph (< 1.15 GB). Power draw has not been measured. |
+| **License** | **Weights: Apache 2.0. Code: MIT** | Permissive commercial and research use. |
 
 ---
 
@@ -168,6 +169,36 @@ The release package includes a bitwise-parity verified, static-shape ONNX recurr
 - **`model.safetensors` (967.2 MB, float32) on Hugging Face Hub:** Canonical certified golden reference weights. All benchmark scores and verification gates in this card were evaluated on this checkpoint.
 - **`model-bf16.safetensors` (483.6 MB, bfloat16) on GitHub Releases:** Lightweight half-precision export available as an optional asset on the [GitHub Release](https://github.com/uncoalesced/parentheses/releases/tag/v1.0.0-tanzanite) for lower download sizes and edge devices with constrained storage. *Note: the bf16 checkpoint is an optional reference export; all official benchmarks were measured in float32.*
 - **`model.pt` (1,014.2 MB, PyTorch native) on GitHub Releases:** Raw PyTorch state dictionary export provided for native PyTorch workflows.
+
+### Loading with transformers (AutoModel)
+
+The Hub repository ships `modeling_parentheses.py` and `configuration_parentheses.py`, so the model loads through `AutoModelForCausalLM` with `trust_remote_code=True`. Only `torch` and `transformers` are needed.
+
+```python
+import torch
+from transformers import AutoModelForCausalLM, AutoTokenizer
+
+repo = "uncoalesced-org/parentheses-1.0-240M"
+tok = AutoTokenizer.from_pretrained(repo)
+model = AutoModelForCausalLM.from_pretrained(repo, trust_remote_code=True)
+model = model.to("cuda" if torch.cuda.is_available() else "cpu").eval()
+
+# Recurrent decoding with a fixed-size state (the fast path)
+print(model.chat(tok, "Write a Python function that returns the factorial of n.", lang="eng"))
+print(model.chat(tok, "ಮಳೆಗಾಲದಲ್ಲಿ ನೀರಿನ ಸಂರಕ್ಷಣೆ ಏಕೆ ಮುಖ್ಯ?", lang="kan"))
+
+# Standard generate() also works. It has no cache, so it re-reads the sequence at each new token.
+ids = model.build_prompt(tok, "Why is the sky blue?", lang="eng").to(model.device)
+out = model.generate(ids, max_new_tokens=48, do_sample=False)
+print(tok.decode(out[0, ids.shape[1]:], skip_special_tokens=True))
+```
+
+Usage notes:
+- Prompt format is `<|user|><lang> question <|assistant|>` with no system prompt. `build_prompt()` and `chat()` assemble it. `<lang>` is one of `<kan>`, `<tam>`, `<tel>`, `<mal>`, `<eng>`, `<tcy>`, `<kff>`, `<kxv>`, `<nit>`.
+- `chat()` and `stream()` default to temperature 0.2 with an 8-gram loop block and no repetition penalty. A repetition penalty stops the model from reusing variable names in code.
+- The `<think>` reasoning format is experimental on this checkpoint and is not the tested path. Use the plain chat format above.
+
+### Loading from the source repository
 
 ```python
 import json
