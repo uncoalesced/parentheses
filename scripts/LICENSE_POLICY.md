@@ -1,6 +1,6 @@
 # LICENSE & DATA GOVERNANCE POLICY
 
-**Effective 2026-11-02 (Joel).** Everything Parentheses (`uncoalesced`) releases — code, tokenizers, weights — is released under **one licence: Apache License 2.0**.
+**Effective 2026-11-02.** parentheses (`uncoalesced`) model weights and tokenizers are released under the **Apache License 2.0** ([LICENSE-MODEL](../LICENSE-MODEL)). Source code is released under the **MIT License** ([LICENSE](../LICENSE)). Training data must allow both.
 
 ## The rule
 **A dataset may be used for training if its licence permits commercial use.** No per-source bookkeeping is required: at release, the model card carries one list of the training datasets, written once.
@@ -19,9 +19,9 @@
 - Llama-generated data (Llama's licence requires a "Llama" name prefix on distilled models, so Llama is not used as a teacher)
 
 ## 3. Enforcement
-1. Builders (`scripts/*.py`) check each source against Sections 1–2 and write its licence into `manifest.json`.
+1. Builders (`scripts/*.py`) check each source against Sections 1 and 2 and write its licence into `manifest.json`.
 2. The manifest tag `"license_compliance": "Apache-2.0-Permissive-Only"` is the string `scripts/license_guard.py` checks; it means "every source passes this policy".
-3. If a licence is unclear, leave the source out and tell Joel.
+3. If a licence is unclear, leave the source out and flag it to the maintainers.
 
 ---
 *Engineered by uncoalesced*

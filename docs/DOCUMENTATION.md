@@ -52,7 +52,7 @@ During the transition from `parentheses-0.9` (`slab_v3`, 148.38M) to `parenthese
 | [`models/model_slab_v4.py`](../models/model_slab_v4.py) | Canonical `SlabV4Config`, `SlabV4Attention`, `SlabV4Block`, `SlabV4Model`, `SlabV4SFTDataset`, `get_container_batch` | `1.0` (`slab_v4`) |
 | [`models/slab_v4_boundary.py`](../models/slab_v4_boundary.py) | `compute_doc_ids`, `token_shift_v4`, `causal_conv1d_v4`, `ssd_chunk_scan_v4`, `ssd_recurrent_step_v4`, delta-rule variants | `1.0` (`slab_v4`) |
 | [`model_slab_v4.py`](../model_slab_v4.py), [`model/model_slab_v4.py`](../model/model_slab_v4.py) | Re-export shims pointing at `models/model_slab_v4.py` | `1.0` (`slab_v4`) |
-| [`release/parentheses-1.0-240M-tanzanite/`](../release/parentheses-1.0-240M-tanzanite/) | Staged weights, ONNX NPU graph, `tokenizer.json`, `load_example.py`, `MODEL_CARD.md`, `BENCHMARK_SPEC.md`, `MANIFEST_sha256.tsv` | `1.0` (`slab_v4`) |
+| `release/parentheses-1.0-240M-tanzanite/` (local, not tracked) | Staged weights, ONNX NPU graph, `tokenizer.json`, `load_example.py`, `MODEL_CARD.md`, `BENCHMARK_SPEC.md`, `MANIFEST_sha256.tsv` | `1.0` (`slab_v4`) |
 | [`train.py`](../train.py) | Unified training loop dispatching to `SlabV4Model` for `--preset parentheses-1.0-240M` or `Parentheses` for earlier presets | Both |
 | [`scripts/export_npu_240m_v4.py`](../scripts/export_npu_240m_v4.py) | `SlabV4NPUStepWrapper` export to static-shape ONNX + CPU and DirectML parity checks | `1.0` (`slab_v4`) |
 | [`scripts/grow_model_slab_v4.py`](../scripts/grow_model_slab_v4.py) | Net2WiderNet checkpoint expansion from `130M-v3` to `240M-v4` | `1.0` (`slab_v4`) |
@@ -63,7 +63,7 @@ During the transition from `parentheses-0.9` (`slab_v3`, 148.38M) to `parenthese
 | [`scripts/chat.py`](../scripts/chat.py), [`features/`](../features/), [`scripts/eval_freethink.py`](../scripts/eval_freethink.py) | Interactive CLI, FreeThink reasoning/RAG/memory, and visual prefill supporting both `SlabV4Model` (`1.0-240M`) and `Parentheses` (`0.9`) | Both |
 | [`app.py`](../app.py) | HTTP SSE Web Studio (`GenerationEngine` on `Parentheses`; `0.9-120M` default, `SlabV4Model` port pending) | `0.9` runtime |
 
-> **Runtime scope note:** [`scripts/chat.py`](../scripts/chat.py), [`scripts/eval_freethink.py`](../scripts/eval_freethink.py), and the [`features/`](../features/) runtime (`FreeThinkSession`, `ModularFreeThinkSession`, `ConversationMemory`, and `SSMVisualProjector`) load `SlabV4Model` (`slab_v4`) natively alongside `0.9` checkpoints through shared O(1) recurrent decoding in [`model/sampling.py`](../model/sampling.py). By contrast, [`app.py`](../app.py) (`GenerationEngine`) still instantiates `model.backbone.Parentheses` and defaults to `0.9-120M` (see [Section 18](#18-unified-decoding-pipeline-freethink-and-multimodal-grounding) and [Section 19 item 3](#19-known-architectural-and-operational-limits)). For standalone Hub usage or static ONNX export outside the repo runtime, use [`release/parentheses-1.0-240M-tanzanite/load_example.py`](../release/parentheses-1.0-240M-tanzanite/load_example.py).
+> **Runtime scope note:** [`scripts/chat.py`](../scripts/chat.py), [`scripts/eval_freethink.py`](../scripts/eval_freethink.py), and the [`features/`](../features/) runtime (`FreeThinkSession`, `ModularFreeThinkSession`, `ConversationMemory`, and `SSMVisualProjector`) load `SlabV4Model` (`slab_v4`) natively alongside `0.9` checkpoints through shared O(1) recurrent decoding in [`model/sampling.py`](../model/sampling.py). By contrast, [`app.py`](../app.py) (`GenerationEngine`) still instantiates `model.backbone.Parentheses` and defaults to `0.9-120M` (see [Section 18](#18-unified-decoding-pipeline-freethink-and-multimodal-grounding) and [Section 19 item 3](#19-known-architectural-and-operational-limits)). For standalone Hub usage or static ONNX export outside the repo runtime, use `release/parentheses-1.0-240M-tanzanite/load_example.py` (written by [`scripts/export_release_240m.py`](../scripts/export_release_240m.py)).
 
 ---
 
@@ -82,7 +82,7 @@ The `parentheses-1.0-240M-tanzanite` weights are split intentionally between Hug
 | `npu/onnx_metadata.json`, `npu/parity_report.json` | 714 / 843 | Exact state shapes and CPU/DML parity errors | Bundle |
 | `load_example.py`, `MODEL_CARD.md`, `BENCHMARK_SPEC.md`, `README.md` | Verified | Standalone loader, benchmark tables, and release documentation | Both |
 
-Every file in the release bundle carries a verified SHA-256 digest in [`release/parentheses-1.0-240M-tanzanite/MANIFEST_sha256.tsv`](../release/parentheses-1.0-240M-tanzanite/MANIFEST_sha256.tsv). Key weight digests:
+Every file in the release bundle carries a verified SHA-256 digest in `MANIFEST_sha256.tsv` (attached to the [GitHub release](https://github.com/uncoalesced/parentheses/releases/tag/v1.0.0-tanzanite)). Key weight digests:
 
 - `model.safetensors`: `bff69c7945533edaf379e69ffc50e47ed3b455c83cafb312defbd1b4c2208a6e`
 - `model-bf16.safetensors`: `f6117f84bcc995a562326735d1f0b133f2f175196b6c8b3948df7c21171de852`
@@ -208,7 +208,7 @@ Total recurrent buffer traffic per step is 1,212,416 floats (`4,849,664` bytes, 
 
 ### Verified numerical parity
 
-Measured against native PyTorch `.step()` across sequential test decoding ([`release/parentheses-1.0-240M-tanzanite/npu/parity_report.json`](../release/parentheses-1.0-240M-tanzanite/npu/parity_report.json)):
+Measured against native PyTorch `.step()` across sequential test decoding (`parity_report.json`, attached to the [GitHub release](https://github.com/uncoalesced/parentheses/releases/tag/v1.0.0-tanzanite)):
 
 | Execution Provider | `logits_max_err` | `s_state_max_err` | `conv_state_max_err` | `shift_state_max_err` | Status |
 |---|---:|---:|---:|---:|---|
@@ -221,7 +221,7 @@ Measured against native PyTorch `.step()` across sequential test decoding ([`rel
 
 ### 5.1 Function-preserving Net2WiderNet growth (`130M-v3` -> `240M-v4`)
 
-Rather than spending compute re-learning byte patterns and Indic morphology from random weights, we grew `parentheses-1.0-240M` from our certified `0.9-130M-v3` checkpoint (`step_22888_swa3_base.pt`, 148.38M parameters, 16 layers, $d = 768$, 12 heads, `SwiGLU` width 2048) via [`scripts/grow_model_slab_v4.py`](../scripts/grow_model_slab_v4.py):
+Rather than spending compute re-learning byte patterns and Indic morphology from random weights, we grew `parentheses-1.0-240M` from our `0.9-130M-v3` checkpoint (`step_22888_swa3_base.pt`, 148.38M parameters, 16 layers, $d = 768$, 12 heads, `SwiGLU` width 2048) via [`scripts/grow_model_slab_v4.py`](../scripts/grow_model_slab_v4.py):
 
 - **Depth and head rank stay locked:** 16 layers and $d_h = 64$ remain invariant ($12 \times 64 = 768 \to 16 \times 64 = 1024$).
 - **Zero-residual output expansion:** new residual-writing columns/slices in `tok_emb.weight[:, 768:1024]`, expanded slices of `attn.proj.weight`, and expanded slices of `mlp.w2.weight` are initialized to exact zero so the step-0 network begins with the `130M` output distribution preserved before new capacity opens up.
@@ -287,7 +287,7 @@ To eliminate mid-document truncation and runaway `<think>` traces observed durin
 
 ## 6. Standardized benchmarks and internal verification
 
-All published numbers below were measured on the canonical float32 checkpoint (`release/parentheses-1.0-240M-tanzanite/model.safetensors`); full tables also live in [MODEL_CARD.md](../MODEL_CARD.md) and [`BENCHMARK_SPEC.md`](../release/parentheses-1.0-240M-tanzanite/BENCHMARK_SPEC.md).
+All published numbers below were measured on the canonical float32 checkpoint (`release/parentheses-1.0-240M-tanzanite/model.safetensors`); full tables also live in [MODEL_CARD.md](../MODEL_CARD.md) and [`BENCHMARK_SPEC.md`](BENCHMARK_SPEC.md).
 
 ### 6.1 External Hugging Face benchmark suite (9 benchmarks, 4 runs each)
 
@@ -813,7 +813,7 @@ Different entry points trade minimal footprint against full sampling controls:
   4. **Softmax -> `min_p` (`0.06` for `0.9`, `0.1` for `1.0-240M`):** zeroes probabilities below $\text{min\_p} \cdot \pi_{\max}$ and renormalizes.
   5. **Multinomial sampling + UTF-8 incremental holdback:** decodes through a pending buffer until trailing `\ufffd` fragments resolve into full UTF-8 Indic characters.
 - **Standalone probe harness ([`scripts/eval_60p_adversarial_suite.py`](../scripts/eval_60p_adversarial_suite.py)):** `stream_slab_v4()` uses `top_k = 50`, `min_p = 0.05`, `repetition_penalty = 1.15`, and a greedy fast path.
-- **Minimal release script ([`release/parentheses-1.0-240M-tanzanite/load_example.py`](../release/parentheses-1.0-240M-tanzanite/load_example.py)):** both the PyTorch loop and the DirectML ONNX Runtime loop run deterministic greedy `argmax` on `step()` outputs until `<|endoftext|>` (`0`) or `<|user|>` (`13`).
+- **Minimal release script (`release/parentheses-1.0-240M-tanzanite/load_example.py` (written by [`scripts/export_release_240m.py`](../scripts/export_release_240m.py))):** both the PyTorch loop and the DirectML ONNX Runtime loop run deterministic greedy `argmax` on `step()` outputs until `<|endoftext|>` (`0`) or `<|user|>` (`13`).
 
 <p align="center">
   <img src="figures/sampling-pipeline.svg" alt="Unified five-stage sampling pipeline used by SlabV4Model and Parentheses" width="820">
@@ -858,7 +858,7 @@ Engineers adopting `parentheses-1.0-240M` should build around six concrete bound
 
 1. **Finite associative recall capacity:** Every head compresses history into one $64 \times 64$ matrix (`4,096` floats per head, `4.85 MB` total across the whole network). Unlike a Transformer KV cache, which stores verbatim tokens up to `O(T)` memory, an associative matrix superposes older keys and forgets along learned $\alpha_t$ decay horizons. Exact needle-in-a-haystack copy of an arbitrary multi-digit string thousands of tokens back requires external retrieval (such as `ModularFreeThinkSession`), not pure parametric state.
 2. **Alignment requirement in `forward()`:** Parallel training and chunked evaluation (`ssd_chunk_scan_v4`) strictly assert `T % 64 == 0`. Sequences must either be packed into 4,096-token bins or padded up to a multiple of 64; unaligned sequence inference must use `.step()`.
-3. **Web Studio `app.py` runtime boundary:** While [`scripts/chat.py`](../scripts/chat.py), [`scripts/eval_freethink.py`](../scripts/eval_freethink.py), and all [`features/`](../features/) modules now support `SlabV4Model` and `release/parentheses-1.0-240M-tanzanite`, the local HTTP server [`app.py`](../app.py) (`GenerationEngine` and `ParenthesesHTTPHandler`) still targets `0.9-120M` (`Parentheses(cfg)`). Use `scripts/chat.py`, `features/modular_free_think.py`, or [`release/parentheses-1.0-240M-tanzanite/load_example.py`](../release/parentheses-1.0-240M-tanzanite/load_example.py) for `1.0-240M` deployments until `app.py` is ported.
+3. **Web Studio `app.py` runtime boundary:** While [`scripts/chat.py`](../scripts/chat.py), [`scripts/eval_freethink.py`](../scripts/eval_freethink.py), and all [`features/`](../features/) modules now support `SlabV4Model` and `release/parentheses-1.0-240M-tanzanite`, the local HTTP server [`app.py`](../app.py) (`GenerationEngine` and `ParenthesesHTTPHandler`) still targets `0.9-120M` (`Parentheses(cfg)`). Use `scripts/chat.py`, `features/modular_free_think.py`, or `release/parentheses-1.0-240M-tanzanite/load_example.py` (written by [`scripts/export_release_240m.py`](../scripts/export_release_240m.py)) for `1.0-240M` deployments until `app.py` is ported.
 4. **ONNX step graph boundary handling:** `SlabV4NPUStepWrapper` bakes `is_boundary=False` into `parentheses_240m_v4_step.onnx`. Reset context between conversations by zeroing the three host state arrays.
 5. **Multi-step arithmetic without tools:** Pure neural GSM8K averages `5.83%` (`10.00%` best). Keep deterministic expression evaluators (like the AST calculator in `scripts/chat.py`) or Python execution tools in front of math-critical workflows.
 6. **Low-resource Dravidian maturity:** While `kan`, `tam`, `tel`, `mal`, and `eng` pass 100% script purity (`80/80`) and 96.25% format conformance (`77/80`), `tcy`, `kff`, `kxv`, and `nit` remain marked experimental due to compact public validation corpora and scarce commercial-license training text.
@@ -895,7 +895,7 @@ Engineers adopting `parentheses-1.0-240M` should build around six concrete bound
 ### 20.3 Core source map
 
 - Core architecture: [`models/model_slab_v4.py`](../models/model_slab_v4.py), [`models/slab_v4_boundary.py`](../models/slab_v4_boundary.py), [`model/sampling.py`](../model/sampling.py)
-- Release loader & ONNX step graph: [`release/parentheses-1.0-240M-tanzanite/load_example.py`](../release/parentheses-1.0-240M-tanzanite/load_example.py), [`scripts/export_npu_240m_v4.py`](../scripts/export_npu_240m_v4.py), [`scripts/export_release_240m.py`](../scripts/export_release_240m.py)
+- Release loader & ONNX step graph: `release/parentheses-1.0-240M-tanzanite/load_example.py` (written by [`scripts/export_release_240m.py`](../scripts/export_release_240m.py)), [`scripts/export_npu_240m_v4.py`](../scripts/export_npu_240m_v4.py), [`scripts/export_release_240m.py`](../scripts/export_release_240m.py)
 - Growth, training, SFT packing, and merging: [`scripts/grow_model_slab_v4.py`](../scripts/grow_model_slab_v4.py), [`train.py`](../train.py), [`scripts/pack_sft_4096_v4.py`](../scripts/pack_sft_4096_v4.py), [`scripts/generate_sft_abstention_v4.py`](../scripts/generate_sft_abstention_v4.py), [`scripts/merge_swa_checkpoints.py`](../scripts/merge_swa_checkpoints.py), [`scripts/overnight_driver.py`](../scripts/overnight_driver.py), [`scripts/telemetry_watchdog_240m.py`](../scripts/telemetry_watchdog_240m.py)
 - Evaluation: [`scripts/benchmark_suite_8.py`](../scripts/benchmark_suite_8.py), [`scripts/bpb_slab_v4.py`](../scripts/bpb_slab_v4.py), [`scripts/eval_16k_long_context_recurrent.py`](../scripts/eval_16k_long_context_recurrent.py), [`scripts/eval_freethink.py`](../scripts/eval_freethink.py), [`scripts/run_s10_master_gates.py`](../scripts/run_s10_master_gates.py)
 - Unified CLI, FreeThink, and multimodal runtime: [`scripts/chat.py`](../scripts/chat.py), [`features/free_think.py`](../features/free_think.py), [`features/modular_free_think.py`](../features/modular_free_think.py), [`features/conversation_memory.py`](../features/conversation_memory.py), [`features/multimodal.py`](../features/multimodal.py)

@@ -1,6 +1,6 @@
 # How parentheses-1.0 works
 
-parentheses 1.0 is a language model designed and trained from scratch on one laptop in Bengaluru. The golden release weights are `parentheses-1.0-240M-tanzanite` (Project Tanzanite). It has **253.54 million parameters** (253,544,176 unique parameters) and belongs to the family of selective linear attention models, close to Mamba-2 and RWKV. It is not a transformer. It has no softmax attention over past tokens and no key-value cache. It was trained on a single NVIDIA GeForce RTX 5050 Laptop GPU with 8 GB of VRAM, on text in Kannada, Tamil, Telugu, Malayalam and English, with experimental support for Tulu, Koya, Kuvi and Kolami.
+parentheses 1.0 is a language model designed and trained from scratch on one laptop in Bengaluru. The released weights are `parentheses-1.0-240M-tanzanite` (Project Tanzanite). It has **253.54 million parameters** (253,544,176 unique parameters) and belongs to the family of selective linear attention models, close to Mamba-2 and RWKV. It is not a transformer. It has no softmax attention over past tokens and no key-value cache. It was trained on a single NVIDIA GeForce RTX 5050 Laptop GPU with 8 GB of VRAM, on text in Kannada, Tamil, Telugu, Malayalam and English, with experimental support for Tulu, Koya, Kuvi and Kolami.
 
 This guide explains the architecture with words and pictures first, for a reader who knows what a transformer is but has not met a recurrent state-space model. Equations appear only where they help. Each section links to the matching part of [DOCUMENTATION.md](DOCUMENTATION.md), which has the full derivations and the source file for every formula.
 
@@ -25,7 +25,7 @@ This guide explains the architecture with words and pictures first, for a reader
 
 | Property | Value |
 | :--- | :--- |
-| Name | `parentheses-1.0-240M-tanzanite` (Project Tanzanite, Certified Golden) |
+| Name | `parentheses-1.0-240M-tanzanite` (Project Tanzanite) |
 | Parameters | 253,544,176 unique parameters |
 | Family | Selective linear attention, state space duality (`slab_v4`) |
 | Layers | 16, each with a token-mixing branch and a SwiGLU branch |
@@ -42,7 +42,7 @@ This guide explains the architecture with words and pictures first, for a reader
 | Weights licence | Apache 2.0 |
 
 <p align="center">
-  <img src="figures/block.svg" alt="One Parentheses block: residual spine, token mixing with matrix state, and SwiGLU" width="760">
+  <img src="figures/block.svg" alt="One parentheses block: residual spine, token mixing with matrix state, and SwiGLU" width="760">
 </p>
 
 The model is a stack of 16 blocks with the same shape and their own weights. A residual stream carries one vector per token from the bottom of the network to the top, and each block adds to it twice. The first addition is the token-mixing branch, which is the only place where information moves between positions. The second is the SwiGLU branch, which transforms each position on its own. Both branches read a normalised copy of the stream, so the stream itself is never normalised until the very end. The figure shows one block with the stream running up the side.
@@ -65,7 +65,7 @@ $$S_t = \alpha_t\, S_{t-1} + \beta_t\, k_t^\top v_t, \qquad y_t = q_t\, S_t$$
 
 It is easiest to think of the matrix as a notebook with a fixed number of pages. Each new entry is written over a faded copy of the older text. Reading means asking a question. The entries whose keys match the question speak loudest, and the entries that have faded speak quietly. The notebook never gets longer, and the model learns how fast each head's entries fade.
 
-A tiny example makes this concrete. Use two-number vectors and write the key $(1, 0)$ with the value $(3, 1)$. One step later the head decays by 0.5 and writes the key $(0, 1)$ with the value $(-2, 4)$. Querying with $(1, 0)$ now returns $(1.5, 0.5)$: the first value, halved once by the decay. Querying with $(0, 1)$ returns $(-2, 4)$ exactly. A query pointing between the two keys returns a blend that leans toward the key that matches it more closely. (We omit the 1/8 scaling the code applies to each write, to keep the numbers readable.) [The full worked example](DOCUMENTATION.md#61-a-small-worked-example) is in section 6.1 of the derivation.
+A tiny example makes this concrete. Use two-number vectors and write the key $(1, 0)$ with the value $(3, 1)$. One step later the head decays by 0.5 and writes the key $(0, 1)$ with the value $(-2, 4)$. Querying with $(1, 0)$ now returns $(1.5, 0.5)$: the first value, halved once by the decay. Querying with $(0, 1)$ returns $(-2, 4)$ exactly. A query pointing between the two keys returns a blend that leans toward the key that matches it more closely. (We omit the 1/8 scaling the code applies to each write, to keep the numbers readable.) [The full worked example](DOCUMENTATION.md#12-associative-memory-algebra-worked-trace-and-optional-delta-rule) is in section 6.1 of the derivation.
 
 Four properties follow from that arithmetic. The weights are signed, so a query pointing away from a stored key subtracts its value. The read is not normalised, so its size depends on how many writes match. Each head can hold at most about 64 mutually orthogonal keys before writes start to overlap. And the cost of memory does not depend on history.
 
@@ -105,7 +105,7 @@ The bias $b_\alpha$ starts at a different value in each head, so the 16 heads be
   <img src="figures/head-timescales.svg" alt="Initial half-life of each of the 16 heads on a log scale, with the 4096-token block size marked" width="760">
 </p>
 
-The full table of starting values, and the reason the softplus parametrisation makes learning the timescales even, is in [section 10](DOCUMENTATION.md#10-memory-timescales) and [section 7.5](DOCUMENTATION.md#75-why-the-softplus-parametrisation).
+The full table of starting values, and the reason the softplus parametrisation makes learning the timescales even, is in [section 15](DOCUMENTATION.md#15-head-decay-timescales-initialization-vs-trained-priors) and [section 11](DOCUMENTATION.md#11-slabv4attention-step-by-step-operations).
 
 ### Write strength
 
@@ -224,9 +224,9 @@ Each generation mode is a different prefix fed to the same network. Nothing in t
 | `base` | a language tag and the text | a plain continuation |
 | `freethink` | a language tag, the statement, and a short continuation cue in the target script | an open-ended continuation |
 
-FreeThink takes a statement rather than a question, and its cue ends without a trailing space, because a lone space token nudges the next token toward digits and punctuation. The cue is the only thing that differs from a normal prompt. [Section 15](DOCUMENTATION.md#15-operating-modes-and-prompt-grammar) has the exact token sequences.
+FreeThink takes a statement rather than a question, and its cue ends without a trailing space, because a lone space token nudges the next token toward digits and punctuation. The cue is the only thing that differs from a normal prompt. [Section 18](DOCUMENTATION.md#18-unified-decoding-pipeline-freethink-and-multimodal-grounding) has the exact token sequences.
 
-FreeThink can also consult a document store. The model's state cannot grow, so retrieval works by rewriting the prompt. Every 64 generated tokens, the loop builds a query from the prompt and the last 1,024 bytes of the thought. It scores the stored chunks with BM25, keeps up to three that match, and up to 2,048 bytes of them in total. It then restarts the state on a new context made of the retrieved chunks, the prompt and the tail, and decodes another 64 tokens. The state is rebuilt each time, and only the tail text carries over. The [retrieval details](DOCUMENTATION.md#16-freethink-and-retrieval) are in section 16.
+FreeThink can also consult a document store. The model's state cannot grow, so retrieval works by rewriting the prompt. Every 64 generated tokens, the loop builds a query from the prompt and the last 1,024 bytes of the thought. It scores the stored chunks with BM25, keeps up to three that match, and up to 2,048 bytes of them in total. It then restarts the state on a new context made of the retrieved chunks, the prompt and the tail, and decodes another 64 tokens. The state is rebuilt each time, and only the tail text carries over. The [retrieval details](DOCUMENTATION.md#18-unified-decoding-pipeline-freethink-and-multimodal-grounding) are in section 16.
 
 <p align="center">
   <img src="figures/freethink-rag-loop.svg" alt="Retrieval loop: a query from the running thought, BM25 top chunks, primed context, decode 64 tokens, then repeat" width="760">
@@ -234,49 +234,45 @@ FreeThink can also consult a document store. The model's state cannot grow, so r
 
 ## How it was trained
 
-Training ran in five steps. The first step was pretraining on an 808-million-token corpus. The run took 22,888 steps of 65,536 tokens each, about 1.5 billion token positions in all, which is a little under two passes over the corpus. Each step took about 10.5 seconds, so the whole run came to roughly 67 hours. The learning rate peaked at 3e-4 after a 500-step warmup. The corpus mix was 40% Dravidian core text, 25% STEM and reasoning, 20% conversational and open text, and 15% English anchors.
+All of it ran on the same RTX 5050 Laptop GPU with 8 GB of VRAM. The 240M model did not start from random weights. We grew it from our earlier 130M model with Net2WiderNet, a function-preserving widening: the wider network starts out computing what the narrower one computed, then keeps training. From there the run took 14,173 optimizer steps across ten sessions:
 
-The second step averaged the weights of the checkpoints at steps 22,000, 22,500 and 22,887 into a single checkpoint, which people call a soup. The third step was supervised fine-tuning on 131 million tokens over 2,000 steps. The corpus for that step was a separate STEM and open-text mix, and truncated documents were masked out of the loss so the model was not trained to predict the cut-off ends. About 20% of each batch was replayed pretraining text, to limit forgetting. The fourth step soup-averaged the checkpoints at steps 1,500, 1,750 and 1,999 of that fine-tune.
-
-The fifth step was preference tuning with DPO over 100 steps and 900 pairs. Of those pairs, 400 teach the model to say "I don't know" across five languages, 250 cover facts, 100 cover persona, 78 cover maths and 72 cover logic. On the whole set, the average preference margin came out at +0.3507 and the model preferred the chosen answer in 84.2% of pairs.
+| Steps | What happened |
+| :--- | :--- |
+| 1 to 6,000 | Warm-up after widening, then multilingual pretraining (393.2M tokens) |
+| 6,001 to 8,000 | STEM, maths and Python code. Training loss fell sharply, but held-out bits per byte got worse in all nine languages |
+| 8,001 to 10,000 | Textbook text mixed half-and-half with multilingual replay, which recovered the per-language scores |
+| 10,001 to 12,000 | Learning-rate anneal on cleaned, commercially licensed corpora |
+| 12,001 to 13,000 | Supervised fine-tuning on whole conversations packed into 4,096-token containers, with 25% Dravidian replay, then an average of the last three checkpoints |
+| DPO branch | Preference tuning on 805 pairs, which was then souped with the annealed model (0.6 and 0.4) |
+| 13,081 to 14,173 | Full fine-tune, a decontaminated Dravidian and abstention repair, and a final 50-step calibration of format and abstention |
 
 <p align="center">
-  <img src="figures/sft-loss-130m.svg" alt="Training loss over the supervised fine-tuning run" width="760">
+  <img src="figures/training-240m-sessions.svg" alt="Training loss across the first four 240M sessions" width="760">
 </p>
 
-The fine-tuning loss chart is the only training curve for this model. We did not log the per-step pretraining loss to a file, so there is no pretraining chart to show.
+The chart covers the first four sessions, which show the loss cliff when the code-heavy mix started at step 6,001. That cliff is the main lesson of the run: a falling training loss on easier, low-entropy text can hide a model that is getting worse at the languages it is for. The step-by-step table with every measured outcome is in [DOCUMENTATION.md, section 5](DOCUMENTATION.md#5-growth-training-sft-packing-and-checkpoint-averaging).
 
 ## How well it works
 
-<p align="center">
-  <img src="figures/bpb-by-language-130m.svg" alt="Held-out bits per byte for each language" width="760">
-</p>
+We tested the released weights on nine public benchmarks, four runs each (one greedy, three sampled), on small samples of a few dozen items per benchmark:
 
-The chart reports bits per byte on held-out text. The measure is the total information the model needs to predict the text, in bits, divided by the number of UTF-8 bytes in the text. Lower is better. Because it counts bytes instead of tokens, it can compare models with different tokenizers on the same text:
+| Benchmark | Best | Average | Peer baseline |
+| :--- | ---: | ---: | :--- |
+| TerminalBench (shell commands) | 78.33% | 74.16% | Harbor CLI baseline, 66.00% |
+| TruthfulQA | 91.00% | 90.00% | OpenAI Instruct-Ada, 84.50% |
+| MBPP (Python functions) | 90.67% | 81.92% | CodeGen-350M Mono, 82.20% |
+| HaluEval QA | 80.00% | 78.34% | InstructGPT, 68.20% |
+| MMLU (STEM subset) | 50.00% | 30.00% | SmolLM-135M, 30.20% |
+| HellaSwag | 33.33% | 24.16% | SmolLM-360M, 42.80% |
+| ARC-Challenge | 26.67% | 16.67% | SmolLM-360M, 34.20% |
+| Belebele (Dravidian) | 25.00% | 17.18% | BLOOM-560M, 31.25% |
+| GSM8K | 10.00% | 5.83% | MobileLLM-350M, 13.20% |
 
-$$\mathrm{BPB} = \frac{\sum_t -\ln p(y_t \mid y_{<t})}{\ln 2 \cdot N_{\text{bytes}}}$$
+The model does well where the training put its effort: shell commands, short Python functions, and saying "I don't know" to questions with a false premise. It trails models of similar size on commonsense continuation, science questions, Dravidian reading comprehension and grade-school maths. With samples this small, read the average column before the best one. Per-run numbers and citations are in [BENCHMARK_SPEC.md](BENCHMARK_SPEC.md).
 
-| Language | Bits per byte | Maturity |
-| :--- | ---: | :--- |
-| Malayalam | 0.44 | main |
-| Tamil | 0.45 | main |
-| Kannada | 0.50 | main |
-| Telugu | 0.56 | main |
-| Tulu | 1.09 | experimental |
-| English | 1.21 | main, and the most fluent in chat |
-| Kolami | 1.42 | experimental, 12 validation documents |
-| Koya | 1.55 | experimental, 12 validation documents |
-| Kuvi | 1.57 | experimental, 12 validation documents |
+On our own 300 held-out prompts, it stopped cleanly 95.67% of the time (287 of 300), leaked no internal tags, kept Dravidian answers in the right script in 80 of 80 checks, declined 94 of 100 trap questions, and refused none of 90 ordinary ones. The ONNX step graph matches PyTorch to within 5.5e-5 on the logits over 32 decoding steps.
 
-The four main Indic languages look lower than English for a reason that has little to do with quality. Bits per byte divides by bytes, and an Indic character takes three UTF-8 bytes where an English letter takes one. The first byte of every character in these scripts is the same, and the second mostly just names the script block, so a character spreads its information over three bytes while a Latin letter packs it into one. Dividing by more bytes gives a smaller number. The table is useful for comparing one language across models, not for ranking languages against each other. Koya, Kuvi and Kolami have just 12 validation documents each, so treat those figures as rough.
-
-Other measured results are narrower. The model produced script-correct output in 40 of 40 checks across the five main languages, and in 53 of 72 (73.6%) across all nine. It leaked no control tokens in 72 runs, and it declined none of 19 sensitive but legitimate technical prompts. A single-step ONNX export is 694 MB and runs on ONNX Runtime with DirectML, and it matches the PyTorch output to within about $2 \times 10^{-5}$.
-
-On a fresh set of 24 reasoning prompts, the model solved 5. An earlier score of 15 of 24 was inflated, because 18 of those prompts had been copied from training data. The honest score is the low one.
-
-The model hallucinates with confidence. Asked about a Martian colony, it invented one "founded in 1842." Asked for the capital of Karnataka, it sometimes answers Bengaluru and sometimes produces nonsense, and one answer read "Bengaluru is a city in the United States." A 240M model will produce fluent, specific, wrong answers, and the fluency makes them easy to believe.
-
-The reasoning tag misbehaves too. The model opened a `<think>` span in 36 of 72 runs and closed it on its own in only 4 of those 36. Kannada conversation and multi-step arithmetic degrade, and a Kannada greeting such as "ನಿನ್ನ ಹೆಸರು ಏನು?" is often echoed back or answered in English. Simple arithmetic such as "What is 17 x 6?" is answered by a built-in exact calculator in the chat script, not by the model.
+Hands-on use matches those numbers. Short Python functions such as factorial, palindrome and Fibonacci come out correct. Kannada, Tamil, Telugu and Malayalam answers stay in script and on topic, but they are shallow and sometimes repeat a line. English factual answers are weak: a 253M model produces fluent, specific, wrong answers, and the fluency makes them easy to believe. The `<think>` format is experimental on this checkpoint and returns a templated restatement of the question rather than useful reasoning, so the chat format is the one to use. Simple arithmetic such as "What is 17 x 6?" is answered by an exact calculator in the chat script, not by the model.
 
 ## Limits that follow from the design
 
@@ -298,6 +294,6 @@ A small model knows little. At 253.54M parameters, with most of them in feed-for
 
 ## Further reading
 
-The full derivations, with every formula traced to a file and function, are in [DOCUMENTATION.md](DOCUMENTATION.md). The model code is in [model/selective_linear_attention.py](../model/selective_linear_attention.py) and [model/backbone.py](../model/backbone.py), and the presets are in [model/config.py](../model/config.py). The [project README](../README.md) describes the repository, and the [model card](../MODEL_CARD.md) covers the release. [SETUP.md](SETUP.md) walks through installing and running the model, and [ROADMAP.md](ROADMAP.md) covers what is weak today and what comes next.
+The full derivations, with every formula traced to a file and function, are in [DOCUMENTATION.md](DOCUMENTATION.md). The model code is in [models/model_slab_v4.py](../models/model_slab_v4.py) and [models/slab_v4_boundary.py](../models/slab_v4_boundary.py), and the presets are in [model/config.py](../model/config.py). A self-contained copy for Hugging Face `transformers` is in [hf/modeling_parentheses.py](../hf/modeling_parentheses.py). The [project README](../README.md) describes the repository, and the [model card](../MODEL_CARD.md) covers the release. [SETUP.md](SETUP.md) walks through installing and running the model, and [ROADMAP.md](ROADMAP.md) covers what is weak today and what comes next.
 
-The next model, Parentheses 1.0 at 240M parameters with 1,024-wide layers, is work in progress on the same laptop ([roadmap](ROADMAP.md)). Its planned licence is Apache 2.0, with training data limited to text whose licence allows commercial use. Finding enough licensed Kannada and Dravidian text is the main obstacle.
+The released weights are Apache 2.0 and the code is MIT. Training data was limited to text whose licence allows commercial use, and finding enough of it in Kannada and the other Dravidian languages remains the main obstacle for the next model.

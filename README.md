@@ -21,8 +21,8 @@ Engineered by uncoalesced
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Status-Certified_Golden_Release-brightgreen.svg" alt="Status: Certified Golden Release">
-  <img src="https://img.shields.io/badge/Release-v1.0--240M--tanzanite--golden-blue.svg" alt="Release">
+  <img src="https://img.shields.io/badge/Status-Released-brightgreen.svg" alt="Status: Released">
+  <img src="https://img.shields.io/badge/Release-v1.0.0--tanzanite-blue.svg" alt="Release">
   <img src="https://img.shields.io/badge/HuggingFace-parentheses--1.0--240M-ffd21e.svg" alt="HuggingFace">
   <img src="https://img.shields.io/badge/Architecture-Recurrent_SSD_(slab__v4)-9cf.svg" alt="Architecture">
   <img src="https://img.shields.io/badge/Hardware-1x_RTX_5050_Laptop_(8_GB)-green.svg" alt="Hardware">
@@ -44,7 +44,7 @@ Engineered by uncoalesced
 
 parentheses is a compact, recurrent language model engineered from scratch on a single 8 GB laptop GPU (an NVIDIA GeForce RTX 5050 Laptop). It is not a transformer. It is a recurrent model from the State Space Duality (SSD) family (the same family as Mamba-2 and RWKV), meaning it maintains a fixed-size memory state while generating instead of an expanding key-value cache that inflates with every new token. Kannada came first, followed by Tamil, Telugu, Malayalam, and English, with experimental coverage for Tulu, Koya, Kuvi, and Kolami.
 
-The flagship golden release, **parentheses-1.0-240M-tanzanite**, features **253.54 million parameters** across a wide-and-shallow 16-layer topology (`slab_v4`). It incorporates a Layer-0 $V_0$ Value Residual Highway, Token-Shift ($\mu$-mixing), and calibrated epistemic abstention tuning that prevents hallucination while keeping benign false refusals at 0.0%.
+The current release, **parentheses-1.0-240M-tanzanite**, has **253.54 million parameters** across a wide-and-shallow 16-layer topology (`slab_v4`). It incorporates a Layer-0 $V_0$ Value Residual Highway, Token-Shift ($\mu$-mixing), and calibrated epistemic abstention tuning that prevents hallucination while keeping benign false refusals at 0.0%.
 
 ---
 
@@ -60,15 +60,26 @@ cd parentheses
 pip install -r requirements.txt
 ```
 
-**2. Download the certified golden weights**
+**2. Download the weights**
 
 Open the [Hugging Face page](https://huggingface.co/uncoalesced-org/parentheses-1.0-240M) or use the command line:
 
 ```bash
-hf download uncoalesced-org/parentheses-1.0-240M config.json model.safetensors tokenizer.json --local-dir release/parentheses-1.0-240M-tanzanite
+hf download uncoalesced-org/parentheses-1.0-240M config.json model.safetensors tokenizer.json tokenizer_config.json --local-dir release/parentheses-1.0-240M-tanzanite
 ```
 
-*Note on weights: `model.safetensors` (967 MB, float32) is the canonical tested reference checkpoint hosted on Hugging Face. Lightweight `model-bf16.safetensors` (483 MB) and raw `model.pt` (1.01 GB) are available as optional assets on GitHub Releases (untested and not benchmarked).*
+*Note on weights: `model.safetensors` (967 MB, float32) is the canonical tested reference checkpoint hosted on Hugging Face. Lightweight `model-bf16.safetensors` (483 MB) and raw `model.pt` (1.01 GB) are optional assets on the [GitHub release](https://github.com/uncoalesced/parentheses/releases/tag/v1.0.0-tanzanite). They were not benchmarked separately.*
+
+You can also skip the repository and load the model with `transformers` alone:
+
+```python
+from transformers import AutoModelForCausalLM, AutoTokenizer
+
+repo = "uncoalesced-org/parentheses-1.0-240M"
+tok = AutoTokenizer.from_pretrained(repo)
+model = AutoModelForCausalLM.from_pretrained(repo, trust_remote_code=True).eval()
+print(model.chat(tok, "Write a Python function that returns the factorial of n.", lang="eng"))
+```
 
 **3. Start chatting**
 
@@ -76,15 +87,17 @@ hf download uncoalesced-org/parentheses-1.0-240M config.json model.safetensors t
 python scripts/chat.py --checkpoint release/parentheses-1.0-240M-tanzanite --device cuda
 ```
 
-Type a prompt and press Enter. Press Enter on an empty line to exit. On an Apple Silicon Mac, pass `--device mps`. On Windows laptops with an NPU, use the DirectML ONNX export in `npu/`.
+Type a prompt and press Enter. Press Enter on an empty line to exit. On an Apple Silicon Mac, pass `--device mps`. On Windows laptops with an NPU, download the DirectML ONNX step graph (`parentheses_240m_v4_step.onnx`) from the [GitHub release](https://github.com/uncoalesced/parentheses/releases/tag/v1.0.0-tanzanite).
 
 **4. Language selection (optional)**
 
-By default, chat detects the script automatically. To force a specific language, add `--lang` with its code (`kan`, `tam`, `tel`, `mal`, `eng`, or experimental `tcy`, `kff`, `kxv`, `nit`). For Kannada with internal reasoning:
+By default, chat detects the script automatically. To force a specific language, add `--lang` with its code (`kan`, `tam`, `tel`, `mal`, `eng`, or experimental `tcy`, `kff`, `kxv`, `nit`). For Kannada:
 
 ```bash
-python scripts/chat.py --checkpoint release/parentheses-1.0-240M-tanzanite --device cuda --lang kan --format think
+python scripts/chat.py --checkpoint release/parentheses-1.0-240M-tanzanite --device cuda --lang kan
 ```
+
+The `--format think` reasoning mode is experimental on this checkpoint and gives templated output, so the default chat format is the one to use.
 
 ---
 
@@ -110,7 +123,7 @@ We evaluated parentheses-1.0-240M across 9 independent public benchmarks (4 runs
 
 ### Parameter and State Efficiency vs. 1B+ Models
 
-Despite having 253.54M parameters and keeping an invariant 4.85 MB state, parentheses matches or outperforms several prominent 1B+ parameter models (TinyLlama-1.1B, OPT-1.3B, Pythia-1.4B, RWKV-4 1.5B) while consuming over 99% less memory during sequence generation:
+Despite having 253.54M parameters and keeping an invariant 4.85 MB state, parentheses scores higher than these 1B-scale models on MMLU, GSM8K, TruthfulQA and HaluEval QA, and lower on ARC-Challenge. At 4,096 tokens its state is over 99% smaller than the transformers' KV-caches; RWKV-4 is also recurrent and has a fixed state too:
 
 | Evaluation Metric | parentheses-1.0-240M (253M)<br>*Recurrent SSD (2026)* | TinyLlama-1.1B<br>*Transformer (2024)* | OPT-1.3B<br>*Transformer (2022)* | Pythia-1.4B<br>*Transformer (2023)* | RWKV-4 1.5B<br>*Recurrent (2023)* |
 | :--- | :---: | :---: | :---: | :---: | :---: |
@@ -154,7 +167,7 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/DOCUMENTATION.md](doc
 | 1.0-240M Pretraining (Sessions 1 to 6) | Done | 16-layer scaling, learning rate anneal, 393M+ tokens seen. |
 | 1.0-240M SFT v5 & Epistemic Tuning | Done | Calibrated abstention, zero benign false refusals. |
 | 1.0-240M Independent Validation Suite | Done | 95.67% clean-stop, 0% tool-leak, 100% script purity. |
-| **parentheses-1.0-240M-tanzanite** | **Certified Golden Release** | **Apache 2.0 release, NPU ONNX export, commercial-safe.** |
+| **parentheses-1.0-240M-tanzanite** | **Released** | **Apache 2.0 weights, MIT code, AutoModel loading, NPU ONNX export.** |
 | parentheses-1.0-multimodal | Next | Continuous Nemotron-3.5 speech & acoustic token integration. |
 
 ---
@@ -163,7 +176,7 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/DOCUMENTATION.md](doc
 
 | Property | Value |
 |---|---|
-| Model | **parentheses-1.0-240M-tanzanite** (Project Tanzanite, Certified Golden) |
+| Model | **parentheses-1.0-240M-tanzanite** (Project Tanzanite) |
 | Parameters | **253,544,176** unique parameters |
 | Architecture | Recurrent State Space Duality / Selective Linear Attention (`slab_v4`) |
 | Layers / Width / Heads | 16 / 1024 / 16 heads of 64 (rank 1024) |
@@ -174,8 +187,8 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/DOCUMENTATION.md](doc
 | Languages | Kannada, Tamil, Telugu, Malayalam, English; experimental Tulu, Koya, Kuvi, Kolami |
 | Training Hardware | One NVIDIA GeForce RTX 5050 Laptop GPU (8 GB VRAM) |
 | Edge Deployment | DirectML / AMD Ryzen AI NPU static-shape ONNX (< 1.15 GB) |
-| Weights & Code License | **Apache 2.0** (Code: MIT / Weights: Apache 2.0) |
-| Documentation | [MODEL_CARD.md](MODEL_CARD.md) · [DOCUMENTATION.md](docs/DOCUMENTATION.md) · [BENCHMARK_SPEC.md](release/parentheses-1.0-240M-tanzanite/BENCHMARK_SPEC.md) |
+| License | Weights: **Apache 2.0**. Code: **MIT** |
+| Documentation | [MODEL_CARD.md](MODEL_CARD.md) · [DOCUMENTATION.md](docs/DOCUMENTATION.md) · [BENCHMARK_SPEC.md](docs/BENCHMARK_SPEC.md) |
 
 ---
 

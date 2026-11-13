@@ -1,6 +1,6 @@
 # Roadmap
 
-parentheses is a small language model developed from scratch on one 8 GB laptop GPU, aimed mostly at Kannada and the other Dravidian languages, with English alongside them. The certified golden release is parentheses-1.0-240M-tanzanite (Project Tanzanite). This roadmap details milestones achieved, architecture evolution, and ongoing work.
+parentheses is a small language model developed from scratch on one 8 GB laptop GPU, aimed mostly at Kannada and the other Dravidian languages, with English alongside them. The current release is parentheses-1.0-240M-tanzanite (Project Tanzanite). This roadmap details milestones achieved, architecture evolution, and ongoing work.
 
 ## At a glance
 
@@ -10,8 +10,8 @@ parentheses is a small language model developed from scratch on one 8 GB laptop 
 | 1.0-240M Session 1 to 4 | Done | Wide-and-shallow 16-layer scaling, width 1024, 16 heads, rank 1024. |
 | 1.0-240M Session 5 to 6 | Done | Textbook grounding, learning-rate anneal, 393M+ tokens seen. |
 | 1.0-240M SFT v5 & Epistemic Tuning | Done | Calibrated abstention reasoning traces, eliminating ungrounded hallucinations. |
-| 1.0-240M Session 10 Nudge & SWA | Done | Golden checkpoint `sft-nudge-winner.pt` (step 14,173). |
-| **parentheses-1.0-240M-tanzanite** | **Certified Golden Release** | **Released November 2026 under Apache 2.0. DirectML NPU ONNX export, 8 external benchmarks evaluated. Available at https://huggingface.co/uncoalesced-org/parentheses-1.0-240M.** |
+| 1.0-240M Session 10 Nudge & SWA | Done | Release checkpoint `sft-nudge-winner.pt` (step 14,173). |
+| **parentheses-1.0-240M-tanzanite** | **Released** | **Released November 2026. Weights Apache 2.0, code MIT. DirectML NPU ONNX export, 9 external benchmarks evaluated. Available at https://huggingface.co/uncoalesced-org/parentheses-1.0-240M.** |
 | parentheses-1.0-multimodal | In progress | Continuous acoustic and speech token integration (Project Tanzanite Phase 2). |
 
 ## Where 0.9 stands

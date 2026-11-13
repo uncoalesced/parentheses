@@ -54,7 +54,7 @@ Agents, automated data builders, and training launchers are under zero-tolerance
 
 ```mermaid
 flowchart TD
-    subgraph Tanzanite["parentheses 0.9-130M-v3 (Certified Apache-2.0 Release)"]
+    subgraph Tanzanite["parentheses 0.9-130M-v3 (Apache-2.0 release)"]
         D1["processed_130m_v1<br/>807.9M Train Tokens<br/>(40% Dravidian, 25% MIT STEM,<br/>20% Hermes Apache-2.0, 15% Public Domain)"] --> SFT1["Clean Mask SFT v2<br/>(Zero Truncation / 100% EOT)"]
         SFT1 --> SWA1["SWA-3 Model Soup<br/>(3.4062 Val Loss / 30.15 PPL)"]
         SWA1 --> DPO1["Calibrated DPO v2<br/>(0.0% Refusals / 72/72 Think Closed)"]
@@ -68,7 +68,7 @@ flowchart TD
     end
 ```
 
-### 3.1 parentheses 0.9-130M-v3 (Project Tanzanite): Certified Apache-2.0 Release
+### 3.1 parentheses 0.9-130M-v3: Apache-2.0 release
 - **Architecture:** 148.38M parameters, wide-and-shallow 16 layers, $d_{\text{model}}=768$, 12 heads (rank 768), BPE 32k (`v3_32k`), context length 4,096.
 - **Hardware Profile:** FP32 inter-chunk recurrence, Token-Shift ($\mu$-mix), $\beta$-gated write, and $V_0$ value highway.
 - **Pretraining Dataset (`E:\Parentheses\parentheses-0.9\data\processed_130m_v1\`):**
@@ -136,7 +136,7 @@ flowchart TD
   1. `--mode generate`: Samples $N=4$ on-policy completions from SFT checkpoint.
   2. `--mode precompute-ref`: Precomputes and memory-pins reference log-probabilities to disk (`.npy`), freeing 50% VRAM on 8GB GPUs.
   3. `--mode train`: Optimizes DPO preference loss augmented with $0.1 \times \text{NLL}$ anchor loss to protect recurrent state stability (`beta_write`, `v0_mix`).
-  4. `--mode swa3`: Merges final 3 checkpoint anchors into SWA-3 golden weights.
+  4. `--mode swa3`: Merges the final 3 checkpoints into SWA-3 averaged weights.
   5. `--mode all`: Full automated execution pipeline.
 
 ---
@@ -172,13 +172,13 @@ All new STEM, reasoning, code, and chat datasets harvested from Hugging Face for
 
 | Audit Checkpoint | Invariant Requirement | Empirical Status | Verification Evidence |
 |---|---|:---:|---|
-| **License Policy** | Mandatory 100% Apache-2.0 Policy | **CERTIFIED** | `LICENSE_POLICY.md` synchronized across repos |
-| **Whitelisted Licenses** | Permissive only (Apache-2.0, MIT, BSD, CC0, CC-BY-4.0, ODC-By) | **CERTIFIED** | Verified source manifests in all data bins |
-| **Purged CC-BY-NC** | Camel-AI, SciQ, non-commercial splits purged | **CERTIFIED** | `strict_exclusions: ["Camel-AI", "SciQ", "CC-BY-NC"]` |
-| **Research-Only Segregation** | Aheri Gondi (`esg`) strictly excluded from release corpora | **CERTIFIED** | `esg_count: 0` verified across all production manifests |
+| **License Policy** | Mandatory 100% Apache-2.0 Policy | **Verified** | `LICENSE_POLICY.md` synchronized across repos |
+| **Whitelisted Licenses** | Permissive only (Apache-2.0, MIT, BSD, CC0, CC-BY-4.0, ODC-By) | **Verified** | Verified source manifests in all data bins |
+| **Purged CC-BY-NC** | Camel-AI, SciQ, non-commercial splits purged | **Verified** | `strict_exclusions: ["Camel-AI", "SciQ", "CC-BY-NC"]` |
+| **Research-Only Segregation** | Aheri Gondi (`esg`) strictly excluded from release corpora | **Verified** | `esg_count: 0` verified across all production manifests |
 | **Automated Pipeline Gate** | `license_guard.py` blocking unverified manifests | **ACTIVE** | `verify_apache_manifest()` integrated in training scripts |
-| **0.9-130M-v3 Release** | Apache-2.0 release, record 30.15 PPL, 0.0% refusals | **CERTIFIED** | Golden checkpoint preserved and evaluated |
-| **1.0-240M Lineage** | 100% Apache-2.0 lineage across Sessions 1 to 8 | **CERTIFIED** | Verified `processed_240m_apache`, `sft_240m_v4_apache` |
+| **0.9-130M-v3 Release** | Apache-2.0 release, record 30.15 PPL, 0.0% refusals | **Verified** | Checkpoint preserved and evaluated |
+| **1.0-240M Lineage** | 100% Apache-2.0 lineage across Sessions 1 to 8 | **Verified** | Verified `processed_240m_apache`, `sft_240m_v4_apache` |
 
 ---
-*Certified by uncoalesced Licensing & Governance Specialist Subagent*
+*Maintained by uncoalesced*
