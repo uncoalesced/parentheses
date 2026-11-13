@@ -1,76 +1,59 @@
-```
-██████╗   █████╗  ██████╗  ███████╗ ███╗   ██╗ ████████╗ ██╗  ██╗ ███████╗ ███████╗ ███████╗ ███████╗
-██╔══██╗ ██╔══██╗ ██╔══██╗ ██╔════╝ ████╗  ██║ ╚══██╔══╝ ██║  ██║ ██╔════╝ ██╔════╝ ██╔════╝ ██╔════╝
-██████╔╝ ███████║ █████╔╝  █████╗   ██╔██╗ ██║    ██║    ███████║ █████╗   ███████╗ █████╗   ███████╗
-██╔═══╝  ██╔══██║ ██╔══██╗ ██╔══╝   ██║╚██╗██║    ██║    ██╔══██║ ██╔══╝   ╚════██║ ██╔══╝   ╚════██║
-██║      ██║  ██║ ██║  ██║ ███████╗ ██║ ╚████║    ██║    ██║  ██║ ███████╗ ███████║ ███████╗ ███████║
-╚═╝      ╚═╝  ╚═╝ ╚═╝  ╚═╝ ╚══════╝ ╚═╝  ╚═══╝    ╚═╝    ╚═╝  ╚═╝ ╚══════╝ ╚══════╝ ╚══════╝ ╚══════╝
-```
-
-# parentheses
-
-### parentheses-1.0-240M-tanzanite (Project Tanzanite)
-Engineered by uncoalesced
-
 <div align="center">
-  <img src="assets/parentheses_lockup_transparent.svg" alt="parentheses / Project Tanzanite" width="380">
+  <img src="assets/parentheses_lockup_transparent.svg" alt="parentheses" width="380">
 </div>
 
+<h3 align="center">parentheses-1.0-240M-tanzanite</h3>
+
 <p align="center">
-  <b>A from-scratch recurrent language model for Kannada, four other Dravidian languages, and English, trained on one laptop GPU.</b>
+  <b>A recurrent language model for Kannada, Tamil, Telugu, Malayalam and English, built from scratch on one 8 GB laptop GPU.</b><br>
+  253.54M parameters · constant 4.85 MB memory at any length · not a transformer
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Status-Released-brightgreen.svg" alt="Status: Released">
-  <img src="https://img.shields.io/badge/Release-v1.0.0--tanzanite-blue.svg" alt="Release">
-  <img src="https://img.shields.io/badge/HuggingFace-parentheses--1.0--240M-ffd21e.svg" alt="HuggingFace">
-  <img src="https://img.shields.io/badge/Architecture-Recurrent_SSD_(slab__v4)-9cf.svg" alt="Architecture">
-  <img src="https://img.shields.io/badge/Hardware-1x_RTX_5050_Laptop_(8_GB)-green.svg" alt="Hardware">
-  <img src="https://img.shields.io/badge/Code_License-MIT-brightgreen.svg" alt="Code License">
-  <img src="https://img.shields.io/badge/Weights_License-Apache_2.0-orange.svg" alt="Weights License">
+  <a href="https://github.com/uncoalesced/parentheses/releases/tag/v1.0.0-tanzanite"><img src="https://img.shields.io/github/v/release/uncoalesced/parentheses?label=release&color=F19143" alt="Latest release"></a>
+  <a href="https://huggingface.co/uncoalesced-org/parentheses-1.0-240M"><img src="https://img.shields.io/badge/Hugging_Face-parentheses--1.0--240M-ffd21e" alt="Hugging Face"></a>
+  <a href="docs/ARCHITECTURE.md"><img src="https://img.shields.io/badge/architecture-recurrent_SSD_(slab__v4)-9cf" alt="Architecture"></a>
+  <img src="https://img.shields.io/badge/trained_on-1x_RTX_5050_Laptop_(8_GB)-green" alt="Trained on one RTX 5050 Laptop GPU">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/code-MIT-brightgreen" alt="Code license: MIT"></a>
+  <a href="LICENSE-MODEL"><img src="https://img.shields.io/badge/weights-Apache_2.0-orange" alt="Weights license: Apache 2.0"></a>
 </p>
 
 <p align="center">
-  <a href="#quick-setup">Quick setup</a> •
-  <a href="docs/SETUP.md">Full setup guide</a> •
-  <a href="docs/ARCHITECTURE.md">Architecture</a> •
-  <a href="docs/ROADMAP.md">Roadmap</a> •
-  <a href="docs/DOCUMENTATION.md">Documentation</a> •
-  <a href="MODEL_CARD.md">Model Card</a> •
-  <a href="https://huggingface.co/uncoalesced-org/parentheses-1.0-240M">Hugging Face</a>
+  <a href="#quick-start">Quick start</a> •
+  <a href="#downloads">Downloads</a> •
+  <a href="#benchmarks">Benchmarks</a> •
+  <a href="#known-limits">Known limits</a> •
+  <a href="docs/SETUP.md">Setup guide</a> •
+  <a href="docs/ARCHITECTURE.md">How it works</a> •
+  <a href="docs/DOCUMENTATION.md">Technical reference</a> •
+  <a href="MODEL_CARD.md">Model card</a>
 </p>
 
 ---
 
-parentheses is a compact, recurrent language model engineered from scratch on a single 8 GB laptop GPU (an NVIDIA GeForce RTX 5050 Laptop). It is not a transformer. It is a recurrent model from the State Space Duality (SSD) family (the same family as Mamba-2 and RWKV), meaning it maintains a fixed-size memory state while generating instead of an expanding key-value cache that inflates with every new token. Kannada came first, followed by Tamil, Telugu, Malayalam, and English, with experimental coverage for Tulu, Koya, Kuvi, and Kolami.
+We wanted to see how far a small team could push a language model on an ordinary gaming laptop in Bengaluru. parentheses is the result: a recurrent model from the same family as Mamba-2 and RWKV, trained from scratch, with Kannada as its first language.
 
-The current release, **parentheses-1.0-240M-tanzanite**, has **253.54 million parameters** across a wide-and-shallow 16-layer topology (`slab_v4`). It incorporates a Layer-0 $V_0$ Value Residual Highway, Token-Shift ($\mu$-mixing), and calibrated epistemic abstention tuning that prevents hallucination while keeping benign false refusals at 0.0%.
+A transformer keeps a key and a value for every token it has seen, so its memory grows as it writes. parentheses keeps one 64-by-64 matrix per head instead. Each token fades that memory a little, writes itself in, and reads an answer back out:
+
+$$S_t = \alpha_t S_{t-1} + \beta_t (k_t \otimes v_t), \qquad y_t = q_t S_t$$
+
+Across all 16 layers that is 4.85 MB of state in float32, the same at token 10 as at token 16,000.
+
+<p align="center">
+  <img src="docs/figures/state-vs-kvcache.svg" alt="A transformer's KV cache grows with every token; the parentheses state stays the same size" width="760">
+</p>
+
+**Languages.** Kannada, Tamil, Telugu, Malayalam and English are the main languages. Tulu, Koya, Kuvi and Kolami are experimental. The tokenizer keeps Indic syllables (aksharas) whole, so the model reads and writes Dravidian script without breaking letters into stray bytes.
 
 ---
 
-## Quick setup
+## Quick start
 
-You need Python 3.10 or newer, git, and a few GB of free disk space. An NVIDIA GPU accelerates inference, but the model also runs on CPU and edge NPUs via DirectML.
-
-**1. Clone the repository and install dependencies**
+### With transformers (no repository needed)
 
 ```bash
-git clone https://github.com/uncoalesced/parentheses.git
-cd parentheses
-pip install -r requirements.txt
+pip install torch transformers
 ```
-
-**2. Download the weights**
-
-Open the [Hugging Face page](https://huggingface.co/uncoalesced-org/parentheses-1.0-240M) or use the command line:
-
-```bash
-hf download uncoalesced-org/parentheses-1.0-240M config.json model.safetensors tokenizer.json tokenizer_config.json --local-dir release/parentheses-1.0-240M-tanzanite
-```
-
-*Note on weights: `model.safetensors` (967 MB, float32) is the canonical tested reference checkpoint hosted on Hugging Face. Lightweight `model-bf16.safetensors` (483 MB) and raw `model.pt` (1.01 GB) are optional assets on the [GitHub release](https://github.com/uncoalesced/parentheses/releases/tag/v1.0.0-tanzanite). They were not benchmarked separately.*
-
-You can also skip the repository and load the model with `transformers` alone:
 
 ```python
 from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -78,122 +61,175 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 repo = "uncoalesced-org/parentheses-1.0-240M"
 tok = AutoTokenizer.from_pretrained(repo)
 model = AutoModelForCausalLM.from_pretrained(repo, trust_remote_code=True).eval()
+
 print(model.chat(tok, "Write a Python function that returns the factorial of n.", lang="eng"))
+print(model.chat(tok, "ಮಳೆಗಾಲದಲ್ಲಿ ನೀರಿನ ಸಂರಕ್ಷಣೆ ಏಕೆ ಮುಖ್ಯ?", lang="kan"))
 ```
 
-**3. Start chatting**
+`trust_remote_code=True` loads `modeling_parentheses.py` from the Hub repository, a self-contained copy of the model code. `chat()` and `stream()` use the constant-memory recurrent path. Language codes are `kan`, `tam`, `tel`, `mal`, `eng`, and the experimental `tcy`, `kff`, `kxv`, `nit`.
+
+### From this repository (chat CLI)
+
+You need Python 3.10 or newer. An NVIDIA GPU helps, but the model also runs on CPU.
 
 ```bash
+git clone https://github.com/uncoalesced/parentheses.git
+cd parentheses
+pip install -r requirements.txt
+hf download uncoalesced-org/parentheses-1.0-240M config.json model.safetensors tokenizer.json tokenizer_config.json --local-dir release/parentheses-1.0-240M-tanzanite
 python scripts/chat.py --checkpoint release/parentheses-1.0-240M-tanzanite --device cuda
 ```
 
-Type a prompt and press Enter. Press Enter on an empty line to exit. On an Apple Silicon Mac, pass `--device mps`. On Windows laptops with an NPU, download the DirectML ONNX step graph (`parentheses_240m_v4_step.onnx`) from the [GitHub release](https://github.com/uncoalesced/parentheses/releases/tag/v1.0.0-tanzanite).
+Type a prompt and press Enter; an empty line exits. Use `--device cpu` without a GPU, or `--device mps` on Apple Silicon (untested). Add `--lang kan` to force Kannada; by default the script is detected per prompt. On Windows with an RTX 50-series card, install a PyTorch build for CUDA 12.8 or newer ([setup guide](docs/SETUP.md#2-make-pytorch-see-your-gpu)).
 
-**4. Language selection (optional)**
+### On an NPU (DirectML)
 
-By default, chat detects the script automatically. To force a specific language, add `--lang` with its code (`kan`, `tam`, `tel`, `mal`, `eng`, or experimental `tcy`, `kff`, `kxv`, `nit`). For Kannada:
+Download `parentheses_240m_v4_step.onnx` from the [GitHub release](https://github.com/uncoalesced/parentheses/releases/tag/v1.0.0-tanzanite). It is a static-shape recurrent step graph for ONNX Runtime with DirectML, aimed at AMD Ryzen AI NPUs. [Technical reference, section 4](docs/DOCUMENTATION.md#4-edge-npu-execution-directml-and-amd-ryzen-ai) describes its inputs and outputs.
 
-```bash
-python scripts/chat.py --checkpoint release/parentheses-1.0-240M-tanzanite --device cuda --lang kan
+---
+
+## Downloads
+
+| File | What it is | Size | Where |
+|:---|:---|---:|:---|
+| `model.safetensors` | float32 weights, the tested reference | 1,014,203,240 bytes | [Hugging Face](https://huggingface.co/uncoalesced-org/parentheses-1.0-240M) |
+| `model-bf16.safetensors` | bfloat16 weights, half the download | 507,115,040 bytes | [GitHub release](https://github.com/uncoalesced/parentheses/releases/tag/v1.0.0-tanzanite) |
+| `model.pt` | PyTorch state dict | 1,014,250,863 bytes | [GitHub release](https://github.com/uncoalesced/parentheses/releases/tag/v1.0.0-tanzanite) |
+| `parentheses_240m_v4_step.onnx` | DirectML / NPU recurrent step graph | 1,148,704,972 bytes | [GitHub release](https://github.com/uncoalesced/parentheses/releases/tag/v1.0.0-tanzanite) |
+
+All benchmarks below were measured on the float32 weights. The bf16 file was not benchmarked separately. SHA-256 hashes for every file are in `MANIFEST_sha256.tsv` on the release.
+
+---
+
+## Benchmarks
+
+Nine public benchmarks, four runs each (one greedy, three sampled at T=0.7). Each run uses a small sample of a few dozen items, so read the average next to the best.
+
+| Benchmark | What it tests | Best | Average | Peer baseline |
+|:---|:---|:---:|:---:|:---|
+| TerminalBench | Shell commands | **78.33%** | 74.16% | Harbor CLI baseline, 66.00% |
+| TruthfulQA | Truthfulness | **91.00%** | 90.00% | OpenAI Instruct-Ada (350M), 84.50% |
+| MBPP | Python functions | **90.67%** | 81.92% | Salesforce CodeGen-350M Mono, 82.20% |
+| HaluEval QA | Hallucination detection | **80.00%** | 78.34% | OpenAI InstructGPT, 68.20% |
+| MMLU (STEM subset) | Academic knowledge | 50.00% | 30.00% | SmolLM-135M, 30.20% |
+| HellaSwag | Commonsense continuation | 33.33% | 24.16% | SmolLM-360M, 42.80% |
+| ARC-Challenge | Science questions | 26.67% | 16.67% | SmolLM-360M, 34.20% |
+| Belebele (Dravidian) | Reading comprehension | 25.00% | 17.18% | BLOOM-560M, 31.25% |
+| GSM8K | Grade-school maths | 10.00% | 5.83% | MobileLLM-350M, 13.20% |
+
+We beat the peer baseline on the first four and trail it on HellaSwag, ARC-Challenge, Belebele and GSM8K. Per-run numbers and citations are in [BENCHMARK_SPEC.md](docs/BENCHMARK_SPEC.md).
+
+<p align="center">
+  <img src="docs/figures/benchmark-comparison-top-labs.svg" alt="parentheses-1.0-240M against peer-scale baselines" width="880">
+</p>
+
+### Against 1B-scale models
+
+| | parentheses-1.0-240M | TinyLlama-1.1B | OPT-1.3B | Pythia-1.4B | RWKV-4 1.5B |
+|:---|:---:|:---:|:---:|:---:|:---:|
+| Architecture | Recurrent | Transformer | Transformer | Transformer | Recurrent |
+| MMLU | **50.00%** (30.0% avg) | 26.04% | 25.00% | 25.50% | 25.80% |
+| ARC-Challenge | 26.67% (16.7% avg) | 30.12% | 31.70% | **32.60%** | 29.40% |
+| GSM8K | **10.00%** (5.8% avg) | 1.50% | 2.50% | 2.80% | 2.10% |
+| TruthfulQA | **91.00%** (90.0% avg) | 35.08% | 33.50% | 38.60% | 37.20% |
+| HaluEval QA | **80.00%** (78.3% avg) | 53.20% | 51.20% | 52.80% | ~54.00% |
+| Memory at 4,096 tokens | **4.85 MB** | 536.9 MB | 1,258.3 MB | 1,440.0 MB | ~14.7 MB |
+| Memory at 16,384 tokens | **4.85 MB** | 2,147.6 MB | 5,033.2 MB | 5,760.0 MB | ~14.7 MB |
+
+At 4,096 tokens our state is over 99% smaller than the three transformers' KV-caches. RWKV-4 is recurrent too, so its state is also fixed.
+
+<p align="center">
+  <img src="docs/figures/benchmark-1b-scale-efficiency.svg" alt="parameter and memory efficiency against 1B-scale models" width="880">
+</p>
+
+### Our own held-out checks (300 prompts)
+
+| Check | Result |
+|:---|:---|
+| Clean stop at `<|endoftext|>` | 95.67% (287/300) |
+| Internal tag leaks | 0.00% (0/300) |
+| Dravidian answers in the right script | 100.00% (80/80) |
+| Abstains on trap questions | 94.00% (94/100) |
+| Refuses ordinary questions | 0.00% (0/90) |
+| Recurrent state over 16,384 tokens | stable, no NaN or drift |
+
+The ONNX step graph matches PyTorch to within 5.5e-5 on the logits over 32 decoding steps (CPU and DirectML).
+
+---
+
+## Known limits
+
+- **Short Python functions work best.** Factorial, palindrome and Fibonacci come out correct; longer programs are less reliable.
+- **Dravidian answers are shallow.** They stay in script and on topic, but are brief and can repeat a line.
+- **English facts are weak.** At 253M parameters the model can produce fluent, specific, wrong answers. Check anything that matters.
+- **Use the chat format.** The `<think>` reasoning format is experimental on this checkpoint and returns templated text.
+- **Maths is weak** (GSM8K average 5.83%). The chat script answers simple arithmetic with an exact calculator.
+- **Speed:** 11 to 34 tokens per second on the RTX 5050 Laptop GPU with the Python recurrent loop, typically 20 to 27. NPU speed and power have not been measured yet.
+
+---
+
+## How we trained it
+
+Everything ran on one NVIDIA GeForce RTX 5050 Laptop GPU with 8 GB of VRAM. We grew the 240M model from our earlier 130M model with a function-preserving widening (Net2WiderNet), then trained for 14,173 steps across ten sessions: multilingual pretraining, a STEM and code mix, textbook text with multilingual replay, a learning-rate anneal on commercially licensed data, supervised fine-tuning, preference tuning, checkpoint souping, and a final calibration pass for clean stopping and abstention. [How it works](docs/ARCHITECTURE.md#how-it-was-trained) tells the story, including the step where training loss fell while every language got worse.
+
+| | |
+|:---|:---|
+| Parameters | 253,544,176 |
+| Layers / width / heads | 16 / 1024 / 16 heads of 64 |
+| SwiGLU hidden width | 2752 |
+| Vocabulary | 32,768 byte-level BPE (`v3_32k`), akshara-preserving |
+| Training context | 4,096 tokens |
+| Recurrent state | 4.85 MB in float32, constant |
+| Training data | Licences that allow commercial use only ([policy](LICENSE_POLICY.md), [ledger](TRAINING_DATA.md)) |
+
+---
+
+## Repository layout
+
+| Path | What is there |
+|:---|:---|
+| `models/` | The 1.0 model (`model_slab_v4.py`) and its document-boundary scan (`slab_v4_boundary.py`) |
+| `hf/` | Self-contained Hugging Face `transformers` port, shipped to the Hub |
+| `model/` | The older 0.9 model and the shared sampler (`sampling.py`) |
+| `scripts/` | Chat CLI, training drivers, exports, evaluation and figure scripts |
+| `features/` | FreeThink, retrieval, conversation memory, image and document input |
+| `tests/` | Model, parity, AutoModel and feature tests |
+| `docs/` | Setup guide, architecture guide, technical reference, roadmap, benchmark spec, figures |
+| `train.py`, `app.py` | Training entry point and local web studio |
+
+---
+
+## Roadmap
+
+| Milestone | Status |
+|:---|:---|
+| parentheses-0.9-130M preview (CC BY-NC 4.0 weights) | Released |
+| parentheses-1.0-240M-tanzanite (Apache 2.0 weights, MIT code) | **Released, November 2026** |
+| parentheses-1.0-multimodal (speech and acoustic tokens) | In progress |
+
+Details in [ROADMAP.md](docs/ROADMAP.md) and [RELEASE_NOTES.md](RELEASE_NOTES.md).
+
+---
+
+## Questions, bugs and feedback
+
+Open an issue on [GitHub](https://github.com/uncoalesced/parentheses/issues) or start a thread in the [Hugging Face discussions](https://huggingface.co/uncoalesced-org/parentheses-1.0-240M/discussions). We read both. Contributions are welcome: see [CONTRIBUTING.md](CONTRIBUTING.md) and [SECURITY.md](SECURITY.md).
+
+## Citation
+
+```bibtex
+@software{parentheses_2026,
+  title   = {parentheses-1.0-240M-tanzanite: a recurrent language model for Dravidian languages and English},
+  author  = {uncoalesced},
+  year    = {2026},
+  url     = {https://github.com/uncoalesced/parentheses},
+  version = {1.0.0-tanzanite}
+}
 ```
-
-The `--format think` reasoning mode is experimental on this checkpoint and gives templated output, so the default chat format is the one to use.
-
----
-
-## Standardized External Benchmarks (9 Hugging Face Benchmarks)
-
-We evaluated parentheses-1.0-240M across 9 independent public benchmarks (4 runs each, greedy + sampled seeds):
-
-| # | Benchmark Name | Category / Domain | Best Score | Average Score | Comparison Lab Baseline | Lab Score (Year) |
-|:---|:---|:---|:---:|:---:|:---|:---:|
-| 1 | **TerminalBench** (`ia03/terminal-bench`) | Systems & Bash CLI | **78.33%** | 74.16% | Harbor CLI Agent (Sub-1B) | 66.00% (2024) |
-| 2 | **TruthfulQA** (`truthfulqa/truthful_qa`) | Truthfulness & Anti-Hallucination | **91.00%** | 90.00% | OpenAI Instruct-Ada (350M) | 84.50% (2022) |
-| 3 | **MBPP** (`google-research-datasets/mbpp`) | Python Code Synthesis | **90.67%** | 81.92% | Salesforce CodeGen (350M) | 82.20% (2022) |
-| 4 | **HaluEval QA** (`pminervini/HaluEval`) | Hallucination Detection & Grounding | **80.00%** | 78.34% | OpenAI InstructGPT (175B) | 68.20% (2022) |
-| 5 | **MMLU** (`cais/mmlu`) | Academic STEM Knowledge | **50.00%** | 30.00% | Hugging Face SmolLM (135M) | 30.20% (2024) |
-| 6 | **HellaSwag** (`Rowan/hellaswag`) | Commonsense Continuation | **33.33%** | 24.16% | Hugging Face SmolLM (360M) | 42.80% (2024) |
-| 7 | **ARC-Challenge** (`allenai/ai2_arc`) | Scientific Question Answering | **26.67%** | 16.67% | Hugging Face SmolLM (360M) | 34.20% (2024) |
-| 8 | **Belebele Dravidian** (`facebook/belebele`) | Multilingual Dravidian Comprehension | **25.00%** | 17.18% | BigScience BLOOM (560M) | 31.25% (2022) |
-| 9 | **GSM8K** (`openai/gsm8k`) | Grade-School Arithmetic | **10.00%** | 5.83% | Meta MobileLLM (350M) | 13.20% (2024) |
-
-<p align="center">
-  <img src="docs/figures/benchmark-comparison-top-labs.svg" alt="parentheses-1.0-240M vs. top AI labs" width="880">
-</p>
-
-### Parameter and State Efficiency vs. 1B+ Models
-
-Despite having 253.54M parameters and keeping an invariant 4.85 MB state, parentheses scores higher than these 1B-scale models on MMLU, GSM8K, TruthfulQA and HaluEval QA, and lower on ARC-Challenge. At 4,096 tokens its state is over 99% smaller than the transformers' KV-caches; RWKV-4 is also recurrent and has a fixed state too:
-
-| Evaluation Metric | parentheses-1.0-240M (253M)<br>*Recurrent SSD (2026)* | TinyLlama-1.1B<br>*Transformer (2024)* | OPT-1.3B<br>*Transformer (2022)* | Pythia-1.4B<br>*Transformer (2023)* | RWKV-4 1.5B<br>*Recurrent (2023)* |
-| :--- | :---: | :---: | :---: | :---: | :---: |
-| **MMLU (Academic STEM)** | **50.00%** (30.0% avg) | 26.04% | 25.00% | 25.50% | 25.80% |
-| **ARC-Challenge (Reasoning)** | **26.67%** (16.7% avg) | 30.12% | 31.70% | 32.60% | 29.40% |
-| **GSM8K (Arithmetic Reasoning)** | **10.00%** (5.8% avg) | 1.50% | 2.50% | 2.80% | 2.10% |
-| **TruthfulQA (Anti-Hallucination)**| **91.00%** (90.0% avg) | 35.08% | 33.50% | 38.60% | 37.20% |
-| **TruthfulQA MC1 (Single-True)** | **88.33%** | 24.10% | 22.80% | 25.20% | 23.40% |
-| **HaluEval QA (Hallucination Detection)** | **80.00%** (78.3% avg) | 53.20% | 51.20% | 52.80% | ~54.00% |
-| **Unanswerable / False Premise Traps** | **94.00%** (Held-Out Suite) | &lt; 30.0% | &lt; 25.0% | &lt; 28.0% | &lt; 35.0% |
-| **State / KV Cache at 4k tokens** | **4.85 MB (Fixed O(1))** | 536.9 MB (O(T)) | 1,258.3 MB (O(T)) | 1,440.0 MB (O(T)) | ~14.7 MB (Fixed) |
-| **State / KV Cache at 16k tokens**| **4.85 MB (Fixed O(1))** | 2,147.6 MB (O(T)) | 5,033.2 MB (O(T)) | 5,760.0 MB (O(T)) | ~14.7 MB (Fixed) |
-
-<p align="center">
-  <img src="docs/figures/benchmark-1b-scale-efficiency.svg" alt="parameter & memory efficiency: parentheses-1.0-240M vs 1B+ models" width="880">
-</p>
-
----
-
-## Architecture: State Space Duality (`slab_v4`)
-
-A standard transformer looks back over every earlier token each time it writes a new one, keeping all of them in a key-value cache that expands indefinitely. parentheses keeps one $64 \times 64$ memory matrix per attention head instead. For every token, it fades that memory slightly, writes the new token into it, and reads the answer out:
-
-$$S_t = \alpha_t S_{t-1} + \beta_t (k_t \otimes v_t), \qquad y_t = q_t S_t$$
-
-That is strictly **4.85 MB of state in fp32** for the entire model across all 16 layers and 16 heads, whether the context is 10 tokens or 16,384 tokens:
-
-<p align="center">
-  <img src="docs/figures/state-vs-kvcache.svg" alt="A transformer's KV cache grows with every token; the parentheses state stays the same size" width="760">
-</p>
-
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/DOCUMENTATION.md](docs/DOCUMENTATION.md) for full mathematical derivations and chunked scan formulations.
-
----
-
-## Roadmap & Release Status
-
-| Milestone | Status | Notes |
-|---|---|---|
-| parentheses-0.9-130M preview | Released (Archive) | Initial 148M proof of concept under CC BY-NC 4.0. |
-| 1.0-240M Pretraining (Sessions 1 to 6) | Done | 16-layer scaling, learning rate anneal, 393M+ tokens seen. |
-| 1.0-240M SFT v5 & Epistemic Tuning | Done | Calibrated abstention, zero benign false refusals. |
-| 1.0-240M Independent Validation Suite | Done | 95.67% clean-stop, 0% tool-leak, 100% script purity. |
-| **parentheses-1.0-240M-tanzanite** | **Released** | **Apache 2.0 weights, MIT code, AutoModel loading, NPU ONNX export.** |
-| parentheses-1.0-multimodal | Next | Continuous Nemotron-3.5 speech & acoustic token integration. |
-
----
-
-## Model at a glance
-
-| Property | Value |
-|---|---|
-| Model | **parentheses-1.0-240M-tanzanite** (Project Tanzanite) |
-| Parameters | **253,544,176** unique parameters |
-| Architecture | Recurrent State Space Duality / Selective Linear Attention (`slab_v4`) |
-| Layers / Width / Heads | 16 / 1024 / 16 heads of 64 (rank 1024) |
-| SwiGLU Intermediate Dimension | 2752 ($\approx \frac{8}{3} d_{\text{model}}$) |
-| Context Window | 4,096 tokens (document-reset aware; 16k stable recurrent scan) |
-| Recurrent State | **4.85 MB in fp32** (2.42 MB in bf16), constant $\mathcal{O}(1)$ |
-| Vocabulary | 32,768 tokens (`v3_32k` byte-level BPE with akshara-preserving regex) |
-| Languages | Kannada, Tamil, Telugu, Malayalam, English; experimental Tulu, Koya, Kuvi, Kolami |
-| Training Hardware | One NVIDIA GeForce RTX 5050 Laptop GPU (8 GB VRAM) |
-| Edge Deployment | DirectML / AMD Ryzen AI NPU static-shape ONNX (< 1.15 GB) |
-| License | Weights: **Apache 2.0**. Code: **MIT** |
-| Documentation | [MODEL_CARD.md](MODEL_CARD.md) · [DOCUMENTATION.md](docs/DOCUMENTATION.md) · [BENCHMARK_SPEC.md](docs/BENCHMARK_SPEC.md) |
-
----
 
 ## Licenses
 
-- Code and architecture: [MIT License](LICENSE).
-- parentheses-1.0 weights: [Apache 2.0](LICENSE-MODEL). Permissive for research, educational, and commercial use.
-- Security reports: see [SECURITY.md](SECURITY.md).
+- Code: [MIT](LICENSE)
+- Model weights: [Apache 2.0](LICENSE-MODEL)
+
+<p align="center"><sub>Engineered by uncoalesced</sub></p>
