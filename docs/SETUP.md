@@ -171,7 +171,7 @@ Option A is the browser route. Open the model page, click the Files and versions
 Option B is the command line route. The `hf` command comes with the Hugging Face Hub library, which `pip install -r requirements.txt` installed for you. It creates the folder and downloads the files in one step.
 
 ```bash
-hf download uncoalesced-org/parentheses-1.0-240M config.json model.safetensors tokenizer.json --local-dir release/parentheses-1.0-240M-tanzanite
+hf download uncoalesced-org/parentheses-1.0-240M config.json model.safetensors tokenizer.json tokenizer_config.json --local-dir release/parentheses-1.0-240M-tanzanite
 ```
 
 When you are done, the folder should look like this.
@@ -213,11 +213,11 @@ Type a prompt and press Enter. Before the answer appears, a dim blue line shows 
 
 This line is the routing line. It shows the language the program chose for that prompt. If you typed English but the routing line says a different language, the session is probably forced with `--lang`.
 
-The answer then streams in one piece at a time, in bold. When you use `--format think`, the model writes a reasoning block first, and that block appears in dim cyan before the bold answer. For a quick check, try an English prompt such as `Write a short Python function that adds two numbers.` You should see something that looks like code, often with mistakes. Do not expect the exact same text every time, because the program samples its output.
+The answer then streams in one piece at a time, in bold. For a quick check, try an English prompt such as `Write a Python function that returns the factorial of n.` Short functions like this usually come out correct; longer programs often have mistakes. Do not expect the exact same text every time, because the program samples its output.
 
 Simple arithmetic is handled differently. A question such as `What is 17 x 6?` is answered by a built-in calculator, not by the model, so the answer is exact.
 
-On the laptop GPU we use, the model writes about 27 tokens per second, so replies appear at a steady pace.
+On the laptop GPU we use (RTX 5050 Laptop), we measured 11 to 34 tokens per second, typically 20 to 27, so replies appear at a steady pace.
 
 To quit, press Enter on an empty line, or press Ctrl+C. An empty line quits straight away, so a stray Enter ends the session. If that happens, run the same command again.
 
@@ -237,11 +237,11 @@ python scripts/chat.py --checkpoint release/parentheses-1.0-240M-tanzanite --dev
 
 You can use auto instead. Leave out `--lang kan`, or pass `--lang auto`. Kannada script is detected automatically, so auto picks Kannada for Kannada text. Forcing `--lang kan` keeps every prompt in Kannada, including English words, so use the forced form when you want Kannada and auto when you mix languages. With `--lang kan`, typing `hi` is routed to Kannada and usually returns junk. Type `/eng hi` to send one message as English, or `/auto` to go back to detection.
 
-The original Kannada test instruction used think mode, so you will see the model's reasoning block first.
-
 ```bash
-python scripts/chat.py --checkpoint release/parentheses-1.0-240M-tanzanite --device cuda --lang kan --format think
+python scripts/chat.py --checkpoint release/parentheses-1.0-240M-tanzanite --device cuda --lang kan
 ```
+
+Think mode (`--format think`) is experimental on this checkpoint. It returns a templated restatement of the question rather than useful reasoning, so stay with the default chat mode.
 
 An example prompt is ನಿನ್ನ ಹೆಸರು ಏನು? which means "what is your name?"
 
@@ -403,9 +403,9 @@ Every option below is a flag you can add to the `python scripts/chat.py` command
 | `--lang` | `auto` | The session language: `auto`, `eng`, `kan`, `tam`, `tel`, `mal`, `tcy`, `kff`, `kxv` or `nit`. |
 | `--format` (alias `--mode`) | `chat` | The mode: `chat`, `think`, `freethink` or `base`. |
 | `--max-new-tokens` | `300` | The most tokens the model writes for one reply. |
-| `--temperature` | `0.7` | Higher values make the output more varied and less predictable. |
+| `--temperature` | `0.2` for 1.0-240M, `0.7` for 0.9 checkpoints | Higher values make the output more varied and less predictable. `0` is greedy. |
 | `--top-k` | `40` | At each step, the model picks only from the 40 most likely next tokens. |
-| `--system` | On, with the built-in prompt | Turns on the identity and honesty system prompt. Bare `--system` uses the built-in text, and `--system "text"` uses your own. |
+| `--system` | Off for 1.0-240M, on for 0.9 checkpoints | Turns on the identity and honesty system prompt. Bare `--system` uses the built-in text, and `--system "text"` uses your own. The 1.0-240M release was tuned without a system prompt, and the 0.9 prompt makes its answers worse. |
 | `--no-system` | Off | Turns the system prompt off. |
 | `--image PATH [PATH ...]` | None | Attaches images at startup. Accepts `.png`, `.jpg`, `.bmp` and `.webp`. |
 | `--doc PATH [PATH ...]` (alias `--ingest`) | None | Attaches documents at startup. Accepts `.pdf`, `.docx`, `.html`, `.csv`, `.json` and `.txt`. |
@@ -417,26 +417,37 @@ Every option below is a flag you can add to the `python scripts/chat.py` command
 If you want to call the model from your own script, run the script from the repository folder, so that `scripts` can be imported. The simplest route uses the same loader and reply function as the chat program.
 
 ```python
-from scripts.chat import DEFAULT_SYSTEM_PROMPT, load_model_and_tokenizer, reply
+from scripts.chat import load_model_and_tokenizer, reply
 
 model, tok, cfg, _ = load_model_and_tokenizer("release/parentheses-1.0-240M-tanzanite", device="cuda")
 answer = reply(
     model,
-    "Write a short Python function that adds two numbers.",
+    "Write a Python function that returns the factorial of n.",
     "cuda",
     200,
-    0.7,
+    0.2,
     40,
     tok=tok,
     lang="auto",
     fmt="chat",
     stream=False,
-    system=DEFAULT_SYSTEM_PROMPT,
+    system=None,
 )
 print(answer)
 ```
 
-If you have no NVIDIA GPU, or PyTorch can't see it, change both `"cuda"` values to `"cpu"`. The `reply` function returns the answer as a string. Pass `system=DEFAULT_SYSTEM_PROMPT` if you want the same identity and honesty prompt the chat program uses. Without it, `reply` runs with no system prompt.
+If you have no NVIDIA GPU, or PyTorch can't see it, change both `"cuda"` values to `"cpu"`. The `reply` function returns the answer as a string. These are the settings the chat program uses for 1.0-240M: no system prompt and temperature 0.2. `reply` picks the matching repetition settings for the model it is given.
+
+If you only need inference, the Hugging Face route needs no repository code at all:
+
+```python
+from transformers import AutoModelForCausalLM, AutoTokenizer
+
+repo = "uncoalesced-org/parentheses-1.0-240M"
+tok = AutoTokenizer.from_pretrained(repo)
+model = AutoModelForCausalLM.from_pretrained(repo, trust_remote_code=True).eval()
+print(model.chat(tok, "Write a Python function that returns the factorial of n.", lang="eng"))
+```
 
 If you prefer to build the model yourself, the lower-level route works too. It loads the weights into the model class directly.
 
