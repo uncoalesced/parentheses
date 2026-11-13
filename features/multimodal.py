@@ -417,6 +417,8 @@ def state_memory_bytes(states: list) -> int:
     """Total memory footprint in bytes of an SSM recurrent state list."""
     total = 0
     for st in states:
+        if st is None:
+            continue
         if isinstance(st, tuple):
             for t in st:
                 if isinstance(t, torch.Tensor):
@@ -430,8 +432,11 @@ def state_shapes(states: list) -> list[tuple[int, ...]]:
     """Return the primary recurrent matrix shape `(B, n_head, head_dim, head_dim)` per layer."""
     shapes = []
     for st in states:
-        mat = st[0] if isinstance(st, tuple) else st
-        shapes.append(tuple(mat.shape))
+        if st is None:
+            shapes.append(())
+        else:
+            mat = st[0] if isinstance(st, tuple) else st
+            shapes.append(tuple(mat.shape))
     return shapes
 
 
@@ -554,32 +559,41 @@ class SSMVisualProjector(nn.Module):
         if states is None:
             states = model.empty_states(B, device=device, dtype=dtype)
 
-        initial_shapes = state_shapes(states)
-        initial_bytes = state_memory_bytes(states)
+        # SlabV4Model allocates per-layer tuples lazily on the first step; capture
+        # the settled baseline after patch 0 when initial slots are None.
+        has_uninit = any(st is None for st in states)
+        baseline_shapes = None if has_uninit else state_shapes(states)
+        baseline_bytes = None if has_uninit else state_memory_bytes(states)
 
-        # slab_v3 blocks return ((x, state), v0) and thread layer 0's values up the
-        # stack, the same contract Parentheses.step() follows.
-        slab_v3 = getattr(model.cfg, "slab_v3", False)
+        # slab_v3 and slab_v4 blocks return ((x, state), v0) and thread layer 0's values
+        # up the stack, matching step() recurrence.
+        threaded_v0 = bool(
+            getattr(model.cfg, "slab_v3", False) or getattr(model.cfg, "slab_v4", False)
+        )
         for p_idx in range(N):
             x_p = embeds[:, p_idx, :]  # (B, n_embd)
             new_states = []
             v0 = None
             for block, st in zip(model.blocks, states):
-                if slab_v3:
+                if threaded_v0:
                     (x_p, st), v0 = block.step(x_p, st, v0=v0)
                 else:
                     x_p, st = block.step(x_p, st)
                 new_states.append(st)
             states = new_states
+            if baseline_shapes is None:
+                baseline_shapes = state_shapes(states)
+                baseline_bytes = state_memory_bytes(states)
 
         # Enforce the Parentheses SSM O(1) state memory invariant
         final_shapes = state_shapes(states)
         final_bytes = state_memory_bytes(states)
-        assert final_shapes == initial_shapes, (
-            f"SSM state shape mutated during visual prefill: {initial_shapes} -> {final_shapes}"
+        assert final_bytes > 0, "SSM state memory remained 0 after visual prefill"
+        assert final_shapes == baseline_shapes, (
+            f"SSM state shape mutated during visual prefill: {baseline_shapes} -> {final_shapes}"
         )
-        assert final_bytes == initial_bytes, (
-            f"SSM state memory grew during visual prefill: {initial_bytes} -> {final_bytes} bytes"
+        assert final_bytes == baseline_bytes, (
+            f"SSM state memory grew during visual prefill: {baseline_bytes} -> {final_bytes} bytes"
         )
         return states
 

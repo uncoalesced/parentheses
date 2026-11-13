@@ -27,7 +27,7 @@ import inspect
 import math
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, Iterator, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
@@ -36,6 +36,7 @@ import torch.nn.functional as F
 from torch.utils.checkpoint import checkpoint
 from torch.utils.data import Dataset
 
+from model.sampling import stream_recurrent_step
 from models.slab_v4_boundary import (
     compute_doc_ids,
     token_shift_v4,
@@ -67,6 +68,10 @@ class SlabV4Config:
     @property
     def head_dim(self) -> int:
         return self.n_embd // self.n_head
+
+    @property
+    def attn_type(self) -> str:
+        return "selective_linear"
 
 
 class RMSNorm(nn.Module):
@@ -296,6 +301,10 @@ class SlabV4Block(nn.Module):
         self.attn = SlabV4Attention(cfg, layer_idx=layer_idx)
         self.ln2 = RMSNorm(cfg.n_embd)
         self.mlp = SwiGLU(cfg)
+
+    @property
+    def is_selective(self) -> bool:
+        return True
 
     def forward(
         self,
@@ -567,6 +576,39 @@ class SlabV4Model(nn.Module):
         x = self.ln_f(x)
         logits = self.head(x)
         return logits, new_states
+
+    def _require_selective(self, what: str) -> None:
+        """Satisfy the recurrent-feature capability check (all slab_v4 blocks are selective)."""
+        return
+
+    @torch.no_grad()
+    def stream(
+        self,
+        idx: torch.Tensor,
+        max_new_tokens: int | None = None,
+        temperature: float = 1.0,
+        top_k: int | None = None,
+        min_p: float | None = None,
+        sink_tokens: int = 0,
+        repetition_penalty: float = 1.0,
+        no_repeat_ngram_size: int = 0,
+    ) -> Iterator[torch.Tensor]:
+        """Yield sampled token IDs (B, 1) using O(1) recurrent step state.
+
+        `sink_tokens` is accepted for interface parity with KV-cache decoders and ignored.
+        """
+        del sink_tokens
+        yield from stream_recurrent_step(
+            self,
+            idx,
+            max_new_tokens=max_new_tokens,
+            temperature=temperature,
+            top_k=top_k,
+            min_p=min_p,
+            repetition_penalty=repetition_penalty,
+            no_repeat_ngram_size=no_repeat_ngram_size,
+            eot_token_id=getattr(self.cfg, "eot_token_id", 0),
+        )
 
 
 class SlabV4SFTDataset(Dataset):

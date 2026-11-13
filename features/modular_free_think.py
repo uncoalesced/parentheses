@@ -522,11 +522,8 @@ def main():
         _self_test()
         return
 
-    # weights_only=False: train.py pickles the ModelConfig dataclass into the ckpt
-    ckpt = torch.load(args.checkpoint, map_location=args.device, weights_only=False)
-    model = Parentheses(ckpt["cfg"]).to(args.device)
-    model.load_state_dict(ckpt["model"])
-    model.eval()
+    from scripts.chat import load_model_and_tokenizer
+    model, tok, _cfg, step = load_model_and_tokenizer(args.checkpoint, device=args.device)
 
     if args.web_search:
         store = WebSearchStore(args.web_search)
@@ -541,9 +538,9 @@ def main():
         store.ingest([Path(f) for f in args.ingest])
     session = ModularFreeThinkSession(model, store, args.splice_every, args.retrieve_k,
                                       args.temperature, args.top_k,
-                                      tokenizer=load_bpe_tokenizer(ckpt), lang=args.lang,
+                                      tokenizer=tok, lang=args.lang,
                                       mode=args.mode, images=[Path(img) for img in args.image])
-    print(f"[modular] {args.checkpoint} (step {ckpt['step']}, lang={args.lang}) on {args.device}")
+    print(f"[modular] {args.checkpoint} (step {step}, lang={args.lang}) on {args.device}")
     if args.web_search:
         print(f"[modular] store: live web search via {args.web_search}")
     else:

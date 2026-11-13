@@ -48,6 +48,7 @@ from features.free_think import (  # noqa: E402
 from features.modular_free_think import IngestedStore, ModularFreeThinkSession  # noqa: E402
 from model import Parentheses  # noqa: E402
 from model.config import ModelConfig  # noqa: E402
+from models.model_slab_v4 import SlabV4Config, SlabV4Model  # noqa: E402
 
 LEAK_MARKERS = ("<|user|>", "<|assistant|>", "<|system|>", "<|pad|>", "<esg>", "<tool_call>", "</tool_call>")
 
@@ -341,6 +342,14 @@ def _self_test():
     assert summary["conversation_memory"]["turn3_heavy_triggered"] is True
     assert summary["conversation_memory"]["turn1_recalled_from_notes"] is True
     assert len(samples) == 18 + 5 + 2 + 1
+
+    v4_cfg = SlabV4Config(vocab_size=32768, block_size=256, n_layer=2, n_head=4, n_embd=32, chunk_size=64)
+    v4_model = SlabV4Model(v4_cfg).eval()
+    v4_summary, v4_samples = evaluate_model(v4_model, tok, device="cpu", max_tokens=10, min_tokens=4, latency_tokens=16)
+    assert v4_summary["question_gate_ok"] is True
+    assert v4_summary["continuation"]["total"] == 18
+    assert v4_summary["structured"]["total"] == 5
+    assert len(v4_samples) == 18 + 5 + 2 + 1
     print("[self-test] eval_freethink ok")
 
 
@@ -362,10 +371,8 @@ def main():
         return
 
     print(f"[eval-freethink] Loading {args.checkpoint} on {args.device}...")
-    ckpt = torch.load(args.checkpoint, map_location=args.device, weights_only=False)
-    model = Parentheses(ckpt["cfg"]).to(args.device).eval()
-    model.load_state_dict(ckpt["model"])
-    tok = load_bpe_tokenizer(ckpt)
+    from scripts.chat import load_model_and_tokenizer
+    model, tok, _cfg, step = load_model_and_tokenizer(args.checkpoint, device=args.device)
 
     summary, samples = evaluate_model(
         model, tok, device=args.device,
@@ -373,7 +380,7 @@ def main():
         latency_tokens=args.latency_tokens, seed=args.seed,
     )
     summary["checkpoint"] = args.checkpoint
-    summary["step"] = ckpt.get("step")
+    summary["step"] = step
 
     os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
     Path(args.out).write_text(json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8")

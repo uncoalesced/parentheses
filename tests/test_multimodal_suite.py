@@ -69,6 +69,8 @@ from features.multimodal import (
     state_shapes,
 )
 from model import ModelConfig, PRESETS, Parentheses
+from models.model_slab_v4 import SlabV4Config, SlabV4Model
+from scripts.chat import load_model_and_tokenizer
 
 
 class TestMultimodalSuite(unittest.TestCase):
@@ -631,6 +633,61 @@ class TestMultimodalSuite(unittest.TestCase):
         self.assertEqual(res_img["modality"], "image")
         self.assertGreater(res_img["ssm_state_bytes"], 0)
         self.assertEqual(res_img["ssm_state_shapes"], [[1, 2, 16, 16], [1, 2, 16, 16]])
+
+    # ------------------------------------------------------------------
+    # 16. SlabV4Model (parentheses 1.0) Visual State Prefill O(1) Invariance
+    # ------------------------------------------------------------------
+    def test_16_slab_v4_visual_state_prefill_constant_memory(self):
+        v4_cfg = SlabV4Config(vocab_size=32768, block_size=512, n_layer=2, n_head=2, n_embd=32, chunk_size=64)
+        v4_model = SlabV4Model(v4_cfg).eval()
+        self.assertEqual(state_shapes(v4_model.empty_states(1)), [(), ()])
+
+        s16 = prefill_visual_state(v4_model, torch.rand(1, 3, 64, 64))
+        s64 = prefill_visual_state(v4_model, torch.rand(1, 3, 128, 128))
+        s256 = prefill_visual_state(v4_model, torch.rand(1, 3, 256, 256))
+
+        self.assertEqual(state_shapes(s16), [(1, 2, 16, 16), (1, 2, 16, 16)])
+        self.assertEqual(state_shapes(s16), state_shapes(s64))
+        self.assertEqual(state_shapes(s64), state_shapes(s256))
+        self.assertGreater(state_memory_bytes(s16), 0)
+        self.assertEqual(state_memory_bytes(s16), state_memory_bytes(s64))
+        self.assertEqual(state_memory_bytes(s64), state_memory_bytes(s256))
+
+        tok_dir = REPO_ROOT / "data" / "tokenizer" / "v3_32k"
+        tok = load_bpe_tokenizer({"tokenizer": {"path": str(tok_dir)}})
+        store = IngestedStore()
+        with tempfile.TemporaryDirectory() as tmp:
+            tdir = Path(tmp)
+            pdf_p = tdir / "v4_note.pdf"
+            pdf_p.write_bytes(create_pdf_bytes(["SlabV4 keeps 4.85 MB recurrent visual state per image."]))
+            img_p = tdir / "v4_test.png"
+            Image.new("RGB", (64, 64), color=(80, 160, 220)).save(img_p)
+            store.ingest([pdf_p])
+            sess = ModularFreeThinkSession(v4_model, store, splice_every=6, tokenizer=tok, lang="eng", images=[img_p])
+            self.assertEqual(state_shapes(sess.image_states), [(1, 2, 16, 16), (1, 2, 16, 16)])
+            out = sess.run("Visual patches stream into the fixed recurrent matrix.", max_tokens=10)
+            self.assertGreater(len(out), 0)
+
+    # ------------------------------------------------------------------
+    # 17. Live Release 1.0-240M Visual State Exact 4,849,664-Byte Invariant
+    # ------------------------------------------------------------------
+    def test_17_release_240m_visual_state_prefill_exact_bytes(self):
+        rel_dir = REPO_ROOT / "release" / "parentheses-1.0-240M-tanzanite"
+        if not rel_dir.exists():
+            raise unittest.SkipTest(f"240M release directory not found at {rel_dir}")
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        model, _tok, _cfg, _step = load_model_and_tokenizer(rel_dir, device=device)
+        try:
+            s16 = prefill_visual_state(model, torch.rand(1, 3, 64, 64, device=device))
+            s64 = prefill_visual_state(model, torch.rand(1, 3, 128, 128, device=device))
+            self.assertEqual(state_shapes(s16), [(1, 16, 64, 64)] * 16)
+            self.assertEqual(state_shapes(s16), state_shapes(s64))
+            self.assertEqual(state_memory_bytes(s16), 4849664)
+            self.assertEqual(state_memory_bytes(s64), 4849664)
+        finally:
+            del model
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
 
 
 if __name__ == "__main__":

@@ -185,17 +185,14 @@ def main():
         _self_test()
         return
 
-    # weights_only=False: train.py pickles the ModelConfig dataclass into the ckpt
-    ckpt = torch.load(args.checkpoint, map_location=args.device, weights_only=False)
-    model = Parentheses(ckpt["cfg"]).to(args.device)
-    model.load_state_dict(ckpt["model"])
-    model.eval()
+    from scripts.chat import load_model_and_tokenizer
+    model, tok, _cfg, step = load_model_and_tokenizer(args.checkpoint, device=args.device)
 
     notes = ConversationNotes(args.notes)
     session = ConversationSession(model, notes, args.splice_every, args.retrieve_k,
                                   args.temperature, args.top_k,
-                                  tokenizer=load_bpe_tokenizer(ckpt), lang=args.lang)
-    print(f"[conversation] {args.checkpoint} (step {ckpt['step']}, lang={args.lang}) on {args.device}")
+                                  tokenizer=tok, lang=args.lang)
+    print(f"[conversation] {args.checkpoint} (step {step}, lang={args.lang}) on {args.device}")
     print(f"[conversation] notes: {notes.path}")
     print("[conversation] type a turn, empty line or Ctrl-C to stop\n")
     try:

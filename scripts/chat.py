@@ -46,6 +46,12 @@ except ImportError:
     from model.config import ModelConfig
     PRESETS = {}
 
+try:
+    from models.model_slab_v4 import SlabV4Config, SlabV4Model
+except ImportError:
+    SlabV4Config = None
+    SlabV4Model = None
+
 # Self-contained fallbacks so chat.py runs standalone in release/ without extra repo dependencies
 try:
     from eval_queries import STOP_TOKENS, looping
@@ -170,6 +176,32 @@ DEFAULT_SYSTEM_PROMPT = (
     "If you do not know the answer to a factual question, say \"I don't know\" instead of "
     "inventing details."
 )
+
+# Sentinel for "pick the system prompt and temperature that fit the loaded model".
+# The 1.0-240M (slab_v4) release was fine-tuned and gated on bare
+# <|user|><lang>...<|assistant|> turns with greedy decoding. Measured on the
+# release weights: the 0.9 identity prompt above pulls it into identity answers
+# for unrelated questions, and repetition penalties stop it from reusing a
+# variable name in code. So slab_v4 runs without a system prompt, at low
+# temperature, with no repetition penalty and only an 8-gram loop block.
+AUTO = "auto"
+
+
+def resolve_generation_defaults(cfg, system, temperature):
+    """Resolve AUTO system prompt and unset temperature for the loaded model family."""
+    is_v4 = bool(getattr(cfg, "slab_v4", False))
+    if system == AUTO:
+        system = None if is_v4 else DEFAULT_SYSTEM_PROMPT
+    if temperature is None:
+        temperature = 0.2 if is_v4 else 0.7
+    return system, temperature
+
+
+def sampler_penalties(cfg) -> dict:
+    """min-p floor and repetition controls passed to model.stream() for this model family."""
+    if getattr(cfg, "slab_v4", False):
+        return {"min_p": 0.1, "repetition_penalty": 1.0, "no_repeat_ngram_size": 8}
+    return {"min_p": 0.06, "repetition_penalty": 1.12, "no_repeat_ngram_size": 4}
 
 
 # ---------------------------------------------------------------------------
@@ -713,9 +745,7 @@ def reply(
         max_new_tokens=max_new_tokens,
         temperature=temperature,
         top_k=top_k,
-        min_p=0.06,
-        repetition_penalty=1.12,
-        no_repeat_ngram_size=4,
+        **sampler_penalties(model.cfg),
     ):
         t = int(nxt.item())
         if t in stops:
@@ -778,6 +808,27 @@ def reply(
     return strip_internal_tags(raw_ans)
 
 
+def _slab_v4_config_from_dict(cfg_dict: dict):
+    if SlabV4Config is None:
+        raise ImportError("models/model_slab_v4.py is required to build SlabV4Config.")
+    return SlabV4Config(
+        vocab_size=cfg_dict.get("vocab_size", 32768),
+        block_size=cfg_dict.get("block_size", 4096),
+        n_layer=cfg_dict.get("n_layer", 16),
+        n_head=cfg_dict.get("n_head", 16),
+        n_embd=cfg_dict.get("n_embd", 1024),
+        chunk_size=cfg_dict.get("chunk_size", 64),
+        eot_token_id=cfg_dict.get("eot_token_id", 0),
+        dropout=cfg_dict.get("dropout", 0.0),
+        bias=cfg_dict.get("bias", False),
+        tie_embeddings=cfg_dict.get("tie_embeddings", True),
+        ignore_index=cfg_dict.get("ignore_index", -100),
+        slab_v4=True,
+        delta_rule=cfg_dict.get("delta_rule", False),
+        beta_mode=cfg_dict.get("beta_mode", "2sig"),
+    )
+
+
 def load_model_and_tokenizer(ckpt_path: Path | str, device: str = "cpu"):
     """Load model and tokenizer from either a .pt checkpoint or release directory."""
     path = Path(ckpt_path)
@@ -794,22 +845,7 @@ def load_model_and_tokenizer(ckpt_path: Path | str, device: str = "cpu"):
         import json
         from tokenizers import Tokenizer
         cfg_dict = json.loads((release_dir / "config.json").read_text(encoding="utf-8"))
-        cfg = ModelConfig(
-            vocab_size=cfg_dict.get("vocab_size", 32768),
-            block_size=cfg_dict.get("block_size", 4096),
-            n_layer=cfg_dict.get("n_layer", 32),
-            n_head=cfg_dict.get("n_head", 8),
-            n_embd=cfg_dict.get("n_embd", 512),
-            dropout=cfg_dict.get("dropout", 0.0),
-            bias=cfg_dict.get("bias", False),
-            tie_embeddings=cfg_dict.get("tie_embeddings", True),
-            attn_type=cfg_dict.get("attn_type", "selective_linear"),
-            slab_v2=cfg_dict.get("slab_v2", False),
-            slab_v3=cfg_dict.get("slab_v3", False),
-            slab_v4=cfg_dict.get("slab_v4", False),
-        )
-        model = Parentheses(cfg)
-        st_file = release_dir / "model.safetensors"
+        st_file = path if path.suffix == ".safetensors" else (release_dir / "model.safetensors")
         try:
             import safetensors.torch
             sd = safetensors.torch.load_file(str(st_file))
@@ -828,21 +864,62 @@ def load_model_and_tokenizer(ckpt_path: Path | str, device: str = "cpu"):
                 s, e = v["data_offsets"]
                 sd[k] = torch.frombuffer(mv[s:e], dtype=dtype_map[v["dtype"]]).reshape(v["shape"]).clone()
 
-        res = model.load_state_dict(sd, strict=False)
-        if res.unexpected_keys:
-            # Weights the built config has no slot for were dropped: config.json and code disagree.
-            print(f"[chat] WARNING: {len(res.unexpected_keys)} checkpoint tensors were not loaded "
-                  f"(e.g. {res.unexpected_keys[0]}). Output will be degraded.")
+        if cfg_dict.get("slab_v4", False):
+            if SlabV4Model is None:
+                raise ImportError("models/model_slab_v4.py is required to load slab_v4 releases.")
+            cfg = _slab_v4_config_from_dict(cfg_dict)
+            model = SlabV4Model(cfg)
+            if "tok_emb.weight" not in sd and "head.weight" in sd:
+                sd["tok_emb.weight"] = sd["head.weight"]
+            model.load_state_dict(sd, strict=True)
+            default_step = "release-1.0-240M"
+        else:
+            cfg = ModelConfig(
+                vocab_size=cfg_dict.get("vocab_size", 32768),
+                block_size=cfg_dict.get("block_size", 4096),
+                n_layer=cfg_dict.get("n_layer", 32),
+                n_head=cfg_dict.get("n_head", 8),
+                n_embd=cfg_dict.get("n_embd", 512),
+                dropout=cfg_dict.get("dropout", 0.0),
+                bias=cfg_dict.get("bias", False),
+                tie_embeddings=cfg_dict.get("tie_embeddings", True),
+                attn_type=cfg_dict.get("attn_type", "selective_linear"),
+                slab_v2=cfg_dict.get("slab_v2", False),
+                slab_v3=cfg_dict.get("slab_v3", False),
+                slab_v4=cfg_dict.get("slab_v4", False),
+            )
+            model = Parentheses(cfg)
+            res = model.load_state_dict(sd, strict=False)
+            if res.unexpected_keys:
+                # Weights the built config has no slot for were dropped: config.json and code disagree.
+                print(f"[chat] WARNING: {len(res.unexpected_keys)} checkpoint tensors were not loaded "
+                      f"(e.g. {res.unexpected_keys[0]}). Output will be degraded.")
+            default_step = 9636
+
         if cfg.tie_embeddings:
             model.head.weight = model.tok_emb.weight
         model.to(device).eval()
         tok = Tokenizer.from_file(str(release_dir / "tokenizer.json"))
         tok.encode_special_tokens = True
-        return model, tok, cfg, 9636
+        return model, tok, cfg, cfg_dict.get("step", default_step)
 
     ckpt = torch.load(path, map_location=device, weights_only=False)
     cfg = ckpt["cfg"]
-    model = Parentheses(cfg).to(device).eval()
+    if isinstance(cfg, dict):
+        if cfg.get("slab_v4", False):
+            if SlabV4Model is None:
+                raise ImportError("models/model_slab_v4.py is required to load slab_v4 checkpoints.")
+            cfg = _slab_v4_config_from_dict(cfg)
+            model = SlabV4Model(cfg).to(device).eval()
+        else:
+            cfg = ModelConfig(**cfg)
+            model = Parentheses(cfg).to(device).eval()
+    elif getattr(cfg, "slab_v4", False):
+        if SlabV4Model is None:
+            raise ImportError("models/model_slab_v4.py is required to load slab_v4 checkpoints.")
+        model = SlabV4Model(cfg).to(device).eval()
+    else:
+        model = Parentheses(cfg).to(device).eval()
     model.load_state_dict(ckpt["model"])
     try:
         from features.free_think import load_bpe_tokenizer
@@ -856,7 +933,7 @@ def load_model_and_tokenizer(ckpt_path: Path | str, device: str = "cpu"):
 
 
 def build_arg_parser(default_ckpt: str) -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(description="Parentheses 0.9 Interactive Chat")
+    p = argparse.ArgumentParser(description="parentheses interactive chat")
     p.add_argument("--checkpoint", default=default_ckpt)
     p.add_argument("--lang", default="auto", help="language code: eng, kan, tam, tel, mal, tcy, kff, kxv, nit, or 'auto' (default: dynamic auto-detection per prompt)")
     p.add_argument("--format", "--mode", choices=["think", "chat", "freethink", "base"], default="chat",
@@ -866,13 +943,15 @@ def build_arg_parser(default_ckpt: str) -> argparse.ArgumentParser:
     p.add_argument("--web", "--web-search", action="store_true",
                    help="allow web grounding for clearly real-time questions (/web <query> always searches); "
                         "injects a 1-2 sentence URL-free snippet")
-    p.add_argument("--system", nargs="?", const=DEFAULT_SYSTEM_PROMPT, default=DEFAULT_SYSTEM_PROMPT,
-                   help="prepend a <|system|> identity/honesty prompt (ON by default). "
-                        "Bare --system uses the built-in Parentheses prompt; --system \"...\" sets custom text.")
+    p.add_argument("--system", nargs="?", const=DEFAULT_SYSTEM_PROMPT, default=AUTO,
+                   help="prepend a <|system|> identity/honesty prompt. Default: ON for 0.9 checkpoints, "
+                        "OFF for the 1.0-240M (slab_v4) release. Bare --system uses the built-in 0.9 prompt; "
+                        "--system \"...\" sets custom text.")
     p.add_argument("--no-system", action="store_const", const=None, dest="system",
-                   help="disable the default <|system|> identity/honesty prompt.")
+                   help="disable the <|system|> identity/honesty prompt.")
     p.add_argument("--max-new-tokens", type=int, default=300)
-    p.add_argument("--temperature", type=float, default=0.7)
+    p.add_argument("--temperature", type=float, default=None,
+                   help="sampling temperature (default: 0.7 for 0.9 checkpoints, 0.2 for 1.0-240M; 0 is greedy)")
     p.add_argument("--top-k", type=int, default=40)
     p.add_argument("--device", default="cpu",
                    help="cpu (default), cuda (NVIDIA), mps (Apple Silicon GPU), or auto (cuda > mps > cpu)")
@@ -916,6 +995,9 @@ def main():
 
     args.device = resolve_device(args.device)
     model, tok, cfg, step = load_model_and_tokenizer(args.checkpoint, device=args.device)
+    args.system, args.temperature = resolve_generation_defaults(cfg, args.system, args.temperature)
+    if args.format == "think" and getattr(cfg, "slab_v4", False):
+        print("[chat] Note: think format is experimental on 1.0-240M; chat format is the tested path.")
     session_lang = args.lang
     session_images = list(args.image)
     session_docs = list(args.doc)
@@ -1009,7 +1091,16 @@ def _self_test():
 
     # --system is ON by default; --no-system is the opt-out
     _p = build_arg_parser("dummy.pt")
-    assert _p.parse_args(["--self-test"]).system == DEFAULT_SYSTEM_PROMPT
+    assert _p.parse_args(["--self-test"]).system == AUTO
+    assert _p.parse_args(["--system"]).system == DEFAULT_SYSTEM_PROMPT
+    assert _p.parse_args(["--self-test"]).temperature is None
+    _v4 = type("Cfg", (), {"slab_v4": True})()
+    _v09 = type("Cfg", (), {"slab_v4": False})()
+    assert resolve_generation_defaults(_v4, AUTO, None) == (None, 0.2)
+    assert resolve_generation_defaults(_v09, AUTO, None) == (DEFAULT_SYSTEM_PROMPT, 0.7)
+    assert resolve_generation_defaults(_v4, "custom", 0.9) == ("custom", 0.9)
+    assert sampler_penalties(_v4)["repetition_penalty"] == 1.0
+    assert sampler_penalties(_v09)["no_repeat_ngram_size"] == 4
     assert _p.parse_args(["--no-system"]).system is None
     assert _p.parse_args(["--system", "custom identity"]).system == "custom identity"
 

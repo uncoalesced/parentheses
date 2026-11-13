@@ -27,6 +27,7 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "scripts"))
 
 CHECKPOINTS = {
+    "release_240m": "release/parentheses-1.0-240M-tanzanite",
     "sft_v12": "checkpoints/parentheses-0.9-120M-sft-v12/step_9835_final.pt",
     "sft_real_v1": "checkpoints/parentheses-0.9-120M-sft-real-v1/step_12035_final.pt",
     "sft_v4": "checkpoints/parentheses-0.9-120M-sft-v4/step_10036_final.pt",
@@ -147,18 +148,21 @@ def score(cat: str, output: str, gold: list[str] | None) -> dict:
     return {"passed": passed, "strict": strict}
 
 
-def run_checkpoint(name: str, path: str, device: str, kb: str) -> dict:
+def run_checkpoint(name: str, path: str, device: str, kb: str, limit: int | None = None) -> dict:
     import torch
     import chat as chat_mod
-    model, tok = chat_mod.load_model_and_tokenizer(ROOT / path, device)[:2]
+    model, tok, cfg = chat_mod.load_model_and_tokenizer(ROOT / path, device)[:3]
+    # Same defaults the chat CLI uses for this model family (0.9: identity prompt at T=0.7;
+    # 1.0-240M: no system prompt at T=0.2).
+    system, temperature = chat_mod.resolve_generation_defaults(cfg, chat_mod.AUTO, None)
     rows = []
     t_all = time.time()
-    for k, (qid, cat, prompt, gold, topic) in enumerate(QUESTIONS):
+    for k, (qid, cat, prompt, gold, topic) in enumerate(QUESTIONS[:limit]):
         torch.manual_seed(1000 + k)
         t0 = time.time()
         try:
-            text = chat_mod.reply(model, prompt, device, 120, 0.7, 40, tok=tok, lang="auto", fmt="chat",
-                                  stream=False, system=chat_mod.DEFAULT_SYSTEM_PROMPT)
+            text = chat_mod.reply(model, prompt, device, 120, temperature, 40, tok=tok, lang="auto", fmt="chat",
+                                  stream=False, system=system)
         except Exception as e:  # a crash on a prompt is a failure, not an abort
             text = f"<ERROR {type(e).__name__}: {e}>"
         s = score(cat, text, gold)
@@ -205,7 +209,8 @@ def self_test():
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--checkpoints", nargs="*", default=["sft_v12", "sft_real_v1"])
+    ap.add_argument("--checkpoints", nargs="*", default=["release_240m"])
+    ap.add_argument("--limit", type=int, default=None, help="run only the first N questions (quick smoke check)")
     ap.add_argument("--device", default="cuda")
     ap.add_argument("--out", default="out/heldout_release")
     ap.add_argument("--self-test", action="store_true")
@@ -223,7 +228,7 @@ def main():
     out.mkdir(parents=True, exist_ok=True)
     allsum = {}
     for name in a.checkpoints:
-        res = run_checkpoint(name, CHECKPOINTS[name], a.device, kb)
+        res = run_checkpoint(name, CHECKPOINTS[name], a.device, kb, a.limit)
         res["summary"] = summarize(res)
         allsum[name] = res["summary"]
         (out / f"results_{name}.json").write_text(json.dumps(res, ensure_ascii=False, indent=1), encoding="utf-8")

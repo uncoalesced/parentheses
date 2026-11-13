@@ -68,6 +68,8 @@ from features.modular_free_think import (
 )
 from model import Parentheses
 from model.config import ModelConfig
+from models.model_slab_v4 import SlabV4Config, SlabV4Model
+from scripts.chat import load_model_and_tokenizer
 
 LEAK_MARKERS = (
     "<|user|>",
@@ -628,6 +630,112 @@ class TestFreeThinkIntegration(unittest.TestCase):
             1.05,
             f"O(1) latency constancy violated: first {window} median={first_ms:.3f}ms, last {window} median={last_ms:.3f}ms, ratio={ratio:.3f}x",
         )
+
+
+RELEASE_240M_DIR = REPO_ROOT / "release" / "parentheses-1.0-240M-tanzanite"
+
+
+class TestSlabV4FreeThinkUnit(unittest.TestCase):
+    """Unit tests verifying SlabV4Model compatibility with the FreeThink stack."""
+
+    @classmethod
+    def setUpClass(cls):
+        tok_dir = REPO_ROOT / "data" / "tokenizer" / "v3_32k"
+        cls.tok = load_bpe_tokenizer({"tokenizer": {"path": str(tok_dir)}})
+        cls.model = SlabV4Model(
+            SlabV4Config(vocab_size=32768, block_size=256, n_layer=2, n_head=4, n_embd=32, chunk_size=64)
+        ).eval()
+
+    def test_01_slab_v4_stream_continuation_structured_and_rag(self):
+        self.assertTrue(all(b.is_selective for b in self.model.blocks))
+        self.model._require_selective("unit-check")
+
+        cont = FreeThinkSession(
+            self.model, temperature=0.8, top_k=20, tokenizer=self.tok, lang="kan", mode="continuation", min_tokens=4
+        )
+        out = cont.run(MULTILINGUAL_CORPUS["kan"]["statement"], max_tokens=12)
+        self.assertTrue(len(out) > 0)
+        self.assertTrue(cont.closed_freethink)
+
+        struct = FreeThinkSession(
+            self.model, temperature=0.8, top_k=20, tokenizer=self.tok, lang="eng", mode="structured", min_tokens=4
+        )
+        s_out = struct.run("/think " + MULTILINGUAL_CORPUS["eng"]["statement"], max_tokens=12)
+        self.assertTrue(len(s_out) > 0)
+        self.assertEqual(struct.internal_close_tag, "</freethink>")
+
+        store = IngestedStore()
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp) / "note.txt"
+            p.write_text("Parentheses 1.0 uses 16-layer slab_v4 SSD blocks with 4.85 MB state.", encoding="utf-8")
+            store.ingest([p])
+            mod = ModularFreeThinkSession(self.model, store, splice_every=6, tokenizer=self.tok, lang="eng")
+            m_out = mod.run("Selective linear attention uses fixed recurrent memory.", max_tokens=12)
+            self.assertTrue(len(m_out) > 0)
+
+
+class TestSlabV4FreeThink240MIntegration(unittest.TestCase):
+    """Integration tests on release/parentheses-1.0-240M-tanzanite (SlabV4Model 253.54M)."""
+
+    model = None
+    tok = None
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+
+    @classmethod
+    def setUpClass(cls):
+        if not RELEASE_240M_DIR.exists():
+            raise unittest.SkipTest(f"240M release directory not found at {RELEASE_240M_DIR}")
+        cls.model, cls.tok, cls.cfg, cls.step = load_model_and_tokenizer(RELEASE_240M_DIR, device=cls.device)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.model = None
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
+    def test_01_release_240m_loads_as_slab_v4_without_warnings(self):
+        import contextlib
+        import io
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            self.assertIsInstance(self.model, SlabV4Model)
+            self.assertEqual(self.model.num_params(), 253544176)
+            self.assertEqual(self.cfg.attn_type, "selective_linear")
+        self.assertNotIn("WARNING", buf.getvalue())
+
+    def test_02_release_240m_continuation_and_structured(self):
+        for lang in ("eng", "kan"):
+            torch.manual_seed(42)
+            sess = FreeThinkSession(
+                self.model,
+                temperature=0.72,
+                top_k=35,
+                tokenizer=self.tok,
+                lang=lang,
+                mode="continuation",
+                min_tokens=12,
+            )
+            out = sess.run(MULTILINGUAL_CORPUS[lang]["statement"], max_tokens=20)
+            self.assertGreater(len(out), 0)
+            self.assertTrue(sess.closed_freethink)
+            for marker in LEAK_MARKERS:
+                self.assertNotIn(marker, out)
+
+        torch.manual_seed(42)
+        struct = FreeThinkSession(
+            self.model,
+            temperature=0.72,
+            top_k=35,
+            tokenizer=self.tok,
+            lang="eng",
+            mode="structured",
+            min_tokens=16,
+        )
+        s_out = struct.run("/think " + MULTILINGUAL_CORPUS["eng"]["statement"], max_tokens=32)
+        self.assertGreater(len(s_out), 0)
+        for marker in LEAK_MARKERS:
+            self.assertNotIn(marker, s_out)
 
 
 if __name__ == "__main__":
