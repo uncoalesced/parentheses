@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 440" width="980" height="440" role="img" aria-label="Licence tiers for training data: used, used one source at a time with a recorded decision, and never used">
+<style>
+text{font-family:'JetBrains Mono','IBM Plex Mono',ui-monospace,Menlo,Consolas,monospace}
+.t{fill:#FDFFFC;font-size:20px;font-weight:600}
+.s{fill:#9A9B99;font-size:13px}
+.h{fill:#FDFFFC;font-size:14px;font-weight:600}
+.dh{fill:#333333;font-size:13px;font-weight:600}
+.b{fill:#FDFFFC;font-size:13px;font-weight:600}
+.q{fill:#9A9B99;font-size:13px;font-weight:600}
+.m{fill:#9A9B99;font-size:12px}
+.a{fill:#F5B884;font-size:12.5px}
+</style>
+<rect width="980" height="440" fill="#333333"/>
+<g transform="translate(906,22) scale(0.046)" fill="#F19143"><circle cx="350" cy="50" r="31"/><rect x="217" y="117" width="66" height="66" rx="7.9"/><circle cx="150" cy="250" r="31"/><circle cx="150" cy="350" r="31"/><rect x="117" y="417" width="66" height="66" rx="7.9"/><circle cx="150" cy="550" r="31"/><rect x="117" y="617" width="66" height="66" rx="7.9"/><circle cx="250" cy="750" r="31"/><circle cx="350" cy="850" r="31"/><rect x="517" y="17" width="66" height="66" rx="7.9"/><circle cx="650" cy="150" r="31"/><circle cx="750" cy="250" r="31"/><rect x="717" y="317" width="66" height="66" rx="7.9"/><circle cx="750" cy="450" r="31"/><rect x="717" y="517" width="66" height="66" rx="7.9"/><circle cx="750" cy="650" r="31"/><circle cx="650" cy="750" r="31"/><rect x="517" y="817" width="66" height="66" rx="7.9"/></g>
+<text x="36" y="46" class="t">What can go into training</text>
+<text x="36" y="72" class="s">every source is sorted into one tier before it is tokenized</text>
+
+<text x="60" y="118" class="h">used</text>
+<text x="370" y="118" class="h">one source at a time</text>
+<text x="680" y="118" class="h">never</text>
+<text x="60" y="138" class="m">the licence allows it</text>
+<text x="370" y="138" class="m">each decision is written down</text>
+<text x="680" y="138" class="m">whatever else is true of it</text>
+
+<g fill="#F19143">
+<rect x="60" y="158" width="240" height="46" rx="10"/><rect x="60" y="216" width="240" height="46" rx="10"/><rect x="60" y="274" width="240" height="46" rx="10"/>
+</g>
+<text x="180" y="186" class="dh" text-anchor="middle">permissive</text>
+<text x="180" y="244" class="dh" text-anchor="middle">attribution</text>
+<text x="180" y="302" class="dh" text-anchor="middle">copyleft</text>
+
+<g fill="none" stroke="#F19143" stroke-width="2">
+<rect x="370" y="158" width="240" height="46" rx="10"/><rect x="370" y="216" width="240" height="46" rx="10"/>
+</g>
+<text x="490" y="186" class="b" text-anchor="middle">unlicensed</text>
+<text x="490" y="244" class="b" text-anchor="middle">model-generated</text>
+<text x="370" y="290" class="m">no licence means all rights</text>
+<text x="370" y="308" class="m">reserved, not free to use</text>
+
+<g fill="none" stroke="#9A9B99" stroke-width="1.5">
+<rect x="680" y="158" width="240" height="46" rx="10"/><rect x="680" y="216" width="240" height="46" rx="10"/><rect x="680" y="274" width="240" height="46" rx="10"/>
+</g>
+<text x="800" y="186" class="q" text-anchor="middle">non-commercial</text>
+<text x="800" y="244" class="q" text-anchor="middle">author says don't train</text>
+<text x="800" y="302" class="q" text-anchor="middle">benchmark test sets</text>
+
+<line x1="60" y1="350" x2="920" y2="350" stroke="#4B4B4B"/>
+<text x="60" y="382" class="a">kept privately for every source</text>
+<text x="60" y="408" class="m">licence text as found · revision · SHA-256 · rows used · rows rejected and why · which stage used it</text>
+</svg>

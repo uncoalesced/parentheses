@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 420" width="980" height="420" role="img" aria-label="How a benchmark number gets published: checkpoint, lm-evaluation-harness, raw results, review by the maintainer, then the public number">
+<style>
+text{font-family:'JetBrains Mono','IBM Plex Mono',ui-monospace,Menlo,Consolas,monospace}
+.t{fill:#FDFFFC;font-size:20px;font-weight:600}
+.s{fill:#9A9B99;font-size:13px}
+.h{fill:#FDFFFC;font-size:13px;font-weight:600}
+.m{fill:#9A9B99;font-size:11.5px}
+.dh{fill:#333333;font-size:13px;font-weight:600}
+.d{fill:#333333;font-size:11.5px}
+.x{fill:#9A9B99;font-size:12.5px}
+.a{fill:#F5B884;font-size:12.5px}
+</style>
+<rect width="980" height="420" fill="#333333"/>
+<g transform="translate(906,22) scale(0.046)" fill="#F19143"><circle cx="350" cy="50" r="31"/><rect x="217" y="117" width="66" height="66" rx="7.9"/><circle cx="150" cy="250" r="31"/><circle cx="150" cy="350" r="31"/><rect x="117" y="417" width="66" height="66" rx="7.9"/><circle cx="150" cy="550" r="31"/><rect x="117" y="617" width="66" height="66" rx="7.9"/><circle cx="250" cy="750" r="31"/><circle cx="350" cy="850" r="31"/><rect x="517" y="17" width="66" height="66" rx="7.9"/><circle cx="650" cy="150" r="31"/><circle cx="750" cy="250" r="31"/><rect x="717" y="317" width="66" height="66" rx="7.9"/><circle cx="750" cy="450" r="31"/><rect x="717" y="517" width="66" height="66" rx="7.9"/><circle cx="750" cy="650" r="31"/><circle cx="650" cy="750" r="31"/><rect x="517" y="817" width="66" height="66" rx="7.9"/></g>
+<text x="36" y="46" class="t">How a number gets into a document</text>
+<text x="36" y="72" class="s">every score for 1.1 takes this path; nothing skips the fourth box</text>
+
+<g fill="none" stroke="#FDFFFC" stroke-width="1.5">
+<rect x="40" y="112" width="160" height="130" rx="12"/>
+<rect x="225" y="112" width="160" height="130" rx="12"/>
+<rect x="410" y="112" width="160" height="130" rx="12"/>
+<rect x="780" y="112" width="160" height="130" rx="12"/>
+</g>
+<rect x="595" y="112" width="160" height="130" rx="12" fill="#F19143"/>
+<g stroke="#F19143" stroke-width="3" stroke-linecap="round">
+<line x1="204" y1="177" x2="221" y2="177"/><line x1="389" y1="177" x2="406" y2="177"/><line x1="574" y1="177" x2="591" y2="177"/><line x1="759" y1="177" x2="776" y2="177"/>
+</g>
+
+<text x="120" y="146" class="h" text-anchor="middle">checkpoint</text>
+<text x="120" y="176" class="m" text-anchor="middle">named by its</text>
+<text x="120" y="194" class="m" text-anchor="middle">SHA-256,</text>
+<text x="120" y="212" class="m" text-anchor="middle">not by a path</text>
+
+<text x="305" y="146" class="h" text-anchor="middle">harness run</text>
+<text x="305" y="176" class="m" text-anchor="middle">lm-evaluation-harness</text>
+<text x="305" y="194" class="m" text-anchor="middle">full test set</text>
+<text x="305" y="212" class="m" text-anchor="middle">greedy, one run</text>
+
+<text x="490" y="146" class="h" text-anchor="middle">raw results</text>
+<text x="490" y="176" class="m" text-anchor="middle">scores with stderr</text>
+<text x="490" y="194" class="m" text-anchor="middle">every prompt and</text>
+<text x="490" y="212" class="m" text-anchor="middle">output, saved</text>
+
+<text x="675" y="146" class="dh" text-anchor="middle">a person reads it</text>
+<text x="675" y="176" class="d" text-anchor="middle">the results file and</text>
+<text x="675" y="194" class="d" text-anchor="middle">20 scored outputs</text>
+<text x="675" y="212" class="d" text-anchor="middle">per task</text>
+
+<text x="860" y="146" class="h" text-anchor="middle">public number</text>
+<text x="860" y="176" class="m" text-anchor="middle">with its stderr,</text>
+<text x="860" y="194" class="m" text-anchor="middle">chance level and</text>
+<text x="860" y="212" class="m" text-anchor="middle">the raw file</text>
+
+<line x1="40" y1="284" x2="940" y2="284" stroke="#4B4B4B"/>
+<text x="40" y="318" class="a">what the 1.0 tables did, and 1.1 does not</text>
+<text x="40" y="346" class="x">first 30 items of a test set  ·  keyword matching in place of scoring  ·  code compiled but never run</text>
+<text x="40" y="370" class="x">best of four runs as the headline  ·  scores copied from other labs' papers into comparison tables</text>
+<text x="40" y="394" class="x">commentary generated from the table by a model</text>
+</svg>

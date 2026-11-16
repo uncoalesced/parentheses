@@ -1,199 +1,282 @@
+<div align="center">
+  <img src="assets/parentheses_lockup_transparent.svg" alt="parentheses" width="380">
+</div>
+
+<h3 align="center">parentheses-1.1</h3>
+
+<p align="center">
+  <b>A recurrent language model for Kannada, Tamil, Telugu, Malayalam and English, built on one 8 GB laptop GPU.</b><br>
+  in development · grows the 253.54M 1.0 model past 500M · adds image input and speech · not a transformer
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/status-in_development-F19143" alt="Status: in development">
+  <a href="https://huggingface.co/uncoalesced-org/parentheses-1.0-240M"><img src="https://img.shields.io/badge/Hugging_Face-parentheses--1.0--240M-ffd21e" alt="Hugging Face"></a>
+  <img src="https://img.shields.io/badge/architecture-recurrent,_no_attention-9cf" alt="Architecture: recurrent, no attention">
+  <img src="https://img.shields.io/badge/trained_on-1x_RTX_5050_Laptop_(8_GB)-green" alt="Trained on one RTX 5050 Laptop GPU">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/code-MIT-brightgreen" alt="Code license: MIT"></a>
+  <a href="LICENSE-MODEL"><img src="https://img.shields.io/badge/weights-Apache_2.0-orange" alt="Weights license: Apache 2.0"></a>
+</p>
+
+<p align="center">
+  <a href="#where-things-stand">Where things stand</a> •
+  <a href="#quick-start">Quick start</a> •
+  <a href="#what-11-is-for">What 1.1 is for</a> •
+  <a href="#benchmarks">Benchmarks</a> •
+  <a href="#training-data">Training data</a> •
+  <a href="HISTORY.md">History</a> •
+  <a href="docs/BENCHMARK_SPEC.md">Benchmark protocol</a>
+</p>
+
+---
+
+parentheses is a recurrent language model from the same family as Mamba-2 and RWKV, with Kannada as its first language. We train it on an ordinary gaming laptop. Version 1.0 is released and is the model you can run today. This repository is where 1.1 is being built on top of it.
+
+A transformer keeps a key and a value for every token it has seen, so its memory grows as it writes. parentheses keeps one 64-by-64 matrix per head instead. Each token fades that memory a little, writes itself in, and reads an answer back out:
+
+$$S_t = \alpha_t S_{t-1} + \beta_t (k_t \otimes v_t), \qquad y_t = q_t S_t$$
+
+Across all 16 layers of 1.0 that is 4.85 MB of state in float32, the same at token 10 as at token 16,000.
+
+<p align="center">
+  <img src="docs/figures/state-vs-kvcache.svg" alt="A transformer's KV cache grows with every token; the parentheses state stays the same size" width="760">
+</p>
+
+The white line in that figure is a transformer we made up for scale, with the same depth and width as parentheses. It is there to show the shape of the curve, not to stand in for any real model.
+
+**Languages.** Kannada, Tamil, Telugu, Malayalam and English are the main languages. Tulu, Koya, Kuvi and Kolami are experimental. The tokenizer keeps Indic syllables (aksharas) whole, so the model reads and writes Dravidian script without breaking letters into stray bytes.
+
+<p align="center">
+  <img src="docs/figures/akshara-tokenization.svg" alt="The pre-tokenizer keeps vowel signs and viramas attached to their letters" width="760">
+</p>
+
+---
+
+## Where things stand
+
+1.1 is not trained yet. What exists is the foundation it will be trained on, and we would rather list that plainly than describe a model that isn't there.
+
+| Piece | State |
+|:---|:---|
+| Rewritten model code (`python/parentheses`) | Done. Loads the 1.0 weights and matches the 1.0 code bit for bit on them |
+| Reading a prompt in parallel, then generating step by step | Done, tested |
+| lm-evaluation-harness adapter and runner | Done, tested |
+| Honest baseline for 1.0 under the new [protocol](docs/BENCHMARK_SPEC.md) | Running; no number is published until the raw results have been read |
+| Rust runtime, server and CLI | Not started |
+| Growth past 500M parameters | Not started |
+| Image input, text-to-speech, speech input | Not started; data is being sourced |
+
+The git history of this repository starts in November 2026. Earlier commits were removed because they carried private names and file paths. [HISTORY.md](HISTORY.md) tells what happened before, mistakes included.
+
+---
+
+## Quick start
+
+This runs the released 1.0 weights with the 1.1 code. You need Python 3.10 or newer. An NVIDIA GPU helps, but the model also runs on CPU.
+
+```bash
+git clone https://github.com/uncoalesced/parentheses.git
+cd parentheses
+pip install -e .
+hf download uncoalesced-org/parentheses-1.0-240M model.safetensors --local-dir weights
 ```
-██████╗   █████╗  ██████╗  ███████╗ ███╗   ██╗ ████████╗ ██╗  ██╗ ███████╗ ███████╗ ███████╗ ███████╗
-██╔══██╗ ██╔══██╗ ██╔══██╗ ██╔════╝ ████╗  ██║ ╚══██╔══╝ ██║  ██║ ██╔════╝ ██╔════╝ ██╔════╝ ██╔════╝
-██████╔╝ ███████║ █████╔╝  █████╗   ██╔██╗ ██║    ██║    ███████║ █████╗   ███████╗ █████╗   ███████╗
-██╔═══╝  ██╔══██║ ██╔══██╗ ██╔══╝   ██║╚██╗██║    ██║    ██╔══██║ ██╔══╝   ╚════██║ ██╔══╝   ╚════██║
-██║      ██║  ██║ ██║  ██║ ███████╗ ██║ ╚████║    ██║    ██║  ██║ ███████╗ ███████║ ███████╗ ███████║
-╚═╝      ╚═╝  ╚═╝ ╚═╝  ╚═╝ ╚══════╝ ╚═╝  ╚═══╝    ╚═╝    ╚═╝  ╚═╝ ╚══════╝ ╚══════╝ ╚══════╝ ╚══════╝
+
+```python
+import torch
+from tokenizers import Tokenizer
+from parentheses import TOKENIZER_PATH
+from parentheses.checkpoint import load_model
+
+device = "cuda" if torch.cuda.is_available() else "cpu"
+model = load_model("weights/model.safetensors", device=device)
+tok = Tokenizer.from_file(str(TOKENIZER_PATH))
+
+def ask(text, lang="eng", max_new_tokens=120):
+    ids = [tok.token_to_id("<|user|>"), tok.token_to_id(f"<{lang}>")]
+    ids += tok.encode(text, add_special_tokens=False).ids
+    ids += [tok.token_to_id("<|assistant|>")]
+    prompt = torch.tensor([ids], device=device)
+    stops = (model.cfg.eot_token_id, tok.token_to_id("<|user|>"))
+    out = model.stream(prompt, max_new_tokens=max_new_tokens, stop_token_ids=stops)
+    return tok.decode(list(out))
+
+print(ask("Write a Python function that returns the factorial of n."))
+print(ask("ಮಳೆಗಾಲದಲ್ಲಿ ನೀರಿನ ಸಂರಕ್ಷಣೆ ಏಕೆ ಮುಖ್ಯ?", lang="kan"))
 ```
 
-# parentheses-1.1
+The first prompt returns a correct recursive factorial. The second returns Kannada that stays on topic and then starts repeating a line, which is what 1.0 does with longer Dravidian answers. Language codes are `kan`, `tam`, `tel`, `mal`, `eng`, and the experimental `tcy`, `kff`, `kxv`, `nit`.
 
-**A manifesto for scaling an attention-free, constant-memory recurrent model past 500M parameters on consumer hardware: smarter, faster, context-aware, uncensored, honest, and multimodal.**
-
-Engineered by uncoalesced
-
-> **Project status (November 2026): Planning and Manifesto Stage.**
-> `parentheses-1.0-240M-tanzanite` (`253,544,176` parameters, `slab_v4`) is in release closeout. Nothing in `parentheses-1.1` has been implemented or trained yet. Active development moves into this directory once `1.0` closes.
->
-> **Target timeline:** `parentheses-1.1` is targeted for **mid-December 2026**, ahead of the broader **Parentheses family release in January to February 2027**.
+If you would rather not clone anything, 1.0 also loads through `transformers` with `trust_remote_code=True`. The [model page](https://huggingface.co/uncoalesced-org/parentheses-1.0-240M) shows how.
 
 ---
 
-## Why parentheses-1.1 exists
+## What 1.1 is for
 
-`parentheses-1.0` proved that an attention-free State Space Duality (`slab_v4`) model built from scratch on a single 8 GB laptop GPU (NVIDIA GeForce RTX 5050 Laptop) can retain a **constant 4.85 MB recurrent state** at any sequence length, keep Dravidian aksharas whole, handle short Python and shell workflows, and abstain reliably on trap questions.
+1.0 showed that the architecture works at 253 million parameters on a laptop. It also showed us five things it can't do, and 1.1 is organised around them.
 
-It also exposed five hard ceilings that define everything `parentheses-1.1` (`slab_v5`) is built to solve:
+It doesn't know enough. At this size, world knowledge and reading comprehension are thin, and the model produces fluent, specific, wrong answers. 1.1 keeps the 1.0 weights as a spine and adds new capacity next to them, past 500 million parameters in total. During 1.0, one training stage on STEM text made every language worse within a hundred steps, so each stage of 1.1 carries replay data for every language and is checked per language before it counts.
 
-1. **Capacity and breadth:** At `253.54M` parameters, world knowledge, reading comprehension, and multi-domain depth are tightly constrained.
-2. **Reasoning and math:** On a 30-question sample of grade-school math (`GSM8K`), `1.0` scored in the single digits, and its `<think>` mode emitted templated restatements rather than real reasoning.
-3. **Inference and prompt-ingestion speed:** Generating ~20 to 34 tokens/s on an RTX 5050 Laptop GPU is far too slow for a `253M` model when quantized multi-billion-parameter transformers approach ~100 tokens/s on the same GPU.
-4. **Context resolution vs. false abstention:** `1.0` handles specific prompts well, yet slightly vague queries or Turn-2 follow-ups either lock onto Turn 1 or bail straight out to `"I don't know"`.
-5. **Single-modality isolation:** `1.0` is text-only in weights. Real local workflows require reading pasted images and documents directly, speaking answers on demand, and hearing spoken prompts.
+It can't reason through a sum. 1.0 gets grade-school arithmetic wrong almost every time, and its thinking mode restates the question more than it works on it. Reasoning data written for transformers is a poor fit here: a transformer can ramble for a thousand tokens and still look back at token 12, while this model's memory is a small matrix that long filler overwrites. 1.1 needs short, dense reasoning traces that keep the givens alive in the state.
 
-`parentheses-1.1` does **not** throw away `1.0`. It inherits the exact `1.0` weights, recurrent algebra, precision guarantees, and Akshara-preserving tokenizer, and grows them past **500 million parameters (`>= 506M`, target ~540M to 610M)** while keeping the entire system strictly **zero-attention**.
+It is slow for its size, around 20 to 30 tokens a second on the laptop GPU. Most of that is overhead, not arithmetic. The first fix is already in this repository: a prompt is read in parallel blocks and the resulting state is handed to the step-by-step generator.
 
----
+<p align="center">
+  <img src="docs/figures/prefill-then-step.svg" alt="The prompt is read in blocks by the parallel scan, which hands one fixed-size state to the recurrent step" width="760">
+</p>
 
-## Core invariants (non-negotiable)
+It gives up too early. A clear prompt gets a decent answer. A slightly vague one, or a follow-up question, often gets "I don't know" when the model could have asked what was meant. We want three behaviours kept apart: answer what can be answered, ask when the question is unclear, and say "I don't know" only when that is true. The model has no refusal training and 1.1 keeps it that way.
 
-- **Continuous lineage from `1.0`:** `1.0` weights load 1:1 into `core_spine`. New capacity, experts, and modality adapters initialize cleanly on the write side so step-0 behavior matches `1.0` without wiping pretrained features.
-- **Zero attention anywhere:** No softmax attention and no growing KV cache in the backbone, the vision encoder, or the audio codec. State memory remains bounded and `O(1)` in context length.
-- **Intelligence and output quality come first:** Speed optimizations, quantization, pruning, or fractional loading must never degrade reasoning, accuracy, or multilingual fluency. If a shortcut costs intelligence, it is rejected.
-- **Uncensored and open for research:** Zero safety-refusal rails, zero moralizing boilerplate. The model is an open instrument for studying reasoning, coding, chemistry, security, and logic without guardrail distortion.
-- **Open weights, logged data:** Inference code under MIT, weights under Apache-2.0. The training pipeline and data are not published. Every source is logged privately with its licence and hash, and summarised by licence tier in [`docs/LICENSE_TABLE.md`](docs/LICENSE_TABLE.md). Non-commercial and do-not-train sources stay out.
-- **Numbers from a standard harness:** Every published score follows [`docs/BENCHMARK_SPEC.md`](docs/BENCHMARK_SPEC.md): lm-evaluation-harness, full test sets, greedy, one run, raw results committed.
-- **Local-first hardware envelope:** Trainable and runnable on one 8 GB consumer laptop GPU (RTX 5050 Laptop) alongside modern consumer CPUs and NPUs.
+It only reads text. 1.1 adds image input first (screenshots, charts, tables, scanned pages, Indic script), then read-aloud speech, then spoken prompts. The encoders for these have to follow the same rule as the backbone: no attention anywhere.
 
----
+### Target layout
 
-## The five pillars of parentheses-1.1
+<p align="center">
+  <img src="docs/figures/v1.1-shards.svg" alt="A spine carrying the 1.0 weights, plus experts, vision and audio shards, and which of them each mode loads" width="760">
+</p>
 
-### 1. Expanded intelligence first (253.54M -> 500M+ parameters)
+| Part | Target size | Role |
+|:---|---:|:---|
+| Spine | ~258M to 262M | The 1.0 weights plus control tokens for image and audio |
+| Experts | ~180M+ | New capacity for text, starting from zero so behaviour at step 0 equals 1.0 |
+| Vision | ~50M to 85M | Convolutional or state-space reader for images and documents |
+| Audio | ~45M to 85M | Codec tokens for speech in and out |
+| Total | ~540M to 610M | At least 506M, with the same constant-size state in the spine |
 
-Priority one is making the model broadly smarter across everything it touches: deeper technical reasoning, stronger English and Dravidian fluency (Kannada, Tamil, Telugu, Malayalam, plus experimental Tulu, Koya, Kuvi, and Kolami), wider factual grounding, and stronger code synthesis.
+These are design targets. They will be replaced by measured numbers as each part is built.
 
-- **Modular capacity growth (`slab_v5`):** Keep the `16`-layer, `d_model=1024`, `16`-head additive recurrent spine (`253.5M` + vocabulary extension) intact, and grow total parameters past `506M+` via modular `experts` and modality shards.
-- **No domain-cliff forgetting:** In `1.0`, pushing STEM data caused all nine languages' bits-per-byte (BPB) to regress within 100 steps until multilingual replay restored balance. Every training phase in `1.1` enforces replay floors and per-language BPB gates so gaining knowledge in one domain never erases another.
-- **Wider and cleaner corpora:** Upgrade data quality, length coverage, multi-turn dialogue, and non-contaminated benchmarks, strictly verifying near-duplicate deduplication against every held-out evaluation split.
+### What does not change
 
-### 2. State-native reasoning and custom Chain of Thought
-
-`parentheses-1.0` failed on multi-step grade-school arithmetic because it neither thought long enough nor thought in a structure compatible with recurrent memory.
-
-Off-the-shelf Transformer Chain-of-Thought (CoT) datasets fail when distilled blindly onto a `250M to 500M` recurrent model:
-
-- A Transformer has an `O(T)` KV cache and can wander through 1,500 tokens of meta-chatter ("wait, let me check again...") while still attending verbatim back to token 12.
-- `parentheses` keeps one `64 x 64` matrix per head (`4.85 MB` total across 16 layers), holding roughly 64 near-orthogonal entries per head before older writes decay or interfere. Verbose filler literally flushes the problem's givens out of state before the last step runs.
-
-Therefore, `parentheses-1.1` builds **custom, state-native Chain of Thought**:
-
-- **Structured, dense, low-filler `<think>...</think>` traces:** Compact working memory steps that extract givens cleanly, keep arithmetic atomic, re-anchor intermediate state right before consumption, and self-verify before emitting the final answer.
-- **No silent regex crutches:** Benchmark evaluation measures genuine model reasoning rather than hiding behind input-pattern calculator intercepts.
-- **Multilingual reasoning parity:** Reasoning traces are constructed for both English and Dravidian languages from licensed, non-contaminated sources (without letting English-centric small teachers write broken Indic text).
-
-### 3. Speed without compromising intelligence
-
-In `1.0`, text generation on an RTX 5050 Laptop GPU sits around `20 to 34 tok/s` (FP32 Python loop), while multi-billion-parameter quantized Transformers approach `~100 tok/s` on the same GPU. For a model this compact, `30 tok/s` is an engineering bottleneck, not a hardware limit.
-
-Profiling the `1.0` runtime reveals why:
-
-1. **Sequential prompt ingestion:** `Engine` and `stream()` currently feed prompt tokens one-by-one through `model.step()`, launching thousands of tiny Python/CUDA ops per prompt instead of running a parallel chunked scan (`C=64`).
-2. **Python eager kernel-launch latency:** Each generated token runs ~2,000+ uncompiled Python/PyTorch tensor ops across 16 layers (including per-step scalar tensor allocations inside the inner loop), leaving the GPU idle waiting on CPU dispatch.
-3. **Unfused FP32 projections at chat time:** Running `1.0` inference weights in `float32` (`1.01 GB`) doubles memory traffic compared to `bfloat16` linear weights paired with `float32` recurrent state accumulation.
-4. **Sequential sampling overhead:** Per-step Python list scans and `fp32` sorts over `32,768` logits add avoidable latency after every step.
-
-`parentheses-1.1` attacks both **prompt ingestion** and **token output throughput** while keeping outputs mathematically faithful:
-
-- **Parallel chunked prefill + state caching:** Process prompts with the `C=64` chunked SSD scan (`forward_with_state`) and reuse prefix-hashed `.pstate` checkpoints across conversation turns.
-- **Compiled / CUDA-Graphed / fused `step()`:** Capture static-shape single-token decoding in CUDA Graphs (`torch.cuda.CUDAGraph`) or fused Triton/CUDA recurrent kernels to eliminate Python launch overhead.
-- **Mixed precision done right:** Store linear weights in `bfloat16` (or lossless/near-lossless weight-only quantization verified against intelligence gates) while keeping the `4.85 MB` recurrent state accumulator `S_t` and decay math strictly in `float32` so long-context precision never drifts.
-- **Fractional active compute:** Load only the required parameter slice per task (`1/5 to 1/3` active params for speech read-aloud and lightweight modes) without dragging unused modality towers into memory.
-
-**Non-negotiable speed gate:** Every kernel, dtype, or runtime speedup must pass zero-regression checks against the reference `float32` accuracy suite before shipping.
-
-### 4. Context understanding, uncensored openness, and 100% honest "I don't know"
-
-`1.0` exhibits two coupled failure modes at the boundary of what it knows:
-
-- **Vague prompts and Turn-2 lock-in:** When given a precise prompt (such as a clear Python specification), `1.0` performs well. When a prompt is slightly vague or arrives as a Turn-2 follow-up, it either repeats Turn 1's trajectory or panics directly into `"I don't know"` instead of inferring sensible intent or asking one focused clarifying question.
-- **Risk of conflating `"I don't know"` with a safety refusal:** Standard open SFT datasets carry hidden RLHF refusal habits (`"As an AI, I cannot..."`). On a small model, training both abstention and refusal merges them into one generic dodge circuit, risking fake `"I don't know"` responses or refusals on valid technical, logical, chemistry, or mechanical questions (such as explaining how different lock mechanisms work as a test of mechanical reasoning).
-
-`parentheses-1.1` enforces a strict **three-way behavioral separation**:
-
-| Situation | Required 1.1 Behavior | Target Metric |
-|---|---|---|
-| **Answerable query** (including sensitive, dual-use, adversarial logic, or mechanical puzzles) | Direct, complete, technical answer with zero moralizing and zero false abstention | **0.0% refusals** |
-| **Vague or underspecified query** (or multi-turn follow-up on a known topic) | Resolve context from conversation state, answer under stated assumptions, or ask a targeted clarifying question | **0% premature IDK bailouts** |
-| **Genuinely unknowable, unverified, or false-premise query** | Clear, honest epistemic abstention stating specifically what is unknown or missing | **100% honest abstention** |
-
-Training corpora are explicitly scrubbed of RLHF safety-refusal templates, paired with multi-turn context-resolution traces and calibrated epistemic abstention data verified independently in every supported language.
-
-### 5. Attention-free multimodality and the new unified harness
-
-`parentheses-1.1` expands from a text-only model into a unified, zero-attention multimodal system wired directly into a rebuilt, interoperable harness (`OpenAI`-compatible server, CLI, local UI, and external harness adapters):
-
-1. **Image Input (Top Multimodal Priority):**
-   - Paste screenshots, charts, data tables, scanned pages, code screenshots, diagrams, and Indic-script documents straight into the chat or harness.
-   - Processed by an **attention-free convolutional / state-space vision encoder** (`modality_vision`) into dense `1024`-wide visual tokens fed between `<|image|>` and `<|/image|>` into the exact same recurrent loop.
-   - Focus is strictly **analytical comprehension and reading** (extracting values, interpreting plots, reading dense text and Dravidian scripts accurately), alongside **deterministic analytical visual output** (typed scene graphs compiled to exact SVG charts, schematics, and ASCII diagrams; zero raster image generation).
-2. **Text-to-Speech (On-Demand Read-Aloud):**
-   - Integrated directly into the new harness via a dedicated **read-aloud key combination**: pressing the shortcut reads the assistant response aloud cleanly.
-   - Runs in a **fractional parameter mode (`1/5 to 1/3` of total parameters)** using an attention-free neural audio codec (`modality_audio`, e.g., convolutional RVQ codec tokens interleaved between `<|audio|>` and `<|/audio|>`), avoiding loading the full vision and reasoning weights just to speak a reply.
-3. **Speech Input (Secondary, Speaker-Agnostic):**
-   - Understands spoken prompts from any speaker's voice through the same attention-free audio token interface.
-   - Scoped intentionally leaner than image input and core reasoning so acoustic training neither crowds out text intelligence nor balloons hardware cost.
+- The 1.0 weights keep loading. Every change to the model code is tested against the 1.0 outputs.
+- No attention, in the backbone or in the vision and audio parts.
+- A faster runtime must give the same outputs. Speed that costs accuracy is not shipped.
+- It has to train and run on one 8 GB laptop GPU.
 
 ---
 
-## Planned target architecture (`slab_v5`)
+## Benchmarks
 
-All `1.1` figures below are **design targets** to be measured and updated once Stage 2 and Stage 3 pilots execute.
+There are none to show yet, and that is on purpose.
 
-| Shard / Module | Prefix | Target Params | Role |
-|---|---|---:|---|
-| Core recurrent spine + vocab extension | `spine.` | `~258M to 262M` | `1.0` `slab_v4` weights (`253.54M`) + audio/multimodal control tokens |
-| Modular experts | `experts.` | `~180M+` | Zero-init write-side expansion for broad intelligence, STEM, CoT, and multilingual depth |
-| Vision tower + projector | `vision.` | `~50M to 85M` | Zero-attention conv/SSM image, chart, table, and document reader |
-| Audio speech bridge / head | `audio.` | `~45M to 85M` | Attention-free neural audio codec interface (TTS read-aloud + ASR) |
-| **Total (`slab_v5`)** | | **`~540M to 610M+`** | **Strict `>= 506M` minimum, constant `O(1)` spine state** |
+The tables published with 1.0 came from a script we wrote ourselves. Readers went through it and found that each benchmark used 30 questions, several were scored by keyword matching, MBPP code was compiled but never run, the headline was the best of four runs, and the comparison tables set those numbers against other labs' full-benchmark scores. They were right, and the tables overstated the model. [HISTORY.md](HISTORY.md#the-benchmark-tables-november-2026) has the full account.
 
-### Selective load modes (target)
+From 1.1 on, scores come from [lm-evaluation-harness](https://github.com/EleutherAI/lm-evaluation-harness) with its task definitions untouched: full test sets, greedy decoding, one run, the standard error reported, and the raw output saved. A person reads the results before a number goes anywhere public. The 1.0 model is being re-measured this way first, so 1.1 has an honest baseline to beat.
 
-| Mode | Active Shards | Purpose |
-|---|---|---|
-| `text-lite` | `spine` | Fast baseline `1.0`-compatible text inference |
-| `text` | `spine` + `experts` | Full intelligence and custom CoT reasoning |
-| `vision` | `spine` + `experts` + `vision` | Pasted images, charts, tables, and document reading |
-| `tts` / `asr` | Fractional spine slice (`1/5 to 1/3` target total) + `audio` | Low-footprint read-aloud hotkey and voice input |
-| `full` | All shards | Complete omni-modal session |
+<p align="center">
+  <img src="docs/figures/benchmark-protocol.svg" alt="Checkpoint, harness run, raw results, review by a person, then the public number" width="760">
+</p>
 
----
+To run it yourself:
 
-## Planned repository layout
+```bash
+pip install -e ".[eval]"
+python -m parentheses.evaluate --checkpoint weights/model.safetensors --tasks arc_easy,hellaswag
+```
 
-The `1.1` codebase is a rewrite in Python and Rust. What is public:
-
-- `python/parentheses/`: `slab_v5` model definition, shard loader, tokenizer files, and the lm-evaluation-harness adapter
-- `rust/`: inference runtime (recurrent `step()`, chunked prefill, session state cache), tokenizer, OpenAI-compatible server, CLI, and Python bindings
-- `eval/`: benchmark task lists, run configs, and raw results
-- `tests/`: scan/step parity, step-0 `1.0` equivalence, and speed regression checks
-- `docs/`: benchmark protocol and licence tiers
-
-Training code, data builders and data ledgers are kept out of the repository.
+The rules are in [docs/BENCHMARK_SPEC.md](docs/BENCHMARK_SPEC.md).
 
 ---
 
-## Baseline reference (`parentheses-1.0-240M-tanzanite`)
+## Training data
 
-Every `1.1` milestone will be judged directly against the measured `1.0` baseline (float32 weights, RTX 5050 Laptop GPU):
+1.1 is open weights. The weights are Apache 2.0 and the code here is MIT. The training data and the training pipeline are not published.
 
-| Metric | 1.0 Measured Baseline | 1.1 Direction |
-|---|---|---|
-| Parameters | `253,544,176` | `>= 506M` (`~540M to 610M` modular) |
-| Recurrent spine state | `4.85 MB` (`fp32`, constant `O(1)`) | Preserved `O(1)` fixed state |
-| Inference throughput (RTX 5050) | `20 to 27 tok/s` typical (`11 to 34` release range; `33.8` median in fp32 chat) | Chunked prefill + CUDA Graph / BF16 + fused kernels (zero quality loss) |
-| Benchmarks (MMLU, GSM8K, TruthfulQA MC, Belebele, MBPP, HumanEval) | Being re-measured with lm-evaluation-harness; no number is quoted until that run is reviewed | Improve on the re-measured baseline, same protocol |
-| False refusals (internal prompt suite, author-written) | `0/90` on ordinary prompts | Keep at zero, and add a suite not written by the author |
-| Modalities | Text only | Image-In (#1 multimodal), Harness TTS hotkey (#2), Speech-In (#3) |
+That is a weaker promise than 1.0 made. 1.0 was trained only on data whose licence allows commercial use, with every source listed. Keeping that list current in public turned into more bookkeeping than one small project could carry. For 1.1, every source is still logged privately with its licence text, revision and hash, and this repository publishes the totals by licence tier.
 
-The 1.0 release tables were produced by a small in-house script and overstated the model. [`HISTORY.md`](HISTORY.md) explains what was wrong with them.
+<p align="center">
+  <img src="docs/figures/licence-tiers.svg" alt="Licence tiers: used, used one source at a time with a recorded decision, and never used" width="760">
+</p>
+
+If you need a model whose every input is permissively licensed and listed, use 1.0. Details are in [docs/LICENSE_TABLE.md](docs/LICENSE_TABLE.md).
 
 ---
 
-## Target release schedule
+## How it works
 
-- **`parentheses-1.0` closeout:** Release finalization of the `253.54M` text baseline before active implementation begins in this directory.
-- **`parentheses-1.1` release:** Targeted for **mid-December 2026** (`>= 506M` modular `slab_v5`, intelligence, state-native reasoning, runtime speedups, context/honesty calibration, and multimodal support).
-- **Parentheses family release:** Targeted for **January to February 2027**, bringing the full model family together on the shared architecture and harness.
+One block of the model, and the update each head performs:
+
+<p align="center">
+  <img src="docs/figures/block.svg" alt="One parentheses block: pre-norm residual, selective linear attention, SwiGLU" width="620">
+</p>
+
+<p align="center">
+  <img src="docs/figures/state-update.svg" alt="The state update and the read for one head" width="760">
+</p>
+
+Training does not run the recurrence one token at a time. It uses an equivalent parallel form that works on blocks of 64 tokens and passes one state matrix from block to block. Documents packed into the same sequence never see each other.
+
+<p align="center">
+  <img src="docs/figures/chunked-scan.svg" alt="The chunked parallel form: tokens interact inside a block, and one state is handed between blocks" width="760">
+</p>
+
+<p align="center">
+  <img src="docs/figures/reset-isolation.svg" alt="Document isolation inside a packed sequence" width="760">
+</p>
+
+The whole model is in [python/parentheses/model.py](python/parentheses/model.py), about 350 lines.
+
+| | 1.0, the base for 1.1 |
+|:---|:---|
+| Parameters | 253,544,176 |
+| Layers / width / heads | 16 / 1024 / 16 heads of 64 |
+| SwiGLU hidden width | 2752 |
+| Vocabulary | 32,768 byte-level BPE (`v3_32k`), akshara-preserving |
+| Training context | 4,096 tokens |
+| Recurrent state | 4.85 MB in float32, constant |
 
 ---
+
+## Repository layout
+
+| Path | What is there |
+|:---|:---|
+| `python/parentheses/` | Model, checkpoint loader, tokenizer files, harness adapter and evaluation runner |
+| `tests/` | Parallel and recurrent forms agree; the rewrite reproduces 1.0; the adapter returns what the model computes |
+| `docs/` | Benchmark protocol, licence tiers, figures |
+| `tools/` | The check that keeps private names and paths out of the repository |
+| `rust/`, `eval/` | Reserved for the runtime and for reviewed benchmark results |
+
+```bash
+pip install -e ".[dev]"
+pytest
+```
+
+The tests that need the released weights are skipped unless `PARENTHESES_BASE_CKPT` points at them.
+
+---
+
+## Roadmap
+
+| Milestone | Status |
+|:---|:---|
+| parentheses-0.9-130M preview (CC BY-NC 4.0 weights) | Released |
+| parentheses-1.0-240M-tanzanite (Apache 2.0 weights, MIT code) | Released, November 2026 |
+| 1.0 re-measured with lm-evaluation-harness | In progress |
+| parentheses-1.1 (500M+, image input, speech) | In development, aimed at mid-December 2026 |
+| Parentheses family release | Planned for early 2027 |
+
+The December date is a target. The rewrite, the growth and three new modalities are a lot for one laptop, and if something has to give it will be the date.
+
+---
+
+## Questions, bugs and feedback
+
+Open an issue on [GitHub](https://github.com/uncoalesced/parentheses/issues) or start a thread in the [Hugging Face discussions](https://huggingface.co/uncoalesced-org/parentheses-1.0-240M/discussions). We read both. The benchmark rules in this repository exist because someone took the time to read our script and tell us what was wrong with it, so that kind of feedback is especially welcome. Security reports go through [SECURITY.md](SECURITY.md).
+
+## Citation
+
+```bibtex
+@software{parentheses_2026,
+  title   = {parentheses: a recurrent language model for Dravidian languages and English},
+  author  = {uncoalesced},
+  year    = {2026},
+  url     = {https://github.com/uncoalesced/parentheses}
+}
+```
 
 ## Licenses
 
-- Code and runtime: MIT License ([`LICENSE`](LICENSE))
-- Model weights: Apache 2.0 ([`LICENSE-MODEL`](LICENSE-MODEL))
-- Training data: not redistributed; see [`docs/LICENSE_TABLE.md`](docs/LICENSE_TABLE.md)
+- Code: [MIT](LICENSE)
+- Model weights: [Apache 2.0](LICENSE-MODEL)
+- Training data: not redistributed; see [docs/LICENSE_TABLE.md](docs/LICENSE_TABLE.md)
 
 <p align="center"><sub>Engineered by uncoalesced</sub></p>

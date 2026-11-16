@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 560" width="980" height="560" role="img" aria-label="parentheses-1.1 target layout: a spine carrying the 1.0 weights plus experts, vision and audio shards, and which shards each mode loads">
+<style>
+text{font-family:'JetBrains Mono','IBM Plex Mono',ui-monospace,Menlo,Consolas,monospace}
+.t{fill:#FDFFFC;font-size:20px;font-weight:600}
+.s{fill:#9A9B99;font-size:13px}
+.h{fill:#FDFFFC;font-size:17px;font-weight:600}
+.b{fill:#FDFFFC;font-size:12.5px}
+.m{fill:#9A9B99;font-size:12.5px}
+.d{fill:#333333;font-size:12.5px}
+.dh{fill:#333333;font-size:17px;font-weight:600}
+.a{fill:#F5B884;font-size:12.5px}
+</style>
+<rect width="980" height="560" fill="#333333"/>
+<g transform="translate(906,22) scale(0.046)" fill="#F19143"><circle cx="350" cy="50" r="31"/><rect x="217" y="117" width="66" height="66" rx="7.9"/><circle cx="150" cy="250" r="31"/><circle cx="150" cy="350" r="31"/><rect x="117" y="417" width="66" height="66" rx="7.9"/><circle cx="150" cy="550" r="31"/><rect x="117" y="617" width="66" height="66" rx="7.9"/><circle cx="250" cy="750" r="31"/><circle cx="350" cy="850" r="31"/><rect x="517" y="17" width="66" height="66" rx="7.9"/><circle cx="650" cy="150" r="31"/><circle cx="750" cy="250" r="31"/><rect x="717" y="317" width="66" height="66" rx="7.9"/><circle cx="750" cy="450" r="31"/><rect x="717" y="517" width="66" height="66" rx="7.9"/><circle cx="750" cy="650" r="31"/><circle cx="650" cy="750" r="31"/><rect x="517" y="817" width="66" height="66" rx="7.9"/></g>
+<text x="36" y="46" class="t">parentheses-1.1 target layout (slab_v5)</text>
+<text x="36" y="72" class="s">design targets, not measurements · none of the new shards is trained yet</text>
+
+<rect x="60" y="104" width="300" height="190" rx="14" fill="#F19143"/>
+<text x="210" y="150" class="dh" text-anchor="middle">spine</text>
+<text x="210" y="182" class="d" text-anchor="middle">the 1.0 weights, unchanged</text>
+<text x="210" y="204" class="d" text-anchor="middle">253,544,176 parameters</text>
+<text x="210" y="226" class="d" text-anchor="middle">+ control tokens for image and audio</text>
+<text x="210" y="262" class="d" text-anchor="middle">16 layers · width 1024 · 16 heads</text>
+
+<rect x="420" y="104" width="160" height="190" rx="14" fill="none" stroke="#F19143" stroke-width="2"/>
+<text x="500" y="150" class="h" text-anchor="middle">experts</text>
+<text x="500" y="182" class="b" text-anchor="middle">~180M+</text>
+<text x="500" y="218" class="m" text-anchor="middle">more room for</text>
+<text x="500" y="238" class="m" text-anchor="middle">text and reasoning</text>
+<text x="500" y="268" class="a" text-anchor="middle">starts at zero</text>
+
+<rect x="600" y="104" width="160" height="190" rx="14" fill="none" stroke="#F19143" stroke-width="2"/>
+<text x="680" y="150" class="h" text-anchor="middle">vision</text>
+<text x="680" y="182" class="b" text-anchor="middle">~50M to 85M</text>
+<text x="680" y="218" class="m" text-anchor="middle">reads screenshots,</text>
+<text x="680" y="238" class="m" text-anchor="middle">charts and pages</text>
+<text x="680" y="268" class="a" text-anchor="middle">no attention</text>
+
+<rect x="780" y="104" width="160" height="190" rx="14" fill="none" stroke="#F19143" stroke-width="2"/>
+<text x="860" y="150" class="h" text-anchor="middle">audio</text>
+<text x="860" y="182" class="b" text-anchor="middle">~45M to 85M</text>
+<text x="860" y="218" class="m" text-anchor="middle">speech in,</text>
+<text x="860" y="238" class="m" text-anchor="middle">read-aloud out</text>
+<text x="860" y="268" class="a" text-anchor="middle">no attention</text>
+
+<text x="60" y="340" class="s">what each mode loads</text>
+<line x1="60" y1="352" x2="940" y2="352" stroke="#4B4B4B"/>
+
+<text x="60" y="384" class="b">text-lite</text>
+<circle cx="210" cy="380" r="9" fill="#F19143"/>
+<text x="60" y="418" class="b">text</text>
+<circle cx="210" cy="414" r="9" fill="#F19143"/><circle cx="500" cy="414" r="9" fill="#F19143"/>
+<text x="60" y="452" class="b">vision</text>
+<circle cx="210" cy="448" r="9" fill="#F19143"/><circle cx="500" cy="448" r="9" fill="#F19143"/><circle cx="680" cy="448" r="9" fill="#F19143"/>
+<text x="60" y="486" class="b">tts / asr</text>
+<circle cx="210" cy="482" r="9" fill="none" stroke="#F19143" stroke-width="2"/><circle cx="860" cy="482" r="9" fill="#F19143"/>
+<text x="232" y="486" class="m">part of the spine</text>
+<text x="60" y="520" class="b">full</text>
+<circle cx="210" cy="516" r="9" fill="#F19143"/><circle cx="500" cy="516" r="9" fill="#F19143"/><circle cx="680" cy="516" r="9" fill="#F19143"/><circle cx="860" cy="516" r="9" fill="#F19143"/>
+</svg>

@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 400" width="980" height="400" role="img" aria-label="A prompt is read in blocks by the parallel scan, which hands one fixed-size state to the recurrent step that writes tokens one at a time">
+<style>
+text{font-family:'JetBrains Mono','IBM Plex Mono',ui-monospace,Menlo,Consolas,monospace}
+.t{fill:#FDFFFC;font-size:20px;font-weight:600}
+.s{fill:#9A9B99;font-size:13px}
+.b{fill:#FDFFFC;font-size:13px;font-weight:600}
+.m{fill:#9A9B99;font-size:12.5px}
+.a{fill:#F5B884;font-size:12.5px}
+.d{fill:#333333;font-size:12px;font-weight:600}
+</style>
+<rect width="980" height="400" fill="#333333"/>
+<g transform="translate(906,22) scale(0.046)" fill="#F19143"><circle cx="350" cy="50" r="31"/><rect x="217" y="117" width="66" height="66" rx="7.9"/><circle cx="150" cy="250" r="31"/><circle cx="150" cy="350" r="31"/><rect x="117" y="417" width="66" height="66" rx="7.9"/><circle cx="150" cy="550" r="31"/><rect x="117" y="617" width="66" height="66" rx="7.9"/><circle cx="250" cy="750" r="31"/><circle cx="350" cy="850" r="31"/><rect x="517" y="17" width="66" height="66" rx="7.9"/><circle cx="650" cy="150" r="31"/><circle cx="750" cy="250" r="31"/><rect x="717" y="317" width="66" height="66" rx="7.9"/><circle cx="750" cy="450" r="31"/><rect x="717" y="517" width="66" height="66" rx="7.9"/><circle cx="750" cy="650" r="31"/><circle cx="650" cy="750" r="31"/><rect x="517" y="817" width="66" height="66" rx="7.9"/></g>
+<text x="36" y="46" class="t">Read the prompt in blocks, write one token at a time</text>
+<text x="36" y="72" class="s">forward_with_state() reads with the parallel form and hands the recurrent state to step()</text>
+
+<text x="60" y="132" class="b">prompt</text>
+<g fill="#FDFFFC">
+<rect x="60" y="150" width="28" height="28" rx="5"/><rect x="94" y="150" width="28" height="28" rx="5"/><rect x="128" y="150" width="28" height="28" rx="5"/><rect x="162" y="150" width="28" height="28" rx="5"/>
+<rect x="206" y="150" width="28" height="28" rx="5"/><rect x="240" y="150" width="28" height="28" rx="5"/><rect x="274" y="150" width="28" height="28" rx="5"/><rect x="308" y="150" width="28" height="28" rx="5"/>
+<rect x="352" y="150" width="28" height="28" rx="5"/><rect x="386" y="150" width="28" height="28" rx="5"/><rect x="420" y="150" width="28" height="28" rx="5"/><rect x="454" y="150" width="28" height="28" rx="5"/>
+</g>
+<g stroke="#9A9B99" stroke-width="1.5" fill="none">
+<polyline points="60,188 60,196 190,196 190,188"/><polyline points="206,188 206,196 336,196 336,188"/><polyline points="352,188 352,196 482,196 482,188"/>
+</g>
+<text x="271" y="222" class="m" text-anchor="middle">parallel scan: every block at once (64 tokens per block; 4 drawn)</text>
+
+<line x1="496" y1="164" x2="540" y2="164" stroke="#F19143" stroke-width="3" stroke-linecap="round"/>
+<circle cx="590" cy="164" r="44" fill="#F19143"/>
+<text x="590" y="160" class="d" text-anchor="middle">state</text>
+<text x="590" y="178" class="d" text-anchor="middle">4.85 MB</text>
+<line x1="640" y1="164" x2="676" y2="164" stroke="#F19143" stroke-width="3" stroke-linecap="round"/>
+
+<text x="690" y="132" class="b">answer</text>
+<g fill="none" stroke="#F19143" stroke-width="2">
+<circle cx="704" cy="164" r="13"/><circle cx="740" cy="164" r="13"/><circle cx="776" cy="164" r="13"/><circle cx="812" cy="164" r="13"/><circle cx="848" cy="164" r="13"/><circle cx="884" cy="164" r="13"/>
+</g>
+<circle cx="920" cy="164" r="13" fill="#F19143"/>
+<text x="812" y="222" class="m" text-anchor="middle">step(): one token, one state update</text>
+
+<line x1="60" y1="268" x2="940" y2="268" stroke="#4B4B4B"/>
+<text x="60" y="302" class="b">Same function both ways.</text>
+<text x="60" y="328" class="m">On the released 1.0 weights, reading 137 tokens in parallel and then stepping gives the same</text>
+<text x="60" y="348" class="m">logits as stepping the whole way, to within float32 rounding.</text>
+<text x="60" y="376" class="a">largest difference measured: 6.4e-05 on logits of size ~25 (2 prompts, 200 tokens each)</text>
+</svg>

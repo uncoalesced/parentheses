@@ -1,6 +1,24 @@
-# History
+<div align="center">
+  <img src="assets/parentheses_lockup_transparent.svg" alt="parentheses" width="300">
+</div>
 
-This is how parentheses got from a transformer on an old computer that later failed to a recurrent model on a laptop. It covers what each version was, why it was replaced, and the mistakes along the way, including the ones I'm not proud of.
+<h3 align="center">History</h3>
+
+<p align="center">
+  How parentheses got from a transformer on a computer that later failed to a recurrent model on a laptop.
+</p>
+
+<p align="center">
+  <a href="README.md">README</a> •
+  <a href="docs/BENCHMARK_SPEC.md">Benchmark protocol</a> •
+  <a href="docs/LICENSE_TABLE.md">Licence tiers</a>
+</p>
+
+---
+
+This covers what each version was, why it was replaced, and the mistakes along the way, including the ones I'm not proud of.
+
+<p align="center"><img src="docs/figures/history-growth.svg" alt="Parameter count of each version from 0.2 to 1.0, rising from about 300 thousand to about 254 million over nine weeks" width="760"></p>
 
 The git history of this repository was reset to a single commit in November 2026, because old commits carried private names and file paths. This file is the record of what came before.
 
@@ -125,3 +143,5 @@ Check the licence before you download the data, not after you've trained on it. 
 ---
 
 Related: [README](README.md), [Benchmark protocol](docs/BENCHMARK_SPEC.md), [Licence tiers](docs/LICENSE_TABLE.md)
+
+<p align="center"><sub>Engineered by uncoalesced</sub></p>
