@@ -1,0 +1,30 @@
+# Private side of the tree. Never tracked.
+/private/
+/.claude/
+GATES.md
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+
+# Rust
+/rust/target/
+
+# Weights and data never go to GitHub
+*.pt
+*.safetensors
+*.bin
+*.npy
+*.parquet
+*.bak
+
+# OS / editor
+Thumbs.db
+.DS_Store
+.vscode/
+.idea/
