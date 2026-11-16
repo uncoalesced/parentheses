@@ -24,7 +24,15 @@ from .lm_eval_adapter import ParenthesesLM
 
 
 def harness_revision() -> str:
+    """Git revision of the harness, if it is running from its own checkout.
+
+    A pip-installed copy has no revision of its own. Asking git anyway would
+    return the revision of whatever repository happens to contain the
+    environment, so that case is reported as unknown.
+    """
     root = Path(lm_eval.__file__).resolve().parent.parent
+    if not (root / ".git").exists():
+        return "unknown: harness is an installed package, pass --harness-revision"
     try:
         return subprocess.run(["git", "-C", str(root), "rev-parse", "HEAD"], capture_output=True,
                               text=True, check=True).stdout.strip()
@@ -41,6 +49,8 @@ def main(argv=None) -> int:
     ap.add_argument("--batch-size", type=int, default=8)
     ap.add_argument("--device", default=None)
     ap.add_argument("--limit", type=int, default=None, help="smoke test only: first N items per task")
+    ap.add_argument("--harness-revision", default=None,
+                    help="git revision of lm-evaluation-harness, when it is installed as a package")
     ap.add_argument("--allow-code-execution", action="store_true",
                     help="needed for MBPP and HumanEval; only inside a sandbox with no network")
     args = ap.parse_args(argv)
@@ -64,10 +74,10 @@ def main(argv=None) -> int:
     samples = results.pop("samples", {})
     record = {
         "command": "python -m parentheses.evaluate " + " ".join(
-            a for a in (argv or sys.argv[1:]) if a != args.checkpoint),
+            "<checkpoint>" if a == args.checkpoint else a for a in (argv or sys.argv[1:])),
         "date": datetime.date.today().isoformat(),
         "harness_version": lm_eval.__version__,
-        "harness_revision": harness_revision(),
+        "harness_revision": args.harness_revision or harness_revision(),
         "checkpoint_sha256": checkpoint_sha,
         "limit": args.limit,
         "smoke_test": bool(args.limit),
