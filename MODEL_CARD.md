@@ -73,6 +73,34 @@ Re-measurement with [lm-evaluation-harness](https://github.com/EleutherAI/lm-eva
 
 Until then, this card reports no benchmark scores.
 
+### Memory test (internal diagnostic): how far back can it recall?
+
+This is an internal check, not a benchmark. We hide a 5-digit number in some text, add 0 to 4,096 tokens of unrelated passages after it ([Belebele](https://huggingface.co/datasets/facebook/belebele)), and then ask for the number back. We score it three ways:
+- **Choice:** does the model rank the real number above four decoys? Chance is 0.20.
+- **Exact:** does its greedy answer start with the right digits?
+- **Gain:** how much more likely is the real number than a decoy, in nats?
+
+Each cell is 50 items. The sentences in Kannada, Tamil, Telugu and Malayalam were written by an AI model and have not been checked by native speakers yet.
+
+Plain document, exact recall:
+
+| Tokens after the number | English | Kannada | Tamil | Telugu | Malayalam |
+|--:|--:|--:|--:|--:|--:|
+| 128 | 0.96 | 0.98 | 0.96 | 1.00 | 1.00 |
+| 512 | 0.52 | 0.86 | 0.58 | 0.90 | 0.88 |
+| 1,024 | 0.08 | 0.26 | 0.04 | 0.44 | 0.36 |
+| 2,048 (choice) | 0.68 | 0.82 | 0.70 | 0.86 | 0.86 |
+| 4,096 (choice) | 0.20 | 0.32 | 0.26 | 0.24 | 0.24 |
+
+What this shows:
+- Exact recall holds to about 256-512 tokens.
+- Recall stays above chance to about 2,048 tokens and is gone by 4,096.
+- In chat format it fades faster. English exact recall at 512 tokens is 0.04.
+- Kannada, Telugu and Malayalam hold on longer than English and Tamil.
+- Making the memory fade more slowly at inference time roughly triples English recall at 2,048 tokens in chat. It also makes text prediction about 9% worse and hurts short-range recall, so it is a diagnosis, not a setting to use.
+
+Raw per-item results and the full table, including the chat and ablation runs, are in [eval/results/needle-recall-1.0/](https://github.com/uncoalesced/parentheses/blob/main/eval/results/needle-recall-1.0/summary.md).
+
 ---
 
 ## 4. How to use
@@ -164,7 +192,7 @@ The training was single-turn: each example is one question and one answer. See t
 - Short code requests and simple questions usually come out right. Longer programs often have mistakes.
 - Longer answers, especially in Kannada, start repeating themselves after a sentence or two.
 - The model was trained on single-turn chats only. Follow-up questions usually get the previous answer again, so start a new conversation for each question. The chat tools do this by default.
-- The fixed-size state can lose older facts as new text comes in. Memory use stays constant, but recall of earlier text is not guaranteed.
+- The fixed-size state loses older facts as new text comes in. Exact recall of a number holds to about 256-512 tokens and is gone by 4,096 (see section 3).
 - Quality beyond the 4,096-token training context has not been measured.
 - Tulu, Koya, Kuvi and Kolami are experimental. They have no tested sample prompts.
 - Output is sampled, so the same prompt can give different answers unless a seed is fixed.

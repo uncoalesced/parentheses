@@ -127,6 +127,34 @@ python -m parentheses.evaluate --checkpoint weights/model.safetensors --tasks ar
 
 Results are written to `eval/results/` by default. The full protocol, including the task list and the rules for what counts as a published number, is in [BENCHMARK_SPEC.md](docs/BENCHMARK_SPEC.md).
 
+### Memory test: how far back can it recall?
+
+This is an internal check, not a benchmark. We hide a 5-digit number in some text, add 0 to 4,096 tokens of unrelated passages after it ([Belebele](https://huggingface.co/datasets/facebook/belebele)), and then ask for the number back. We score it three ways:
+- **Choice:** does the model rank the real number above four decoys? Chance is 0.20.
+- **Exact:** does its greedy answer start with the right digits?
+- **Gain:** how much more likely is the real number than a decoy, in nats?
+
+Each cell is 50 items. The sentences in Kannada, Tamil, Telugu and Malayalam were written by an AI model and have not been checked by native speakers yet.
+
+Plain document, exact recall:
+
+| Tokens after the number | English | Kannada | Tamil | Telugu | Malayalam |
+|--:|--:|--:|--:|--:|--:|
+| 128 | 0.96 | 0.98 | 0.96 | 1.00 | 1.00 |
+| 512 | 0.52 | 0.86 | 0.58 | 0.90 | 0.88 |
+| 1,024 | 0.08 | 0.26 | 0.04 | 0.44 | 0.36 |
+| 2,048 (choice) | 0.68 | 0.82 | 0.70 | 0.86 | 0.86 |
+| 4,096 (choice) | 0.20 | 0.32 | 0.26 | 0.24 | 0.24 |
+
+What this shows:
+- Exact recall holds to about 256-512 tokens.
+- Recall stays above chance to about 2,048 tokens and is gone by 4,096.
+- In chat format it fades faster. English exact recall at 512 tokens is 0.04.
+- Kannada, Telugu and Malayalam hold on longer than English and Tamil.
+- Making the memory fade more slowly at inference time roughly triples English recall at 2,048 tokens in chat. It also makes text prediction about 9% worse and hurts short-range recall, so it is a diagnosis, not a setting to use.
+
+Raw per-item results and the full table, including the chat and ablation runs, are in [eval/results/needle-recall-1.0/](eval/results/needle-recall-1.0/summary.md).
+
 ---
 
 ## Known limits
