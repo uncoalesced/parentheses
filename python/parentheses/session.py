@@ -14,7 +14,7 @@ new document and wipes the state.
 
 from __future__ import annotations
 
-from typing import List, Optional, Sequence, Union
+from typing import Callable, List, Optional, Sequence, Union
 
 import torch
 import torch.nn.functional as F
@@ -22,6 +22,20 @@ import torch.nn.functional as F
 from .model import LayerState, Parentheses
 
 STOP_TOKENS = ("<|endoftext|>", "<|user|>", "<|system|>", "<|assistant|>", "<|pad|>")
+
+# The sampling 1.0 was tuned with: low temperature, a min-p floor, no
+# repetition penalty, and a block on repeating any 8-token run.
+RELEASE_SAMPLING = {"temperature": 0.2, "top_k": 40, "min_p": 0.1, "no_repeat_ngram_size": 8}
+
+
+def _block_repeated_ngrams(scores: torch.Tensor, history: List[int], n: int) -> None:
+    """Forbid any token that would complete an n-gram already in `history`."""
+    if n < 2 or len(history) < n:
+        return
+    prefix = history[-(n - 1):]
+    for j in range(len(history) - n + 1):
+        if history[j:j + n - 1] == prefix:
+            scores[history[j + n - 1]] = float("-inf")
 
 
 class ChatSession:
@@ -106,18 +120,27 @@ class ChatSession:
 
     @torch.no_grad()
     def generate(self, max_new_tokens: int = 256, temperature: float = 0.0,
-                 top_k: Optional[int] = None,
-                 stop_token_ids: Optional[Sequence[int]] = None) -> List[int]:
+                 top_k: Optional[int] = None, min_p: Optional[float] = None,
+                 no_repeat_ngram_size: int = 0,
+                 stop_token_ids: Optional[Sequence[int]] = None,
+                 on_token: Optional[Callable[[int], None]] = None) -> List[int]:
         """Generate a reply after the last fed token. Each kept token is
-        written into the state; the stop token is not."""
+        written into the state; the stop token is not.
+
+        `temperature=0` is greedy. `min_p` drops tokens less likely than
+        min_p times the most likely one. `no_repeat_ngram_size` blocks
+        repeating any n-gram from the last 64 generated tokens.
+        `on_token` is called with each kept token, for streaming."""
         if self.next_logits is None:
             raise RuntimeError("feed a turn first")
         stops = set(int(t) for t in (stop_token_ids if stop_token_ids is not None
                                      else self.default_stops()))
         out: List[int] = []
+        history: List[int] = []
         scores = self.next_logits
         for _ in range(max_new_tokens):
-            scores = scores.float()
+            scores = scores.float().clone()
+            _block_repeated_ngrams(scores, history, no_repeat_ngram_size)
             if temperature <= 1e-4:
                 next_id = int(scores.argmax())
             else:
@@ -125,10 +148,17 @@ class ChatSession:
                 if top_k:
                     kth = torch.topk(scores, min(top_k, scores.numel())).values[-1]
                     scores = scores.masked_fill(scores < kth, float("-inf"))
-                next_id = int(torch.multinomial(F.softmax(scores, dim=-1), 1))
+                probs = F.softmax(scores, dim=-1)
+                if min_p:
+                    probs = torch.where(probs >= min_p * probs.max(), probs, torch.zeros_like(probs))
+                    probs = probs / probs.sum().clamp_min(1e-9)
+                next_id = int(torch.multinomial(probs, 1))
             if next_id in stops:
                 break
             out.append(next_id)
+            history = (history + [next_id])[-64:]
+            if on_token is not None:
+                on_token(next_id)
             scores = self.feed_one(next_id)
         return out
 
