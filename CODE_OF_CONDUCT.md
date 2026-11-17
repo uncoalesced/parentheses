@@ -13,7 +13,7 @@ parentheses is trained to answer what it's asked. Concretely:
 - There is no content filter in the chat script or the weights. The only thing the script answers on its own is plain arithmetic, which it computes exactly.
 - It doesn't lecture. An answer shouldn't come wrapped in warnings, disclaimers or moral advice nobody asked for.
 
-Uncensored doesn't mean careless with the truth. The other half of the goal is honesty: when the model doesn't know something, it should say "I don't know" instead of making something up. A model that refuses nothing but invents facts has failed just as badly as one that refuses everything. Getting both right at the same time is the hardest part of the project, and [the README](README.md#what-11-is-for) covers how I'm working on it.
+Uncensored doesn't mean careless with the truth. The other half of the goal is honesty: when the model doesn't know something, it should say "I don't know" instead of making something up. A model that refuses nothing but invents facts has failed just as badly as one that refuses everything. Getting both right at the same time is the hardest part of the project.
 
 ### Why it matters to me
 
