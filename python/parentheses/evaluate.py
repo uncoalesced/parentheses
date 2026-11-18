@@ -73,8 +73,9 @@ def main(argv=None) -> int:
 
     samples = results.pop("samples", {})
     record = {
+        # The checkpoint path is local; hide it in both "--checkpoint p" and "--checkpoint=p" forms.
         "command": "python -m parentheses.evaluate " + " ".join(
-            "<checkpoint>" if a == args.checkpoint else a for a in (argv or sys.argv[1:])),
+            a.replace(args.checkpoint, "<checkpoint>") for a in (argv or sys.argv[1:])),
         "date": datetime.date.today().isoformat(),
         "harness_version": lm_eval.__version__,
         "harness_revision": args.harness_revision or harness_revision(),

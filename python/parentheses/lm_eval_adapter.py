@@ -10,7 +10,6 @@ language tags are added, so results describe plain-text completion.
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import List, Optional, Sequence, Tuple
 
 import torch
@@ -22,9 +21,9 @@ from lm_eval import utils
 from lm_eval.api.model import TemplateLM
 from lm_eval.api.registry import register_model
 
+from . import TOKENIZER_PATH
+from .chat import pick_device
 from .checkpoint import load_model
-
-DEFAULT_TOKENIZER = Path(__file__).resolve().parent / "tokenizer_data" / "tokenizer.json"
 
 
 @register_model("parentheses")
@@ -34,9 +33,9 @@ class ParenthesesLM(TemplateLM):
                  max_length: Optional[int] = None, max_gen_toks: int = 256,
                  dtype: str = "float32", **_ignored) -> None:
         super().__init__()
-        self._device = torch.device(device or ("cuda" if torch.cuda.is_available() else "cpu"))
+        self._device = torch.device(pick_device(device or "auto"))
         self.model = load_model(checkpoint, device=self._device, dtype=getattr(torch, dtype))
-        self.tokenizer = Tokenizer.from_file(str(tokenizer or DEFAULT_TOKENIZER))
+        self.tokenizer = Tokenizer.from_file(str(tokenizer or TOKENIZER_PATH))
         self.batch_size = int(batch_size) if str(batch_size).isdigit() else 8
         self.max_length = int(max_length or self.model.cfg.block_size)
         self.max_gen_toks = int(max_gen_toks)

@@ -117,6 +117,10 @@ def main(argv: Optional[list] = None) -> None:
           f"{', history kept' if args.keep_history else ''}")
     print("Type a message and press Enter. Empty line exits. /lang <code>, /auto, /<code> text, /new.")
 
+    stepper = None
+    if device == "cuda":
+        from .graph_step import GraphStepper
+        stepper = GraphStepper(model)        # captured once, shared by every session
     session_lang = args.lang
     session: Optional[ChatSession] = None
     sampling = dict(temperature=args.temperature, top_k=args.top_k, min_p=args.min_p,
@@ -158,7 +162,7 @@ def main(argv: Optional[list] = None) -> None:
         print(f"[{lang}: {LANG_NAMES[lang]}]")
 
         if session is None or not args.keep_history:
-            session = ChatSession(model, tokenizer=tok, lang=lang)
+            session = ChatSession(model, tokenizer=tok, lang=lang, stepper=stepper)
         stream = Streamer(tok)
         try:
             if args.format == "chat":

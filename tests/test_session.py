@@ -78,6 +78,22 @@ def test_generate_does_not_write_the_stop_token():
     assert out == [] and len(s.ids_seen) == 8
 
 
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="needs CUDA")
+def test_graph_stepper_session_matches_eager():
+    from parentheses.graph_step import GraphStepper
+    model = tiny_model(6).cuda()
+    stepper = GraphStepper(model)
+    eager, graph = ChatSession(model), ChatSession(model, stepper=stepper)
+    for s in (eager, graph):
+        s.feed(random_ids(20, 9))
+        s.generate(max_new_tokens=12, stop_token_ids=[])
+        s.feed(random_ids(21, 5) + [EOT])        # next reply starts a new document
+        s.generate(max_new_tokens=6, stop_token_ids=[])
+    assert graph.ids_seen == eager.ids_seen
+    assert (graph.next_logits - eager.next_logits).abs().max().item() < 1e-9
+    assert max_state_diff(graph.states, eager.states) < 1e-9
+
+
 def test_turn_format_uses_chat_tokens():
     tokenizers = pytest.importorskip("tokenizers")
     tok = tokenizers.Tokenizer.from_file(str(TOKENIZER_PATH))

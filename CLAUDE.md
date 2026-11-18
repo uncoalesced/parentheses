@@ -15,7 +15,8 @@ This file is a map. `README.md` has the goals, `HISTORY.md` has how the project 
 | Licence tiers of training data | `docs/LICENSE_TABLE.md` |
 | Model definition, loader, lm-eval adapter | `python/parentheses/` |
 | Tokenizer files (32k byte-level BPE; the pre-tokenizer keeps vowel signs with their letter, BPE can still split an akshara) | `python/parentheses/tokenizer_data/` |
-| Inference runtime, server, CLI | `rust/` |
+| Chat CLI, self-test, telemetry summary | `python -m parentheses.chat`, `.selftest`, `.telemetry` |
+| Inference runtime (planned, empty) | `rust/` |
 | Benchmark configs and raw results | `eval/` |
 | Parity and equivalence tests | `tests/` |
 | Leak checker run by the git hooks | `tools/check_public_tree.py` |

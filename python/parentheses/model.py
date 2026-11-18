@@ -119,6 +119,24 @@ def chunk_scan(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, log_alpha: tor
     return y.transpose(2, 3).reshape(B, T, H, Dh).to(q.dtype), S
 
 
+def sample_next(scores: torch.Tensor, temperature: float = 0.0, top_k: Optional[int] = None,
+                min_p: Optional[float] = None) -> int:
+    """Pick the next token from logits (vocab,). `temperature=0` is greedy. `min_p`
+    drops tokens less likely than min_p times the most likely one."""
+    scores = scores.float()
+    if temperature <= 1e-4:
+        return int(scores.argmax())
+    scores = scores / temperature
+    if top_k:
+        kth = torch.topk(scores, min(top_k, scores.numel())).values[-1]
+        scores = scores.masked_fill(scores < kth, float("-inf"))
+    probs = F.softmax(scores, dim=-1)
+    if min_p:
+        probs = torch.where(probs >= min_p * probs.max(), probs, torch.zeros_like(probs))
+        probs = probs / probs.sum().clamp_min(1e-9)
+    return int(torch.multinomial(probs, 1))
+
+
 class RMSNorm(nn.Module):
     def __init__(self, dim: int, eps: float = 1e-5):
         super().__init__()
@@ -403,15 +421,7 @@ class Parentheses(nn.Module):
         scores = logits[0, -1]
         prev_eot = int(ids[0, -1]) == eot
         for _ in range(max_new_tokens):
-            scores = scores.float()
-            if temperature <= 1e-4:
-                next_id = int(scores.argmax())
-            else:
-                scores = scores / temperature
-                if top_k:
-                    kth = torch.topk(scores, min(top_k, scores.numel())).values[-1]
-                    scores = scores.masked_fill(scores < kth, float("-inf"))
-                next_id = int(torch.multinomial(F.softmax(scores, dim=-1), 1))
+            next_id = sample_next(scores, temperature, top_k)
             if next_id in stops:
                 return
             yield next_id

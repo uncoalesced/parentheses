@@ -17,9 +17,8 @@ from __future__ import annotations
 from typing import Callable, List, Optional, Sequence, Union
 
 import torch
-import torch.nn.functional as F
 
-from .model import LayerState, Parentheses
+from .model import LayerState, Parentheses, sample_next
 
 STOP_TOKENS = ("<|endoftext|>", "<|user|>", "<|system|>", "<|assistant|>", "<|pad|>")
 
@@ -45,10 +44,13 @@ class ChatSession:
     one go with `forward_with_state` gives the same state (the tests check it).
     """
 
-    def __init__(self, model: Parentheses, tokenizer=None, lang: str = "eng"):
+    def __init__(self, model: Parentheses, tokenizer=None, lang: str = "eng", stepper=None):
+        """`stepper`: an optional GraphStepper for `model`, used to decode replies
+        (several times faster on CUDA). It can be shared by many sessions."""
         self.model = model
         self.tokenizer = tokenizer
         self.lang = lang
+        self.stepper = stepper
         self.device = next(model.parameters()).device
         self.states: Optional[List[LayerState]] = None
         self.ids_seen: List[int] = []
@@ -138,28 +140,30 @@ class ChatSession:
         out: List[int] = []
         history: List[int] = []
         scores = self.next_logits
-        for _ in range(max_new_tokens):
-            scores = scores.float().clone()
-            _block_repeated_ngrams(scores, history, no_repeat_ngram_size)
-            if temperature <= 1e-4:
-                next_id = int(scores.argmax())
-            else:
-                scores = scores / temperature
-                if top_k:
-                    kth = torch.topk(scores, min(top_k, scores.numel())).values[-1]
-                    scores = scores.masked_fill(scores < kth, float("-inf"))
-                probs = F.softmax(scores, dim=-1)
-                if min_p:
-                    probs = torch.where(probs >= min_p * probs.max(), probs, torch.zeros_like(probs))
-                    probs = probs / probs.sum().clamp_min(1e-9)
-                next_id = int(torch.multinomial(probs, 1))
-            if next_id in stops:
-                break
-            out.append(next_id)
-            history = (history + [next_id])[-64:]
-            if on_token is not None:
-                on_token(next_id)
-            scores = self.feed_one(next_id)
+        g = self.stepper
+        if g is not None:
+            g.load_states(self.states, prev_eot=self._prev_eot)
+        try:
+            for _ in range(max_new_tokens):
+                scores = scores.float().clone()
+                _block_repeated_ngrams(scores, history, no_repeat_ngram_size)
+                next_id = sample_next(scores, temperature, top_k, min_p)
+                if next_id in stops:
+                    break
+                out.append(next_id)
+                history = (history + [next_id])[-64:]
+                if on_token is not None:
+                    on_token(next_id)
+                if g is None:
+                    scores = self.feed_one(next_id)
+                else:
+                    scores = g.step(next_id)        # static buffer; cloned at the loop top
+                    self.ids_seen.append(next_id)
+        finally:
+            # The graph holds the state while decoding; copy it back, even after Ctrl-C.
+            if g is not None and out:
+                self.states = g.read_states()
+                self.next_logits = scores.clone()
         return out
 
     def reply(self, message: Union[str, Sequence[int]], lang: Optional[str] = None, **kw) -> List[int]:
